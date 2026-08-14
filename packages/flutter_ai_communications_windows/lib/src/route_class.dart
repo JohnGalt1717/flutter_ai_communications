@@ -3,10 +3,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 /// Maps Windows device metadata to a [RouteClass].
 ///
 /// Built-in speakers/mics are speakerphone. There is no handset on desktop.
-RouteClass windowsRouteClass({
-  required String name,
-  String enumerator = '',
-}) {
+RouteClass windowsRouteClass({required String name, String enumerator = ''}) {
   final lowerName = name.toLowerCase();
   final lowerEnumerator = enumerator.toLowerCase();
   if (lowerEnumerator.contains('bth') ||
