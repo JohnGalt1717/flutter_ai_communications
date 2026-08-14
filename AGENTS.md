@@ -38,10 +38,11 @@ packages/flutter_ai_communications_ios/
 packages/flutter_ai_communications_android/
 packages/flutter_ai_communications_web/
 packages/flutter_ai_communications_macos/
+packages/flutter_ai_communications_windows/
 example/                                               # Marionette AI-voice harness
 ```
 
-Desktop remaining: `windows`, `linux`. Do not add Melos.
+Desktop remaining: `linux`. Do not add Melos.
 
 Follow current Flutter federated-plugin and pub-workspace conventions (`pubspec.yaml`, shared analysis options, path/`workspace` resolution). Native C DSP, if any, uses Native Assets hooks (`dart-setup-ffi-assets`, `dart-use-ffigen`) inside the non-web packages that need it — not a root FFI stub.
 

@@ -49,7 +49,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 
 ## Implementation Decisions
 
-- Pub workspace, federated plugin: app package, `platform_interface`, `shared`, `ios`, `android`, `web`, `macos`. Remaining desktop: `windows`, `linux`. No Melos. Current Flutter `pubspec` / workspace / analysis conventions.
+- Pub workspace, federated plugin: app package, `platform_interface`, `shared`, `ios`, `android`, `web`, `macos`, `windows`. Remaining desktop: `linux`. No Melos. Current Flutter `pubspec` / workspace / analysis conventions.
 - Public module is `AudioManager` + one `Session`. Catalog works while idle.
 - `StartResult` is a sealed set: `ready`, `denied`, `restricted`, `unavailable`, `alreadyActive`, `failed`. Isolation is never a start failure.
 - Preference is a `start()` argument only. Session select/setSoundFloor are ephemeral.
@@ -80,7 +80,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 - Shipping SignalR or WebRTC.
 - ISpect as a dependency.
 - User-facing localization in the library.
-- Windows and Linux implementation in v1 (tickets only).
+- Linux implementation in v1 (ticket only).
 - Matching Scribe’s public type names.
 
 ## Further Notes

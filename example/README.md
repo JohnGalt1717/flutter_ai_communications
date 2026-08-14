@@ -3,9 +3,9 @@
 AI-voice Marionette harness for the federated Audio manager.
 
 Drive **Start → Mute → Pause → Isolation event** from the widget test
-(`flutter test` in this package) or by running the app on iOS, Android, web, or
-macOS.
+(`flutter test` in this package) or by running the app on iOS, Android, web, macOS, or
+Windows.
 
 The visualizer plots the same capture stream the Transport would send. There is
-no SignalR. Web and macOS have no Isolation and no handset Endpoint — those are
-documented limits, not bugs.
+no SignalR. Web, macOS, and Windows have no Isolation and no handset Endpoint —
+those are documented limits, not bugs.

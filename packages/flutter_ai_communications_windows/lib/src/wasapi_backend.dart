@@ -1,0 +1,47 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
+import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+
+/// Native WASAPI graph used by the Windows adapter.
+abstract class WasapiBackend {
+  /// Snapshot of capture and render Endpoints.
+  List<Endpoint> enumerate();
+
+  /// Starts capture and render. Same subscription must survive restarts.
+  NativeGraphStart start({String? captureId, String? renderId});
+
+  /// Tears down the graph. Does not close Session streams.
+  void stop();
+
+  /// Parks capture and render.
+  void pause();
+
+  /// Resumes capture and render.
+  void resume();
+
+  /// Renders PCM16 LE mono frames.
+  void play(Uint8List bytes);
+
+  /// Applies an ephemeral Endpoint pick and restarts the graph.
+  void select({String? captureId, String? renderId});
+
+  /// Drops queued playback.
+  void flush();
+
+  /// Raw capture frames, including silence on restart.
+  Stream<Uint8List> get capture;
+
+  /// Live catalog updates.
+  Stream<List<Endpoint>> get catalog;
+
+  /// Audio-path Coverage hints.
+  Stream<CoverageHint> get path;
+
+  /// OS route changes.
+  Stream<OsRouteChange> get routes;
+
+  /// Releases COM objects.
+  void dispose();
+}
