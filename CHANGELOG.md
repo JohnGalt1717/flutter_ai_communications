@@ -2,4 +2,4 @@
 
 ## 0.0.1
 
-* TODO: Describe initial release.
+* Federated Audio manager workspace with iOS, Android, Web, and macOS adapters.

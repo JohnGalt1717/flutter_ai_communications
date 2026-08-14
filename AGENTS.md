@@ -37,10 +37,11 @@ packages/flutter_ai_communications_shared/             # pairing, floor, barge-i
 packages/flutter_ai_communications_ios/
 packages/flutter_ai_communications_android/
 packages/flutter_ai_communications_web/
+packages/flutter_ai_communications_macos/
 example/                                               # Marionette AI-voice harness
 ```
 
-Desktop packages (`macos`, `windows`, `linux`) are later tickets. Do not add Melos.
+Desktop remaining: `windows`, `linux`. Do not add Melos.
 
 Follow current Flutter federated-plugin and pub-workspace conventions (`pubspec.yaml`, shared analysis options, path/`workspace` resolution). Native C DSP, if any, uses Native Assets hooks (`dart-setup-ffi-assets`, `dart-use-ffigen`) inside the non-web packages that need it — not a root FFI stub.
 
@@ -71,4 +72,4 @@ Load the skill before the work it covers:
 
 ## Testing
 
-Test at public seams (`AudioManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the Marionette harness for iOS, Android, and web — not a SignalR demo.
+Test at public seams (`AudioManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the Marionette harness for iOS, Android, web, and macOS — not a SignalR demo.

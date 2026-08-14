@@ -11,6 +11,7 @@ workspace:
   - packages/flutter_ai_communications_ios
   - packages/flutter_ai_communications_android
   - packages/flutter_ai_communications_web
+  - packages/flutter_ai_communications_macos
   - example
 
 dev_dependencies:

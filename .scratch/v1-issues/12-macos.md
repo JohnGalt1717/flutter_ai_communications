@@ -10,9 +10,9 @@ macOS platform package and adapter with the same Audio manager contract: enumera
 
 ## Acceptance criteria
 
-- [ ] Federated macOS package is wired in the workspace
-- [ ] Catalog, start permission, capture/play, mute silence, and reset-without-stream-end work
-- [ ] Example runs on macOS
+- [x] Federated macOS package is wired in the workspace
+- [x] Catalog, start permission, capture/play, mute silence, and reset-without-stream-end work
+- [x] Example runs on macOS
 
 ## Blocked by
 

@@ -1,5 +1,5 @@
-name: flutter_ai_communications_ios
-description: iOS implementation of flutter_ai_communications.
+name: flutter_ai_communications_macos
+description: macOS implementation of flutter_ai_communications.
 version: 0.0.1
 homepage: https://github.com/JohnGalt1717/flutter_ai_communications
 repository: https://github.com/JohnGalt1717/flutter_ai_communications
@@ -23,6 +23,6 @@ flutter:
   plugin:
     implements: flutter_ai_communications
     platforms:
-      ios:
+      macos:
         pluginClass: FlutterAiCommunicationsPlugin
-        dartPluginClass: FlutterAiCommunicationsIos
+        dartPluginClass: FlutterAiCommunicationsMacos

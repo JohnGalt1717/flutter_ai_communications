@@ -9,7 +9,7 @@ import 'microphone_permission.dart';
 import 'native_graph_start.dart';
 import 'platform_events.dart';
 
-/// Method/EventChannel adapter shared by iOS and Android.
+/// Method/EventChannel adapter shared by iOS, Android, and macOS.
 ///
 /// Capture, Isolation, Coverage, focus, and OS-route events land on
 /// broadcast controllers that survive native teardown (ADR-0004).

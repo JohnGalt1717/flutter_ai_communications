@@ -49,7 +49,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 
 ## Implementation Decisions
 
-- Pub workspace, federated plugin: app package, `platform_interface`, `shared`, `ios`, `android`, `web`. Desktop packages later. No Melos. Current Flutter `pubspec` / workspace / analysis conventions.
+- Pub workspace, federated plugin: app package, `platform_interface`, `shared`, `ios`, `android`, `web`, `macos`. Remaining desktop: `windows`, `linux`. No Melos. Current Flutter `pubspec` / workspace / analysis conventions.
 - Public module is `AudioManager` + one `Session`. Catalog works while idle.
 - `StartResult` is a sealed set: `ready`, `denied`, `restricted`, `unavailable`, `alreadyActive`, `failed`. Isolation is never a start failure.
 - Preference is a `start()` argument only. Session select/setSoundFloor are ephemeral.
@@ -70,7 +70,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 - Test external behaviour at `AudioManager`, `Session`, `CoverageSource`, and the platform interface. Do not assert private native steps.
 - Shared DSP (floor, barge-in, pairing, transcode) is tested with fixture PCM and a fake platform adapter.
 - Platform tickets add integration coverage: permission, enum, route class, Isolation detect, reset that does not end capture subscriptions.
-- Example + Marionette is the UI-to-success path on iOS, Android, and web.
+- Example + Marionette is the UI-to-success path on iOS, Android, web, and macOS.
 - A good test names a capability (“muted Session still emits silence frames at 24 kHz”) and uses fixture or OS-observable outcomes, not mocks of the implementation.
 
 ## Out of Scope
@@ -80,7 +80,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 - Shipping SignalR or WebRTC.
 - ISpect as a dependency.
 - User-facing localization in the library.
-- Desktop implementation in v1 (tickets only).
+- Windows and Linux implementation in v1 (tickets only).
 - Matching Scribe’s public type names.
 
 ## Further Notes

@@ -4,12 +4,12 @@ A Flutter **Audio manager** for live duplex communications — the audio stack y
 
 The host app owns the Transport (SignalR, WebRTC, or anything else), device-order preference, and product UI. This package owns capture, render, pairing, sound floor, barge-in, mute, pause, and coverage events.
 
-**v1 platforms:** iOS, Android, Web.
-**Later:** macOS, Windows, then Linux.
+**v1 platforms:** iOS, Android, Web, macOS.
+**Later:** Windows, then Linux.
 **Later still:** camera.
 **Out of scope:** device-priority lists (apps implement that).
 
-This repository is being built from a grilled spec ([#1](https://github.com/JohnGalt1717/flutter_ai_communications/issues/1)). The public API below is the contract. Desktop adapters are later tickets ([#13](https://github.com/JohnGalt1717/flutter_ai_communications/issues/13)–[#15](https://github.com/JohnGalt1717/flutter_ai_communications/issues/15)).
+This repository is being built from a grilled spec ([#1](https://github.com/JohnGalt1717/flutter_ai_communications/issues/1)). The public API below is the contract. Remaining desktop adapters are [#14](https://github.com/JohnGalt1717/flutter_ai_communications/issues/14)–[#15](https://github.com/JohnGalt1717/flutter_ai_communications/issues/15).
 
 ## What you get
 
@@ -32,9 +32,10 @@ dependencies:
   flutter_ai_communications: ^0.1.0
 ```
 
-The federated iOS / Android / Web implementations are pulled in by the app package. Declare microphone usage in the host app:
+The federated iOS / Android / Web / macOS implementations are pulled in by the app package. Declare microphone usage in the host app:
 
 - **iOS:** `NSMicrophoneUsageDescription` (and Bluetooth usage strings if you route to headsets)
+- **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement
 - **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - **Web:** served over HTTPS / localhost so `getUserMedia` can run
 
