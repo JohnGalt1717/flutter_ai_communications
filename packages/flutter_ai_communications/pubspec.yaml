@@ -1,0 +1,34 @@
+name: flutter_ai_communications
+description: Teams/Zoom-class communications Audio manager for Flutter.
+version: 0.0.1
+homepage: https://github.com/JohnGalt1717/flutter_ai_communications
+repository: https://github.com/JohnGalt1717/flutter_ai_communications
+issue_tracker: https://github.com/JohnGalt1717/flutter_ai_communications/issues
+
+environment:
+  sdk: ^3.12.2
+  flutter: '>=3.44.0'
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_ai_communications_platform_interface: ^0.0.1
+  flutter_ai_communications_shared: ^0.0.1
+  logging: ^1.3.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        default_package: flutter_ai_communications_android
+      ios:
+        default_package: flutter_ai_communications_ios
+      web:
+        default_package: flutter_ai_communications_web

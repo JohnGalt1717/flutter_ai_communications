@@ -1,0 +1,14 @@
+name: flutter_ai_communications_shared
+description: Shared pairing, sound floor, barge-in, and transcode for flutter_ai_communications.
+version: 0.0.1
+homepage: https://github.com/JohnGalt1717/flutter_ai_communications
+repository: https://github.com/JohnGalt1717/flutter_ai_communications
+
+environment:
+  sdk: ^3.12.2
+
+resolution: workspace
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.28.0

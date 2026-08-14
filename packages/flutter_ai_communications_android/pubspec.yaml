@@ -1,0 +1,30 @@
+name: flutter_ai_communications_android
+description: Android implementation of flutter_ai_communications.
+version: 0.0.1
+homepage: https://github.com/JohnGalt1717/flutter_ai_communications
+repository: https://github.com/JohnGalt1717/flutter_ai_communications
+
+environment:
+  sdk: ^3.12.2
+  flutter: '>=3.44.0'
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_ai_communications_platform_interface: ^0.0.1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: flutter_ai_communications
+    platforms:
+      android:
+        package: com.johngalt.flutter_ai_communications
+        pluginClass: FlutterAiCommunicationsPlugin
+        dartPluginClass: FlutterAiCommunicationsAndroid

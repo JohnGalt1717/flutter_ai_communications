@@ -1,3 +1,12 @@
 {
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.import.gradle.enabled": true,
+    "java.import.gradle.wrapper.enabled": true,
+    "java.jdt.ls.androidSupport.enabled": "on",
+    "markdownlint.config": {
+        "MD013": false,
+        "MD033": false,
+        "MD041": true
+    }
 }
