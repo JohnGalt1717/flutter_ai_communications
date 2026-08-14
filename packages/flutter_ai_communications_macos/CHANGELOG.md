@@ -2,4 +2,4 @@
 
 ## 0.0.1
 
-* Initial macOS adapter.
+* Initial macOS adapter. Core Audio / AudioQueue via Dart FFI.

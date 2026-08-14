@@ -13,6 +13,7 @@ workspace:
   - packages/flutter_ai_communications_web
   - packages/flutter_ai_communications_macos
   - packages/flutter_ai_communications_windows
+  - packages/flutter_ai_communications_linux
   - example
 
 dev_dependencies:

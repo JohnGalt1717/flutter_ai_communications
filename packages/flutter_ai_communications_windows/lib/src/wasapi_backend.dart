@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
@@ -8,6 +7,9 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 abstract class WasapiBackend {
   /// Snapshot of capture and render Endpoints.
   List<Endpoint> enumerate();
+
+  /// Asks the OS whether capture is allowed. Must not leave a graph running.
+  MicrophonePermission probePermission();
 
   /// Starts capture and render. Same subscription must survive restarts.
   NativeGraphStart start({String? captureId, String? renderId});
@@ -25,6 +27,8 @@ abstract class WasapiBackend {
   void play(Uint8List bytes);
 
   /// Applies an ephemeral Endpoint pick and restarts the graph.
+  ///
+  /// Must not clear pause and must not pretend to be an OS-forced route.
   void select({String? captureId, String? renderId});
 
   /// Drops queued playback.
@@ -32,15 +36,6 @@ abstract class WasapiBackend {
 
   /// Raw capture frames, including silence on restart.
   Stream<Uint8List> get capture;
-
-  /// Live catalog updates.
-  Stream<List<Endpoint>> get catalog;
-
-  /// Audio-path Coverage hints.
-  Stream<CoverageHint> get path;
-
-  /// OS route changes.
-  Stream<OsRouteChange> get routes;
 
   /// Releases COM objects.
   void dispose();

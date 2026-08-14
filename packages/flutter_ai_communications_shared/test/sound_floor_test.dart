@@ -36,6 +36,18 @@ void main() {
     expect(floor.noiseRms, greaterThan(0));
   });
 
+  test('fixed zero is a pass-through', () {
+    final floor = SoundFloor(fixed: 0);
+    const rate = 24000;
+    final lounge = _tone(
+      sampleRate: rate,
+      hz: 80,
+      seconds: 0.08,
+      amplitude: 4000,
+    );
+    expect(floor.apply(lounge, sampleRate: rate), lounge);
+  });
+
   test('car route raises the adaptive floor', () {
     final floor = SoundFloor();
     expect(

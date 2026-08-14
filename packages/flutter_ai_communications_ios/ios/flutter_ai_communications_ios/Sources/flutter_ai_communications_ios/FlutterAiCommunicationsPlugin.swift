@@ -301,17 +301,15 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func isolationState() -> String {
-    if #available(iOS 15.0, *) {
-      switch AVAudioSession.sharedInstance().preferredMicrophoneMode {
-      case .voiceIsolation:
-        return "on"
-      case .wideSpectrum, .standard:
-        return "off"
-      @unknown default:
-        return "off"
-      }
+    let session = AVAudioSession.sharedInstance()
+    let selector = NSSelectorFromString("preferredMicrophoneMode")
+    guard session.responds(to: selector),
+          let raw = session.perform(selector)?.takeUnretainedValue() as? Int
+    else {
+      return "unavailable"
     }
-    return "unavailable"
+    // AVAudioSession.MicrophoneMode.voiceIsolation
+    return raw == 2 ? "on" : "off"
   }
 
   private func openIsolationSettings() {
@@ -324,12 +322,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func emitPath(alive: Bool) {
-    eventSink?(
-      [
-        "type": "path",
-        "payload": ["alive": alive, "reason": alive ? NSNull() : "pathDead"],
-      ]
-    )
+    var payload: [String: Any] = ["alive": alive]
+    if !alive {
+      payload["reason"] = "pathDead"
+    }
+    eventSink?(["type": "path", "payload": payload])
   }
 
   @objc private func handleRouteChange(_ notification: Notification) {

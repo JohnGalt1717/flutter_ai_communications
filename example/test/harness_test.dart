@@ -41,5 +41,6 @@ void main() {
     expect(const ExampleApp().manager, isNull);
     expect(start, isNot(mute));
     expect(pause, isNot(start));
+    expect(const Key('prove'), isNot(start));
   });
 }

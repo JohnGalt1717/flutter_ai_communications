@@ -53,24 +53,9 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
-  final StreamController<List<Endpoint>> _catalogOut =
-      StreamController<List<Endpoint>>.broadcast();
-  final StreamController<CoverageHint> _pathOut =
-      StreamController<CoverageHint>.broadcast();
-  final StreamController<OsRouteChange> _routeOut =
-      StreamController<OsRouteChange>.broadcast();
 
   @override
   Stream<Uint8List> get capture => _captureOut.stream;
-
-  @override
-  Stream<List<Endpoint>> get catalog => _catalogOut.stream;
-
-  @override
-  Stream<CoverageHint> get path => _pathOut.stream;
-
-  @override
-  Stream<OsRouteChange> get routes => _routeOut.stream;
 
   @override
   List<Endpoint> enumerate() {
@@ -85,16 +70,23 @@ final class WasapiWindowsBackend implements WasapiBackend {
   }
 
   @override
+  MicrophonePermission probePermission() {
+    try {
+      final started = start();
+      stop();
+      return started == NativeGraphStart.started
+          ? MicrophonePermission.granted
+          : MicrophonePermission.denied;
+    } on Object {
+      return MicrophonePermission.denied;
+    }
+  }
+
+  @override
   NativeGraphStart start({String? captureId, String? renderId}) {
     _captureId = captureId;
     _renderId = renderId;
-    if (!_startGraph()) {
-      return NativeGraphStart.failed;
-    }
-    _catalogOut.add(enumerate());
-    _routeOut.add(OsRouteChange(captureId: _captureId, renderId: _renderId));
-    _pathOut.add(const CoverageHint.ok());
-    return NativeGraphStart.started;
+    return _startGraph() ? NativeGraphStart.started : NativeGraphStart.failed;
   }
 
   @override
@@ -159,11 +151,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
     if (renderId != null) {
       _renderId = renderId;
     }
-    if (_startGraph()) {
-      _routeOut.add(OsRouteChange(captureId: _captureId, renderId: _renderId));
-      _pathOut.add(const CoverageHint.ok());
-    } else {
-      _pathOut.add(const CoverageHint.dead());
+    if (_running) {
+      _startGraph();
     }
   }
 
@@ -185,9 +174,6 @@ final class WasapiWindowsBackend implements WasapiBackend {
     stop();
     _lifetime.releaseAll();
     unawaited(_captureOut.close());
-    unawaited(_catalogOut.close());
-    unawaited(_pathOut.close());
-    unawaited(_routeOut.close());
   }
 
   bool _startGraph() {
@@ -241,16 +227,19 @@ final class WasapiWindowsBackend implements WasapiBackend {
         null,
       );
       final render = graph.adopt(renderClient.getService<IAudioRenderClient>());
-      captureClient.start();
-      renderClient.start();
       _graph = graph;
       _captureClient = captureClient;
       _capture = capture;
       _renderClient = renderClient;
       _render = render;
       _renderFrames = renderClient.getBufferSize();
+      final keepPaused = _paused;
       _running = true;
-      _paused = false;
+      _paused = keepPaused;
+      if (!keepPaused) {
+        captureClient.start();
+        renderClient.start();
+      }
       _poll = Timer.periodic(const Duration(milliseconds: 10), (_) {
         _pumpCapture();
       });

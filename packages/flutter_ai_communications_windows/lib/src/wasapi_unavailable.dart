@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
@@ -13,6 +12,9 @@ final class UnavailableWasapiBackend implements WasapiBackend {
 
   @override
   List<Endpoint> enumerate() => const [];
+
+  @override
+  MicrophonePermission probePermission() => MicrophonePermission.denied;
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) =>
@@ -38,15 +40,6 @@ final class UnavailableWasapiBackend implements WasapiBackend {
 
   @override
   Stream<Uint8List> get capture => const Stream.empty();
-
-  @override
-  Stream<List<Endpoint>> get catalog => const Stream.empty();
-
-  @override
-  Stream<CoverageHint> get path => const Stream.empty();
-
-  @override
-  Stream<OsRouteChange> get routes => const Stream.empty();
 
   @override
   void dispose() {}

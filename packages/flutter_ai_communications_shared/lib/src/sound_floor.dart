@@ -59,7 +59,7 @@ final class SoundFloor {
       routeClass: routeClass,
       isolationMissing: isolationMissing,
     );
-    final pass = metrics.rms >= floor && metrics.isVoice;
+    final pass = metrics.rms >= floor && (fixed != null || metrics.isVoice);
     if (pass) {
       return pcm;
     }

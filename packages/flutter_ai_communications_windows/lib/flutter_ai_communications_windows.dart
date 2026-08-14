@@ -22,9 +22,14 @@ final class FlutterAiCommunicationsWindows
   final WasapiBackend _backend;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
+  final StreamController<List<Endpoint>> _catalog =
+      StreamController<List<Endpoint>>.broadcast();
+  final StreamController<CoverageHint> _path =
+      StreamController<CoverageHint>.broadcast();
   IsolationEvent _lastIsolation = const IsolationEvent(
     IsolationState.unavailable,
   );
+  Timer? _catalogPoll;
 
   @override
   String get platformName => 'windows';
@@ -36,23 +41,11 @@ final class FlutterAiCommunicationsWindows
   Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
 
   @override
-  Stream<List<Endpoint>> get endpointCatalog => _backend.catalog;
+  Stream<List<Endpoint>> get endpointCatalog => _catalog.stream;
 
   @override
-  Future<MicrophonePermission> requestMicrophonePermission() async {
-    try {
-      if (_backend.enumerate().any((endpoint) => endpoint.isCapture)) {
-        return MicrophonePermission.granted;
-      }
-      final started = _backend.start();
-      _backend.stop();
-      return started == NativeGraphStart.started
-          ? MicrophonePermission.granted
-          : MicrophonePermission.denied;
-    } on Object {
-      return MicrophonePermission.denied;
-    }
-  }
+  Future<MicrophonePermission> requestMicrophonePermission() async =>
+      _backend.probePermission();
 
   @override
   Future<NativeGraphStart> startNative({
@@ -61,11 +54,24 @@ final class FlutterAiCommunicationsWindows
   }) async {
     _lastIsolation = const IsolationEvent(IsolationState.unavailable);
     _isolation.add(_lastIsolation);
-    return _backend.start(captureId: captureId, renderId: renderId);
+    final started = _backend.start(captureId: captureId, renderId: renderId);
+    if (started == NativeGraphStart.started) {
+      _catalog.add(_backend.enumerate());
+      _path.add(const CoverageHint.ok());
+      _catalogPoll?.cancel();
+      _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
+        _catalog.add(_backend.enumerate());
+      });
+    }
+    return started;
   }
 
   @override
-  Future<void> stopNative() async => _backend.stop();
+  Future<void> stopNative() async {
+    _catalogPoll?.cancel();
+    _catalogPoll = null;
+    _backend.stop();
+  }
 
   @override
   Future<void> pauseNative() async => _backend.pause();
@@ -97,8 +103,5 @@ final class FlutterAiCommunicationsWindows
   Future<void> flushPlayback() async => _backend.flush();
 
   @override
-  Stream<CoverageHint> get pathCoverage => _backend.path;
-
-  @override
-  Stream<OsRouteChange> get osRouteChanges => _backend.routes;
+  Stream<CoverageHint> get pathCoverage => _path.stream;
 }

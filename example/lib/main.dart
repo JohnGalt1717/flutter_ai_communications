@@ -1,10 +1,16 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
+import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
+import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
+import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
+import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
 
 void main() {
+  LoopbackCommunicationsPlatform.wrapRegistered();
   runApp(const ExampleApp());
 }
 
@@ -46,6 +52,8 @@ final class SessionPage extends StatefulWidget {
 
 final class _SessionPageState extends State<SessionPage> {
   Session? _session;
+  EchoTransport? _echo;
+  EchoProof? _proof;
   String? _status;
   IsolationEvent? _isolation;
   Coverage _coverage = const Coverage.ok();
@@ -93,6 +101,9 @@ final class _SessionPageState extends State<SessionPage> {
     _session = session;
     _status = 'ready';
     _isolation = session.lastIsolation;
+    final echo = EchoTransport(session, replay: false);
+    _echo = echo;
+    unawaited(echo.attach());
     session.isolation.listen((event) {
       if (mounted) {
         setState(() => _isolation = event);
@@ -119,14 +130,32 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _stop() async {
+    await _echo?.dispose();
     await _session?.stop();
     if (mounted) {
       setState(() {
         _session = null;
+        _echo = null;
+        _proof = null;
         _status = null;
         _levels.clear();
         _level = 0;
       });
+    }
+  }
+
+  Future<void> _prove() async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+    final fixture = FixturePcm.voiceBand24k();
+    final proof = await const LoopbackProbe().echo(
+      session: session,
+      fixture: fixture,
+    );
+    if (mounted) {
+      setState(() => _proof = proof);
     }
   }
 
@@ -214,8 +243,24 @@ final class _SessionPageState extends State<SessionPage> {
                 onPressed: session == null ? null : _stop,
                 child: const Text('End'),
               ),
+              FilledButton.tonal(
+                key: const Key('prove'),
+                onPressed: session == null ? null : _prove,
+                child: const Text('Prove'),
+              ),
             ],
           ),
+          if (_proof != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'echo ${_proof!.bytes} B'
+                '${_proof!.identical ? ' identical' : ' mismatch'}'
+                '${_proof!.clipped ? ' clipped' : ''}'
+                '${_proof!.sameCaptureStream ? '' : ' stream-replaced'}',
+                key: const Key('echo-proof'),
+              ),
+            ),
           const SizedBox(height: 24),
           Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),

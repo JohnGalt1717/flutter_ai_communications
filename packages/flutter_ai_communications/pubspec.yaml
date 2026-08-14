@@ -16,6 +16,7 @@ dependencies:
     sdk: flutter
   flutter_ai_communications_android: ^0.0.1
   flutter_ai_communications_ios: ^0.0.1
+  flutter_ai_communications_linux: ^0.0.1
   flutter_ai_communications_macos: ^0.0.1
   flutter_ai_communications_platform_interface: ^0.0.1
   flutter_ai_communications_shared: ^0.0.1
@@ -40,3 +41,5 @@ flutter:
         default_package: flutter_ai_communications_macos
       windows:
         default_package: flutter_ai_communications_windows
+      linux:
+        default_package: flutter_ai_communications_linux

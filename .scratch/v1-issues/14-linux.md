@@ -10,9 +10,9 @@ Linux platform package and adapter, best effort, last desktop priority. Same pub
 
 ## Acceptance criteria
 
-- [ ] Federated Linux package is wired
-- [ ] A Session can start, capture, play, mute, and stop on a reference distro
-- [ ] Gaps versus iOS/Android are documented, not hidden
+- [x] Federated Linux package is wired
+- [x] A Session can start, capture, play, mute, and stop on a reference distro
+- [x] Gaps versus iOS/Android are documented, not hidden
 
 ## Blocked by
 

@@ -2,4 +2,4 @@
 
 ## 0.0.1
 
-* Initial Windows adapter.
+* Initial Windows adapter. WASAPI via Dart FFI.

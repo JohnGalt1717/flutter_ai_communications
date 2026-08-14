@@ -1,6 +1,7 @@
 package com.johngalt.flutter_ai_communications
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -15,22 +16,31 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
 import java.util.concurrent.atomic.AtomicBoolean
 
 class FlutterAiCommunicationsPlugin :
     FlutterPlugin,
-    MethodCallHandler {
+    MethodCallHandler,
+    ActivityAware,
+    PluginRegistry.RequestPermissionsResultListener {
     private lateinit var methods: MethodChannel
     private lateinit var captureChannel: EventChannel
     private lateinit var eventsChannel: EventChannel
     private var appContext: Context? = null
+    private var activityBinding: ActivityPluginBinding? = null
+    private var pendingPermission: Result? = null
+    private val permissionCode = 0xFAC1
     private var captureSink: EventChannel.EventSink? = null
     private var eventSink: EventChannel.EventSink? = null
     private var audioManager: AudioManager? = null
@@ -105,7 +115,7 @@ class FlutterAiCommunicationsPlugin :
     ) {
         when (call.method) {
             "enumerateEndpoints" -> result.success(enumerate())
-            "requestMicrophonePermission" -> result.success(permission())
+            "requestMicrophonePermission" -> requestPermission(result)
             "startNative" -> {
                 selectedCaptureId = call.argument("captureId")
                 selectedRenderId = call.argument("renderId")
@@ -156,12 +166,63 @@ class FlutterAiCommunicationsPlugin :
         eventsChannel.setStreamHandler(null)
     }
 
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activityBinding = binding
+        binding.addRequestPermissionsResultListener(this)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        onAttachedToActivity(binding)
+    }
+
+    override fun onDetachedFromActivity() {
+        activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding = null
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ): Boolean {
+        if (requestCode != permissionCode) {
+            return false
+        }
+        val pending = pendingPermission ?: return false
+        pendingPermission = null
+        pending.success(permission())
+        return true
+    }
+
     private fun permission(): String {
         val context = appContext ?: return "denied"
         val granted =
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         return if (granted) "granted" else "denied"
+    }
+
+    private fun requestPermission(result: Result) {
+        if (permission() == "granted") {
+            result.success("granted")
+            return
+        }
+        val activity: Activity? = activityBinding?.activity
+        if (activity == null) {
+            result.success(permission())
+            return
+        }
+        pendingPermission = result
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            permissionCode,
+        )
     }
 
     private fun startNative(): String {
