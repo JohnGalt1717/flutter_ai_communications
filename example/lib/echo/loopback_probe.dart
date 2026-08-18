@@ -97,8 +97,7 @@ final class LoopbackProbe {
     session.setSoundFloor(0);
     final transport = EchoTransport(session, replay: false);
     await transport.attach();
-    if (session.selectedCaptureId !=
-        LoopbackCommunicationsPlatform.captureId) {
+    if (session.selectedCaptureId != LoopbackCommunicationsPlatform.captureId) {
       await session.select(
         captureId: LoopbackCommunicationsPlatform.captureId,
         renderId: LoopbackCommunicationsPlatform.renderId,

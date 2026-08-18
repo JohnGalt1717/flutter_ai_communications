@@ -33,9 +33,7 @@ void main() {
 
   Future<Session> ready({SessionPreference? preference}) async {
     final result = await manager.start(
-      preference:
-          preference ??
-          const SessionPreference(soundFloor: 0.0),
+      preference: preference ?? const SessionPreference(soundFloor: 0.0),
       bargeInPolicy: BargeInPolicy.remoteVad,
     );
     return (result as StartReady).session;
@@ -50,22 +48,24 @@ void main() {
     expect(PcmQuality.peak(pcm), lessThan(32767));
   });
 
-  test('Echo Transport receives capture byte for byte and plays it back',
-      () async {
-    final session = await ready();
-    final echo = EchoTransport(session);
-    await echo.attach();
-    final fixture = FixturePcm.voiceBand24k();
+  test(
+    'Echo Transport receives capture byte for byte and plays it back',
+    () async {
+      final session = await ready();
+      final echo = EchoTransport(session);
+      await echo.attach();
+      final fixture = FixturePcm.voiceBand24k();
 
-    platform.feedCapture(fixture);
-    await Future<void>.delayed(Duration.zero);
+      platform.feedCapture(fixture);
+      await Future<void>.delayed(Duration.zero);
 
-    expect(echo.received, fixture);
-    expect(platform.played, isNotEmpty);
-    expect(_joined(platform.played), fixture);
-    expect(PcmQuality.clipped(echo.received), isFalse);
-    await echo.dispose();
-  });
+      expect(echo.received, fixture);
+      expect(platform.played, isNotEmpty);
+      expect(_joined(platform.played), fixture);
+      expect(PcmQuality.clipped(echo.received), isFalse);
+      await echo.dispose();
+    },
+  );
 
   test('select then stream again is still byte-identical', () async {
     final session = await ready();

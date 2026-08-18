@@ -177,10 +177,7 @@ final class LoopbackCommunicationsPlatform
     final innerRender = _renderId == LoopbackCommunicationsPlatform.renderId
         ? null
         : _renderId;
-    await inner.selectEndpoints(
-      captureId: innerCapture,
-      renderId: innerRender,
-    );
+    await inner.selectEndpoints(captureId: innerCapture, renderId: innerRender);
   }
 
   @override

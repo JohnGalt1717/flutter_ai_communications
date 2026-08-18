@@ -48,14 +48,13 @@ void main() {
     expect(first.sameCaptureStream, isTrue);
 
     final endpoints = await manager.endpoints();
-    final other =
-        endpoints
-            .where(
-              (endpoint) =>
-                  endpoint.isCapture &&
-                  endpoint.id != LoopbackCommunicationsPlatform.captureId,
-            )
-            .firstOrNull;
+    final other = endpoints
+        .where(
+          (endpoint) =>
+              endpoint.isCapture &&
+              endpoint.id != LoopbackCommunicationsPlatform.captureId,
+        )
+        .firstOrNull;
     if (other != null) {
       await session.select(captureId: other.id);
     }
