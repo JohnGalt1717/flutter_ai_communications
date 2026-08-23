@@ -1,11 +1,11 @@
 # Communications Audio
 
-The domain of a live duplex communications Session: capture, render, pairing, sound floor, barge-in, and coverage. Transport, device-order preference, and product UI live in the host app.
+The domain of a communications Session: capture, render, pairing, Endpoint preference enforcement, sound floor, barge-in, and coverage. Transport, preference persistence, and product UI live in the host app.
 
 ## Language
 
 **Session**:
-The live duplex communications context an app holds. It owns capture, render, pairing, sound floor, barge-in, mute, pause, and coverage events.
+The live capture-only, playback-only, or duplex communications context an app holds. It owns capture, render, pairing, sound floor, barge-in, mute, pause, and coverage events.
 _Avoid_: engine, client, call, chat
 
 **Audio manager**:
@@ -27,6 +27,26 @@ _Avoid_: category, type, kind
 **Sound floor**:
 The amplitude below which capture is treated as non-voice. May be adaptive or a host-set fixed value.
 _Avoid_: noise floor, threshold, gate (the gate is the action; the floor is the value)
+
+**Acoustic profile**:
+The Audio manager's evidence-backed description of an Endpoint's microphone placement and available echo/noise processing, derived from native capabilities and, when necessary, a known-Endpoint registry.
+_Avoid_: known device, brand rule, ANC device
+
+**Baseline sound floor**:
+The library-owned starting Sound floor policy selected from an Endpoint's Acoustic profile before adaptive measurement or an explicit user override is applied.
+_Avoid_: default noise floor, device matrix
+
+**Capture processor**:
+A Session-selected policy that transforms captured frames before the single Capture stream: adaptive floor, profile-scaled floor, fixed floor, or pass-through.
+_Avoid_: noise-floor mode, gate type, audio flow
+
+**Profile confidence**:
+How strongly an Acoustic profile is supported, from verified native capabilities through a known-profile match down to Route-class fallback.
+_Avoid_: score, certainty
+
+**Known-profile registry**:
+The shared table of narrowly matched Endpoint family and model aliases used only when native capabilities are insufficient.
+_Avoid_: device matrix, brand list, ANC list
 
 **Barge-in**:
 User speech that interrupts playback without clipping the first word.
@@ -67,6 +87,54 @@ _Avoid_: Isolation dialog (that is host UI)
 **Ephemeral selection**:
 A capture Endpoint, render Endpoint, or sound floor chosen on a live Session. It does not change the preference the host passed to start.
 _Avoid_: preference (that is host-owned and passed at start)
+
+**Endpoint preference**:
+The host-persisted ordered list of enabled Endpoints that the Audio manager continuously resolves from most to least preferred. Persistence and editing belong to the host; live resolution and promotion belong to the Audio manager.
+_Avoid_: device order, default device
+
+**Explicit selection**:
+An Endpoint selected for the current Session that temporarily suspends Endpoint preference resolution while it remains available. It expires when the Endpoint disappears or the Session ends.
+_Avoid_: sticky preference, saved selection
+
+**Desired Pair**:
+The Pair selected by an Explicit selection or Endpoint preference and treated as authoritative by the Audio manager.
+_Avoid_: requested route, target device
+
+**Applied Pair**:
+The Pair most recently sent to the platform for native selection.
+_Avoid_: selected device, requested route
+
+**Observed Pair**:
+The Pair the platform reports is actually carrying capture and render audio.
+_Avoid_: OS preference, current device
+
+**Route convergence**:
+The process of making the Observed Pair match the Desired Pair after start, reset, interruption, Endpoint change, or unwanted OS rerouting.
+_Avoid_: route restore, route workaround
+
+**Session direction**:
+The active edges of a Session: capture-only, playback-only, or duplex.
+_Avoid_: flow type, recorder mode, player mode
+
+**Session purpose**:
+A host-provided identifier describing which product operation owns the one live Session, used to diagnose and present an already-active failure.
+_Avoid_: audio mode, feature stack
+
+**Native Format**:
+The Format a platform audio graph actually accepts after negotiation, which may differ from a Session edge Format and require conversion.
+_Avoid_: requested format, backend format
+
+**Format negotiation**:
+The selection of a verified Native Format from Endpoint capabilities, preferring an exact Session edge Format and otherwise choosing the best conversion source without relying on failure-first probing when capabilities are available.
+_Avoid_: format fallback, retry rate
+
+**Conversion path**:
+How a Session edge Format is related to the Native Format: identity, a single Dart converter, or a verified platform converter. Never two converters on the same edge.
+_Avoid_: transcoder chain, resample mode
+
+**Session status**:
+The structured current readiness or failure state, including success, warning, or error severity, that a host maps to product-specific UI.
+_Avoid_: error string, log state
 
 **Capture stream**:
 The Session byte stream the Transport, visualizer, and VOD all subscribe to — floor-applied, mute as silence, capture Format. There is no second “pretty” tap.

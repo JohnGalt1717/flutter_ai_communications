@@ -59,9 +59,13 @@ class MethodChannelCommunicationsPlatform
   StreamSubscription<dynamic>? _captureSub;
   StreamSubscription<dynamic>? _eventsSub;
   IsolationEvent _lastIsolation = const IsolationEvent(IsolationState.unknown);
+  PairingSnapshot _lastObserved = const PairingSnapshot();
 
   @override
   IsolationEvent get lastIsolation => _lastIsolation;
+
+  @override
+  PairingSnapshot get lastObservedRoute => _lastObserved;
 
   @override
   Future<List<Endpoint>> enumerateEndpoints() async {
@@ -86,20 +90,91 @@ class MethodChannelCommunicationsPlatform
     };
   }
 
+  NativeFormatReport _lastNativeFormats = const NativeFormatReport();
+
+  @override
+  NativeFormatReport get lastNativeFormats => _lastNativeFormats;
+
   @override
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
-    final value = await _methods.invokeMethod<String>('startNative', {
+    final value = await _methods.invokeMethod<Object?>('startNative', {
       'captureId': captureId,
       'renderId': renderId,
+      'captureFormat': _formatMap(captureFormat),
+      'playbackFormat': _formatMap(playbackFormat),
+      'noiseCancelling': noiseCancelling,
     });
     return switch (value) {
       'unavailable' => NativeGraphStart.unavailable,
       'failed' => NativeGraphStart.failed,
-      _ => NativeGraphStart.started,
+      final Map<Object?, Object?> map => _startedFromMap(map),
+      _ => _startedFromEdges(captureFormat, playbackFormat),
     };
+  }
+
+  NativeGraphStart _startedFromEdges(
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+  ) {
+    _lastNativeFormats = NativeFormatReport(
+      capture: captureFormat,
+      playback: playbackFormat,
+    );
+    return NativeGraphStart.started;
+  }
+
+  NativeGraphStart _startedFromMap(Map<Object?, Object?> map) {
+    final status = map['status'] as String? ?? 'started';
+    if (status == 'unavailable') {
+      return NativeGraphStart.unavailable;
+    }
+    if (status == 'failed') {
+      return NativeGraphStart.failed;
+    }
+    _lastNativeFormats = NativeFormatReport(
+      capture: _formatFrom(map['captureFormat']) ??
+          _formatFrom(map['nativeCaptureFormat']),
+      playback: _formatFrom(map['playbackFormat']) ??
+          _formatFrom(map['nativePlaybackFormat']),
+    );
+    return NativeGraphStart.started;
+  }
+
+  Map<String, Object?>? _formatMap(AudioFormat? format) {
+    if (format == null) {
+      return null;
+    }
+    return {
+      'encoding': format.encoding.name,
+      'sampleRate': format.sampleRate,
+      'channels': format.channels,
+    };
+  }
+
+  AudioFormat? _formatFrom(Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+    final encodingName = value['encoding'] as String?;
+    final sampleRate = value['sampleRate'] as int?;
+    if (encodingName == null || sampleRate == null) {
+      return null;
+    }
+    final encoding = AudioEncoding.values.where((e) => e.name == encodingName);
+    if (encoding.isEmpty) {
+      return null;
+    }
+    return AudioFormat(
+      encoding: encoding.first,
+      sampleRate: sampleRate,
+      channels: value['channels'] as int? ?? 1,
+    );
   }
 
   @override
@@ -181,12 +256,20 @@ class MethodChannelCommunicationsPlatform
         );
       case 'route':
         if (payload is Map) {
-          _routeOut.add(
-            OsRouteChange(
-              captureId: payload['captureId'] as String?,
-              renderId: payload['renderId'] as String?,
-            ),
+          final change = OsRouteChange(
+            captureId: payload['captureId'] as String?,
+            renderId: payload['renderId'] as String?,
+            generation: switch (payload['generation']) {
+              final int value => value,
+              final num value => value.toInt(),
+              _ => null,
+            },
           );
+          _lastObserved = PairingSnapshot(
+            captureId: change.captureId ?? _lastObserved.captureId,
+            renderId: change.renderId ?? _lastObserved.renderId,
+          );
+          _routeOut.add(change);
         }
     }
   }
@@ -221,6 +304,7 @@ class MethodChannelCommunicationsPlatform
   IsolationState _isolationState(String name) => switch (name) {
     'on' => IsolationState.on,
     'off' => IsolationState.off,
+    'required' => IsolationState.required,
     'unavailable' => IsolationState.unavailable,
     _ => IsolationState.unknown,
   };

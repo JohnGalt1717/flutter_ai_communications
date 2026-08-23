@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
+import 'package:logging/logging.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
@@ -60,13 +61,31 @@ final class _SessionPageState extends State<SessionPage> {
   double _level = 0;
   final _levels = <double>[];
   List<Endpoint> _endpoints = const [];
+  SessionDiagnostics? _diagnostics;
+  final _pipeline = <String>[];
+  StreamSubscription<LogRecord>? _logSub;
 
   AudioManager get _manager => widget.manager;
 
   @override
   void initState() {
     super.initState();
+    hierarchicalLoggingEnabled = true;
+    Logger(PipelineLog.loggerName).level = Level.INFO;
+    _logSub = Logger(PipelineLog.loggerName).onRecord.listen((record) {
+      _pipeline.add(record.message);
+      if (_pipeline.length > 64) {
+        _pipeline.removeAt(0);
+      }
+    });
     _loadEndpoints();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_logSub?.cancel());
+    unawaited(_session?.stop());
+    super.dispose();
   }
 
   Future<void> _loadEndpoints() async {
@@ -99,8 +118,9 @@ final class _SessionPageState extends State<SessionPage> {
 
   void _bind(Session session) {
     _session = session;
-    _status = 'ready';
+    _status = session.status.code.name;
     _isolation = session.lastIsolation;
+    _diagnostics = session.diagnostics;
     final echo = EchoTransport(session, replay: false);
     _echo = echo;
     unawaited(echo.attach());
@@ -114,6 +134,14 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() => _coverage = event);
       }
     });
+    session.statuses.listen((status) {
+      if (mounted) {
+        setState(() {
+          _status = status.code.name;
+          _diagnostics = session.diagnostics;
+        });
+      }
+    });
     session.capture.listen((bytes) {
       if (!mounted) {
         return;
@@ -124,6 +152,7 @@ final class _SessionPageState extends State<SessionPage> {
         if (_levels.length > 48) {
           _levels.removeAt(0);
         }
+        _diagnostics = session.diagnostics;
       });
     });
     setState(() {});
@@ -138,6 +167,8 @@ final class _SessionPageState extends State<SessionPage> {
         _echo = null;
         _proof = null;
         _status = null;
+        _diagnostics = null;
+        _pipeline.clear();
         _levels.clear();
         _level = 0;
       });
@@ -192,6 +223,10 @@ final class _SessionPageState extends State<SessionPage> {
               'Isolation ${(session.lastIsolation.state.name)}',
               key: const Key('isolation'),
             ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _pipelineKeys(session),
+          ),
           const SizedBox(height: 24),
           SizedBox(
             height: 72,
@@ -300,6 +335,121 @@ final class _SessionPageState extends State<SessionPage> {
         ],
       ),
     );
+  }
+
+  List<Widget> _pipelineKeys(Session? session) {
+    final diagnostics = _diagnostics ?? session?.diagnostics;
+    if (session == null || diagnostics == null) {
+      return const [];
+    }
+    return [
+      const SizedBox(height: 8),
+      Text(
+        '${session.direction.name} ${session.purpose ?? ''}'.trim(),
+        key: const Key('direction'),
+      ),
+      Text(
+        session.status.severity.name,
+        key: const Key('status-severity'),
+      ),
+      Text(
+        session.status.action.name,
+        key: const Key('status-action'),
+      ),
+      Text(
+        '${diagnostics.selectionGeneration}',
+        key: const Key('generation'),
+      ),
+      Text(
+        diagnostics.desired.captureId ?? '',
+        key: const Key('desired-capture'),
+      ),
+      Text(
+        diagnostics.desired.renderId ?? '',
+        key: const Key('desired-render'),
+      ),
+      Text(
+        diagnostics.applied.captureId ?? '',
+        key: const Key('applied-capture'),
+      ),
+      Text(
+        diagnostics.applied.renderId ?? '',
+        key: const Key('applied-render'),
+      ),
+      Text(
+        diagnostics.observed.captureId ?? '',
+        key: const Key('observed-capture'),
+      ),
+      Text(
+        diagnostics.observed.renderId ?? '',
+        key: const Key('observed-render'),
+      ),
+      Text(
+        '${diagnostics.preferenceControlled}',
+        key: const Key('preference-controlled'),
+      ),
+      Text(
+        '${diagnostics.captureFrameCount}',
+        key: const Key('capture-frames'),
+      ),
+      Text(
+        '${diagnostics.recentRms ?? 0}',
+        key: const Key('capture-rms'),
+      ),
+      Text(
+        '${diagnostics.playbackAccepted}/${diagnostics.playbackQueued}/'
+        '${diagnostics.playbackRendered}/${diagnostics.playbackFlushed}',
+        key: const Key('playback-progress'),
+      ),
+      Text(
+        diagnostics.edgeCaptureFormat?.toString() ?? '',
+        key: const Key('edge-capture-format'),
+      ),
+      Text(
+        diagnostics.nativeCaptureFormat?.toString() ?? '',
+        key: const Key('native-capture-format'),
+      ),
+      Text(
+        diagnostics.captureConversionPath.name,
+        key: const Key('capture-conversion-path'),
+      ),
+      Text(
+        diagnostics.edgePlaybackFormat?.toString() ?? '',
+        key: const Key('edge-playback-format'),
+      ),
+      Text(
+        diagnostics.nativePlaybackFormat?.toString() ?? '',
+        key: const Key('native-playback-format'),
+      ),
+      Text(
+        diagnostics.playbackConversionPath.name,
+        key: const Key('playback-conversion-path'),
+      ),
+      Text(
+        diagnostics.acousticProfile?.family.name ?? '',
+        key: const Key('acoustic-profile'),
+      ),
+      Text(
+        '${diagnostics.baselineStep ?? ''}',
+        key: const Key('baseline-step'),
+      ),
+      Text(
+        diagnostics.captureProcessor?.toString() ?? '',
+        key: const Key('capture-processor'),
+      ),
+      Text(
+        '${diagnostics.activeFloor ?? ''}',
+        key: const Key('active-floor'),
+      ),
+      Text(
+        diagnostics.profileConfidence?.name ?? '',
+        key: const Key('profile-confidence'),
+      ),
+      Text(
+        _pipeline.join('\n'),
+        key: const Key('pipeline-log'),
+      ),
+    ];
   }
 }
 

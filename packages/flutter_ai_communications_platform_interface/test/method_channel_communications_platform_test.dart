@@ -7,7 +7,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const methods = MethodChannel('flutter_ai_communications/methods');
-  final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  final messenger =
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   late MethodChannelCommunicationsPlatform platform;
   final calls = <MethodCall>[];
@@ -61,17 +62,88 @@ void main() {
     );
   });
 
-  test('startNative and selectEndpoints keep the same capture stream', () async {
-    final capture = platform.nativeCapture;
-    expect(await platform.startNative(captureId: 'handset-in'), NativeGraphStart.started);
-    await platform.selectEndpoints(captureId: 'handset-in', renderId: 'speaker-out');
-    expect(identical(platform.nativeCapture, capture), isTrue);
-    expect(calls.any((c) => c.method == 'startNative'), isTrue);
-    expect(calls.any((c) => c.method == 'selectEndpoints'), isTrue);
-  });
+  test(
+    'startNative and selectEndpoints keep the same capture stream',
+    () async {
+      final capture = platform.nativeCapture;
+      expect(
+        await platform.startNative(captureId: 'handset-in'),
+        NativeGraphStart.started,
+      );
+      await platform.selectEndpoints(
+        captureId: 'handset-in',
+        renderId: 'speaker-out',
+      );
+      expect(identical(platform.nativeCapture, capture), isTrue);
+      expect(calls.any((c) => c.method == 'startNative'), isTrue);
+      expect(calls.any((c) => c.method == 'selectEndpoints'), isTrue);
+    },
+  );
 
   test('openIsolationSettings is forwarded', () async {
     await platform.openIsolationSettings();
     expect(calls.any((c) => c.method == 'openIsolationSettings'), isTrue);
+  });
+
+  test('startNative forwards noiseCancelling', () async {
+    await platform.startNative(noiseCancelling: false);
+    final call = calls.singleWhere((c) => c.method == 'startNative');
+    expect((call.arguments as Map)['noiseCancelling'], isFalse);
+  });
+
+  test('isolation payload required maps to IsolationState.required', () async {
+    await platform.dispose();
+    const events = EventChannel('flutter_ai_communications/events');
+    late MockStreamHandlerEventSink sink;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          sink = eventSink;
+        },
+      ),
+    );
+    platform = MethodChannelCommunicationsPlatform(platformName: 'ios');
+    final seen = <IsolationEvent>[];
+    final sub = platform.isolation.listen(seen.add);
+    sink.success({'type': 'isolation', 'payload': 'required'});
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.single.state, IsolationState.required);
+    expect(platform.lastIsolation.state, IsolationState.required);
+    await sub.cancel();
+    messenger.setMockStreamHandler(events, null);
+  });
+
+  test('route events update last Observed Pair', () async {
+    await platform.dispose();
+    const events = EventChannel('flutter_ai_communications/events');
+    late MockStreamHandlerEventSink sink;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          sink = eventSink;
+        },
+      ),
+    );
+    platform = MethodChannelCommunicationsPlatform(platformName: 'ios');
+    final seen = <OsRouteChange>[];
+    final sub = platform.osRouteChanges.listen(seen.add);
+    sink.success({
+      'type': 'route',
+      'payload': {
+        'captureId': 'airpods-in',
+        'renderId': 'airpods-out',
+        'generation': 2,
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.single.captureId, 'airpods-in');
+    expect(seen.single.renderId, 'airpods-out');
+    expect(seen.single.generation, 2);
+    expect(platform.lastObservedRoute.captureId, 'airpods-in');
+    expect(platform.lastObservedRoute.renderId, 'airpods-out');
+    await sub.cancel();
+    messenger.setMockStreamHandler(events, null);
   });
 }

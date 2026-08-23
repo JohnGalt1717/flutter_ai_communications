@@ -15,6 +15,9 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var selectedRenderId: String?
   private var paused = false
   private var running = false
+  private var generation = 0
+  private var noiseCancelling = true
+  private var queuedPlaybackFrames: AVAudioFramePosition = 0
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
@@ -38,6 +41,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       startNative(
         captureId: args?["captureId"] as? String,
         renderId: args?["renderId"] as? String,
+        noiseCancelling: args?["noiseCancelling"] as? Bool ?? true,
         result: result
       )
     case "stopNative":
@@ -65,7 +69,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       openIsolationSettings()
       result(nil)
     case "flushPlayback":
-      player?.stop()
+      flushPlayback()
       result(nil)
     default:
       result(FlutterMethodNotImplemented)
@@ -92,9 +96,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func startNative(captureId: String?, renderId: String?, result: @escaping FlutterResult) {
+  private func startNative(
+    captureId: String?,
+    renderId: String?,
+    noiseCancelling: Bool,
+    result: @escaping FlutterResult
+  ) {
     selectedCaptureId = captureId
     selectedRenderId = renderId
+    self.noiseCancelling = noiseCancelling
+    generation += 1
     do {
       try configureSession()
       try startEngine()
@@ -102,6 +113,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       paused = false
       emitCatalog()
       emitIsolation()
+      emitRoute()
       result("started")
     } catch {
       result("failed")
@@ -123,7 +135,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     try session.setCategory(
       .playAndRecord,
       mode: .voiceChat,
-      options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker]
+      options: [.allowBluetooth, .allowBluetoothA2DP]
     )
     try session.setPreferredSampleRate(24_000)
     try session.setActive(true)
@@ -158,6 +170,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     try next.start()
     engine = next
     player = playerNode
+    queuedPlaybackFrames = 0
     playerNode.play()
   }
 
@@ -201,7 +214,25 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         dest[i] = Float(samples[i]) / 32768.0
       }
     }
-    player.scheduleBuffer(buffer, completionHandler: nil)
+    let at: AVAudioTime?
+    if let last = player.lastRenderTime {
+      at = AVAudioTime(
+        sampleTime: last.sampleTime + queuedPlaybackFrames,
+        atRate: format.sampleRate
+      )
+    } else {
+      at = nil
+    }
+    player.scheduleBuffer(buffer, at: at, options: [], completionHandler: nil)
+    queuedPlaybackFrames += AVAudioFramePosition(frames)
+  }
+
+  private func flushPlayback() {
+    player?.stop()
+    queuedPlaybackFrames = 0
+    if running, !paused {
+      player?.play()
+    }
   }
 
   private func selectEndpoints(captureId: String?, renderId: String?) {
@@ -210,6 +241,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     applyRoute()
     do {
       try startEngine()
+      emitRoute()
     } catch {
       emitPath(alive: false)
     }
@@ -231,6 +263,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     let session = AVAudioSession.sharedInstance()
     let inputs = session.availableInputs ?? []
     if let selectedCaptureId {
+      let wanted = pairKey(selectedCaptureId)
+      if let match = inputs.first(where: { pairId(for: $0) == wanted }) {
+        return match
+      }
       if let match = inputs.first(where: { $0.uid == selectedCaptureId }) {
         return match
       }
@@ -246,17 +282,30 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone"),
       endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone"),
     ]
+    var seenPairs = Set(["handset", "speakerphone"])
     for input in session.availableInputs ?? [] {
-      let route = routeClass(for: input.portType)
-      if route == "handset" || route == "speakerphone" { continue }
-      items.append(endpoint(input.uid, input.portName, route, true, input.uid))
+      appendAccessory(input.portType, input.portName, input.uid, &items, &seenPairs)
     }
     for output in session.currentRoute.outputs {
-      let route = routeClass(for: output.portType)
-      if route == "handset" || route == "speakerphone" { continue }
-      items.append(endpoint(output.uid, output.portName, route, false, output.uid))
+      appendAccessory(output.portType, output.portName, output.uid, &items, &seenPairs)
     }
     return items
+  }
+
+  private func appendAccessory(
+    _ portType: AVAudioSession.Port,
+    _ name: String,
+    _ uid: String,
+    _ items: inout [[String: Any]],
+    _ seenPairs: inout Set<String>
+  ) {
+    let route = routeClass(for: portType)
+    if route == "handset" || route == "speakerphone" { return }
+    let pair = applePairId(route, name, uid)
+    if seenPairs.contains(pair) { return }
+    seenPairs.insert(pair)
+    items.append(endpoint("\(pair)-in", name, route, true, pair))
+    items.append(endpoint("\(pair)-out", name, route, false, pair))
   }
 
   private func endpoint(
@@ -273,6 +322,37 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "isCapture": capture,
       "pairId": pairId,
     ]
+  }
+
+  private func pairKey(_ endpointId: String) -> String {
+    if endpointId.hasSuffix("-in") {
+      return String(endpointId.dropLast(3))
+    }
+    if endpointId.hasSuffix("-out") {
+      return String(endpointId.dropLast(4))
+    }
+    return endpointId
+  }
+
+  private func pairId(for port: AVAudioSessionPortDescription) -> String {
+    applePairId(routeClass(for: port.portType), port.portName, port.uid)
+  }
+
+  private func applePairId(_ route: String, _ name: String, _ uid: String) -> String {
+    switch route {
+    case "handset":
+      return "handset"
+    case "speakerphone":
+      return "speakerphone"
+    default:
+      var normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      for suffix in [" microphone", " mic", " speaker", " headphones", " headset"] {
+        if normalized.hasSuffix(suffix) {
+          normalized = String(normalized.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+      }
+      return normalized.isEmpty ? uid : normalized
+    }
   }
 
   private func routeClass(for port: AVAudioSession.Port) -> String {
@@ -301,6 +381,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func isolationState() -> String {
+    if #available(iOS 15.0, *) {
+      if AVAudioSession.sharedInstance().preferredMicrophoneMode == .voiceIsolation {
+        return "on"
+      }
+      return noiseCancelling ? "required" : "off"
+    }
     let session = AVAudioSession.sharedInstance()
     let selector = NSSelectorFromString("preferredMicrophoneMode")
     guard session.responds(to: selector),
@@ -309,14 +395,30 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       return "unavailable"
     }
     // AVAudioSession.MicrophoneMode.voiceIsolation
-    return raw == 2 ? "on" : "off"
+    if raw == 2 {
+      return "on"
+    }
+    return noiseCancelling ? "required" : "off"
   }
 
   private func openIsolationSettings() {
-    if let url = URL(string: UIApplication.openSettingsURLString) {
-      DispatchQueue.main.async {
-        UIApplication.shared.open(url)
+    if #available(iOS 15.0, *) {
+      let hold = running && !paused
+      if hold {
+        engine?.pause()
+        try? AVAudioSession.sharedInstance().setActive(
+          false,
+          options: .notifyOthersOnDeactivation
+        )
       }
+      AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+      if hold {
+        try? AVAudioSession.sharedInstance().setActive(true)
+        try? engine?.start()
+        player?.play()
+      }
+      emitIsolation()
+      return
     }
     emitIsolation()
   }
@@ -331,18 +433,42 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   @objc private func handleRouteChange(_ notification: Notification) {
     emitCatalog()
-    let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
-    let inputs = AVAudioSession.sharedInstance().currentRoute.inputs
+    emitRoute()
+    emitPath(alive: !AVAudioSession.sharedInstance().currentRoute.outputs.isEmpty)
+  }
+
+  private func emitRoute() {
+    let session = AVAudioSession.sharedInstance()
+    let ids = catalogIds(from: session)
     eventSink?(
       [
         "type": "route",
         "payload": [
-          "captureId": inputs.first?.uid as Any,
-          "renderId": outputs.first?.uid as Any,
+          "captureId": ids.capture as Any,
+          "renderId": ids.render as Any,
+          "generation": generation,
         ],
       ]
     )
-    emitPath(alive: !outputs.isEmpty)
+  }
+
+  private func catalogIds(from session: AVAudioSession) -> (capture: String?, render: String?) {
+    if let output = session.currentRoute.outputs.first {
+      switch routeClass(for: output.portType) {
+      case "speakerphone":
+        return ("speaker-in", "speaker-out")
+      case "handset":
+        return ("handset-in", "handset-out")
+      default:
+        let pair = pairId(for: output)
+        return ("\(pair)-in", "\(pair)-out")
+      }
+    }
+    if let input = session.currentRoute.inputs.first {
+      let pair = pairId(for: input)
+      return ("\(pair)-in", "\(pair)-out")
+    }
+    return (nil, nil)
   }
 
   @objc private func handleInterruption(_ notification: Notification) {

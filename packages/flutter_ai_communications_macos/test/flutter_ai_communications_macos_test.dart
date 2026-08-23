@@ -38,6 +38,23 @@ void main() {
     );
   });
 
+  test('AirPods capture and render share one Pair identity', () {
+    expect(
+      macosPairId(
+        routeClass: RouteClass.bluetooth,
+        id: 'HFP-UID',
+        name: 'AirPods Microphone',
+        uid: 'HFP-UID',
+      ),
+      macosPairId(
+        routeClass: RouteClass.bluetooth,
+        id: 'A2DP-UID',
+        name: 'AirPods',
+        uid: 'A2DP-UID',
+      ),
+    );
+  });
+
   test('Bluetooth and USB headsets keep their RouteClass', () {
     expect(
       macosRouteClass(name: 'AirPods', transport: 'blue'),

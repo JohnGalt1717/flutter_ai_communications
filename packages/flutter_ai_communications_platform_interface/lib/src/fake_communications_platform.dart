@@ -114,11 +114,47 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// How many times [startNative] ran.
   int startNativeCalls = 0;
 
+  /// How many times [requestMicrophonePermission] ran.
+  int permissionRequests = 0;
+
+  /// When true, apply/start updates [lastObservedRoute] and may emit an OS route.
+  bool observeOnApply = true;
+
+  /// Last Observed Pair. Command completion does not write this unless
+  /// [observeOnApply] is true.
+  PairingSnapshot observedRoute = const PairingSnapshot();
+
   /// How many times [openIsolationSettings] ran.
   int openIsolationSettingsCalls = 0;
 
   /// How many times [flushPlayback] ran.
   int flushPlaybackCalls = 0;
+
+  /// Optional error thrown from [stopNative].
+  Object? stopNativeError;
+
+  /// When set, [stopNative] waits until this completes.
+  Completer<void>? stopNativeGate;
+
+  /// How many times [resetNative] ran.
+  int resetNativeCalls = 0;
+
+  /// How many times [selectEndpoints] ran.
+  int selectEndpointsCalls = 0;
+
+  /// Monotonic native graph generation.
+  int nativeGeneration = 0;
+
+  /// Native capture Format returned after start. Defaults to the requested edge.
+  AudioFormat? nativeCaptureFormat;
+
+  /// Native playback Format returned after start. Defaults to the requested edge.
+  AudioFormat? nativePlaybackFormat;
+
+  NativeFormatReport _lastNativeFormats = const NativeFormatReport();
+
+  @override
+  NativeFormatReport get lastNativeFormats => _lastNativeFormats;
 
   /// Last Isolation event, replayed when a Session attaches.
   IsolationEvent lastIsolationEvent = const IsolationEvent(
@@ -149,15 +185,24 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   }
 
   @override
-  Future<MicrophonePermission> requestMicrophonePermission() async =>
-      permission;
+  PairingSnapshot get lastObservedRoute => observedRoute;
+
+  @override
+  Future<MicrophonePermission> requestMicrophonePermission() async {
+    permissionRequests++;
+    return permission;
+  }
 
   @override
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
     startNativeCalls++;
+    nativeGeneration++;
     final error = startNativeError;
     if (error != null) {
       throw error;
@@ -165,6 +210,10 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (nativeStart != NativeGraphStart.started) {
       return nativeStart;
     }
+    _lastNativeFormats = NativeFormatReport(
+      capture: nativeCaptureFormat ?? captureFormat,
+      playback: nativePlaybackFormat ?? playbackFormat,
+    );
     selectedCaptureId =
         captureId ??
         catalog.where((endpoint) => endpoint.isCapture).firstOrNull?.id;
@@ -173,15 +222,45 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
         catalog.where((endpoint) => !endpoint.isCapture).firstOrNull?.id;
     nativeRunning = true;
     nativePaused = false;
-    lastIsolationEvent = const IsolationEvent(IsolationState.off);
+    lastIsolationEvent = IsolationEvent(
+      noiseCancelling ? IsolationState.off : IsolationState.unavailable,
+    );
     isolationController.add(lastIsolationEvent);
+    _maybeObserveApplied();
     return NativeGraphStart.started;
   }
 
   @override
   Future<void> stopNative() async {
+    final gate = stopNativeGate;
+    if (gate != null) {
+      await gate.future;
+    }
     nativeRunning = false;
     nativePaused = false;
+    final error = stopNativeError;
+    if (error != null) {
+      throw error;
+    }
+  }
+
+  @override
+  Future<NativeGraphStart> resetNative({
+    String? captureId,
+    String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
+  }) async {
+    resetNativeCalls++;
+    await stopNative();
+    return startNative(
+      captureId: captureId,
+      renderId: renderId,
+      captureFormat: captureFormat,
+      playbackFormat: playbackFormat,
+      noiseCancelling: noiseCancelling,
+    );
   }
 
   @override
@@ -207,12 +286,31 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
+    selectEndpointsCalls++;
     if (captureId != null) {
       selectedCaptureId = captureId;
     }
     if (renderId != null) {
       selectedRenderId = renderId;
     }
+    _maybeObserveApplied();
+  }
+
+  void _maybeObserveApplied() {
+    if (!observeOnApply) {
+      return;
+    }
+    observedRoute = PairingSnapshot(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId,
+    );
+    osRouteController.add(
+      OsRouteChange(
+        captureId: selectedCaptureId,
+        renderId: selectedRenderId,
+        generation: nativeGeneration,
+      ),
+    );
   }
 
   @override

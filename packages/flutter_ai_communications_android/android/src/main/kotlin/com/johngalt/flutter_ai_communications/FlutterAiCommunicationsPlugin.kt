@@ -53,6 +53,14 @@ class FlutterAiCommunicationsPlugin :
     private var selectedRenderId: String? = null
     private val main = Handler(Looper.getMainLooper())
     private var focusRequest: AudioFocusRequest? = null
+    private var captureGeneration = 0
+    private var requestedCaptureRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
+    private var requestedPlaybackRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
+    private var nativeCaptureRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
+    private var nativePlaybackRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
+    private var appliedCaptureId: String? = null
+    private var appliedRenderId: String? = null
+    private var noiseCancelling = true
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -119,6 +127,11 @@ class FlutterAiCommunicationsPlugin :
             "startNative" -> {
                 selectedCaptureId = call.argument("captureId")
                 selectedRenderId = call.argument("renderId")
+                requestedCaptureRate =
+                    AndroidCapturePolicy.requestedSampleRate(call.argument("captureFormat"))
+                requestedPlaybackRate =
+                    AndroidCapturePolicy.requestedSampleRate(call.argument("playbackFormat"))
+                noiseCancelling = call.argument<Boolean>("noiseCancelling") ?: true
                 result.success(startNative())
             }
             "stopNative" -> {
@@ -225,7 +238,7 @@ class FlutterAiCommunicationsPlugin :
         )
     }
 
-    private fun startNative(): String {
+    private fun startNative(): Any {
         val context = appContext ?: return "failed"
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
@@ -237,20 +250,31 @@ class FlutterAiCommunicationsPlugin :
         requestFocus(manager)
         applyRoute()
         return try {
-            startCapture()
-            startPlayback()
+            captureGeneration++
             running.set(true)
             paused.set(false)
+            if (!startCapture(captureGeneration)) {
+                running.set(false)
+                return "failed"
+            }
+            startPlayback()
             emitCatalog()
+            emitRoute()
             emit("isolation", "unavailable")
-            "started"
+            mapOf(
+                "status" to "started",
+                "captureFormat" to AndroidCapturePolicy.formatMap(nativeCaptureRate),
+                "playbackFormat" to AndroidCapturePolicy.formatMap(nativePlaybackRate),
+            )
         } catch (_: Exception) {
+            running.set(false)
             "failed"
         }
     }
 
     private fun stopNative() {
         running.set(false)
+        captureGeneration++
         captureThread?.join(250)
         captureThread = null
         recorder?.stop()
@@ -261,6 +285,9 @@ class FlutterAiCommunicationsPlugin :
         track = null
         val manager = audioManager
         if (manager != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                manager.clearCommunicationDevice()
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 focusRequest?.let { manager.abandonAudioFocusRequest(it) }
             } else {
@@ -271,74 +298,135 @@ class FlutterAiCommunicationsPlugin :
         }
     }
 
-    private fun startCapture() {
+    private fun startCapture(generation: Int): Boolean {
         emitSilence()
         recorder?.release()
-        val min =
-            AudioRecord.getMinBufferSize(
-                24_000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-            )
-        val rec =
-            AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-                24_000,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                min * 2,
-            )
+        recorder = null
+        val rec = openRecorder() ?: return false
         recorder = rec
         rec.startRecording()
+        val min =
+            AudioRecord.getMinBufferSize(
+                nativeCaptureRate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+            ).coerceAtLeast(480)
         captureThread =
             Thread {
                 val buf = ByteArray(min)
-                while (running.get()) {
+                while (AndroidCapturePolicy.shouldRead(running.get(), captureGeneration, generation)) {
                     val n = rec.read(buf, 0, buf.size)
+                    if (AndroidCapturePolicy.isFatalRead(n)) {
+                        emitPath(false)
+                        break
+                    }
                     if (n > 0 && !paused.get()) {
                         val copy = buf.copyOf(n)
                         main.post { captureSink?.success(copy) }
                     }
                 }
             }.also { it.start() }
+        return true
+    }
+
+    private fun openRecorder(): AudioRecord? {
+        val attempted = linkedSetOf<Int>()
+        var rate: Int? = requestedCaptureRate
+        while (rate != null) {
+            attempted += rate
+            val min =
+                AudioRecord.getMinBufferSize(
+                    rate,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+            if (min <= 0) {
+                rate = AndroidCapturePolicy.nextSampleRate(requestedCaptureRate, attempted)
+                continue
+            }
+            val rec =
+                AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                    rate,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    min * 2,
+                )
+            if (rec.state != AudioRecord.STATE_INITIALIZED) {
+                rec.release()
+                rate = AndroidCapturePolicy.nextSampleRate(requestedCaptureRate, attempted)
+                continue
+            }
+            applyPreferredCapture(rec)
+            nativeCaptureRate = rec.sampleRate.takeIf { it > 0 } ?: rate
+            return rec
+        }
+        return null
+    }
+
+    private fun applyPreferredCapture(rec: AudioRecord) {
+        val device = resolveCaptureDevice() ?: return
+        appliedCaptureId = catalogId(device, capture = true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            rec.preferredDevice = device
+        }
     }
 
     private fun restartCapture() {
         if (!running.get()) {
             return
         }
-        running.set(false)
+        val next = ++captureGeneration
         captureThread?.join(250)
-        running.set(true)
-        startCapture()
+        captureThread = null
+        startCapture(next)
+        emitRoute()
     }
 
     private fun startPlayback() {
-        val min =
-            AudioTrack.getMinBufferSize(
-                24_000,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-            )
-        val attrs =
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
-        val format =
-            AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(24_000)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .build()
-        track =
-            AudioTrack.Builder()
-                .setAudioAttributes(attrs)
-                .setAudioFormat(format)
-                .setBufferSizeInBytes(min * 2)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-        track?.play()
+        val attempted = linkedSetOf<Int>()
+        var rate: Int? = requestedPlaybackRate
+        while (rate != null) {
+            attempted += rate
+            val min =
+                AudioTrack.getMinBufferSize(
+                    rate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+            if (min <= 0) {
+                rate = AndroidCapturePolicy.nextSampleRate(requestedPlaybackRate, attempted)
+                continue
+            }
+            val attrs =
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            val format =
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            val next =
+                AudioTrack.Builder()
+                    .setAudioAttributes(attrs)
+                    .setAudioFormat(format)
+                    .setBufferSizeInBytes(min * 2)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+            if (next.state != AudioTrack.STATE_INITIALIZED) {
+                next.release()
+                rate = AndroidCapturePolicy.nextSampleRate(requestedPlaybackRate, attempted)
+                continue
+            }
+            applyPreferredRender(next)
+            nativePlaybackRate = next.sampleRate.takeIf { it > 0 } ?: rate
+            track = next
+            next.play()
+            return
+        }
     }
 
     private fun play(bytes: ByteArray?) {
@@ -350,22 +438,14 @@ class FlutterAiCommunicationsPlugin :
 
     private fun applyRoute() {
         val manager = audioManager ?: return
-        val speaker = selectedRenderId == "speaker-out" || selectedRenderId == "speakerphone-out"
+        val speaker = AndroidCapturePolicy.isSpeakerRender(selectedRenderId)
         @Suppress("DEPRECATION")
         manager.isSpeakerphoneOn = speaker
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val devices = manager.availableCommunicationDevices
-            val match =
-                devices.firstOrNull { it.id.toString() == selectedRenderId }
-                    ?: devices.firstOrNull {
-                        if (speaker) {
-                            it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                        } else {
-                            it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
-                        }
-                    }
-            if (match != null) {
-                manager.setCommunicationDevice(match)
+        val render = resolveRenderDevice()
+        if (render != null) {
+            appliedRenderId = catalogId(render, capture = false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                manager.setCommunicationDevice(render)
             }
         }
     }
@@ -453,21 +533,131 @@ class FlutterAiCommunicationsPlugin :
     }
 
     private fun emitRoute() {
-        val manager = audioManager ?: return
-        val comm =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                manager.communicationDevice
-            } else {
-                null
-            }
+        val captureDevice = observedCaptureDevice()
+        val renderDevice = observedRenderDevice()
+        val captureId =
+            AndroidCapturePolicy.observedId(
+                selectedId = selectedCaptureId,
+                physicalMatchesSelected = captureMatchesSelection(captureDevice),
+                physicalCatalogId = captureDevice?.let { catalogId(it, capture = true) },
+            )
+        val renderId =
+            AndroidCapturePolicy.observedId(
+                selectedId = selectedRenderId,
+                physicalMatchesSelected = renderMatchesSelection(renderDevice),
+                physicalCatalogId = renderDevice?.let { catalogId(it, capture = false) },
+            )
         emit(
             "route",
             mapOf(
-                "captureId" to selectedCaptureId,
-                "renderId" to (comm?.id?.toString() ?: selectedRenderId),
+                "captureId" to captureId,
+                "renderId" to renderId,
+                "generation" to captureGeneration,
             ),
         )
     }
+
+    private fun resolveCaptureDevice(): AudioDeviceInfo? {
+        val manager = audioManager ?: return null
+        val sources = manager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+        val selected = selectedCaptureId
+        if (selected != null) {
+            sources.firstOrNull { it.id.toString() == selected }?.let { return it }
+            sources.firstOrNull { pairKey(it) == selected }?.let { return it }
+        }
+        return when (selected) {
+            "handset-in", "speaker-in", null ->
+                sources.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+            else -> null
+        }
+    }
+
+    private fun resolveRenderDevice(): AudioDeviceInfo? {
+        val manager = audioManager ?: return null
+        val sinks =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                manager.availableCommunicationDevices
+            } else {
+                manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+            }
+        val selected = selectedRenderId
+        if (selected != null) {
+            sinks.firstOrNull { it.id.toString() == selected }?.let { return it }
+            sinks.firstOrNull { pairKey(it) == selected }?.let { return it }
+        }
+        val speaker = AndroidCapturePolicy.isSpeakerRender(selected)
+        return sinks.firstOrNull {
+            if (speaker) {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            } else {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+        }
+    }
+
+    private fun applyPreferredRender(track: AudioTrack) {
+        val device = resolveRenderDevice() ?: return
+        appliedRenderId = catalogId(device, capture = false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            track.preferredDevice = device
+        }
+    }
+
+    private fun observedCaptureDevice(): AudioDeviceInfo? {
+        val preferred =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                recorder?.preferredDevice
+            } else {
+                null
+            }
+        return preferred ?: resolveCaptureDevice()
+    }
+
+    private fun observedRenderDevice(): AudioDeviceInfo? {
+        val manager = audioManager
+        if (manager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            manager.communicationDevice?.let { return it }
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            track?.preferredDevice ?: resolveRenderDevice()
+        } else {
+            resolveRenderDevice()
+        }
+    }
+
+    private fun captureMatchesSelection(device: AudioDeviceInfo?): Boolean {
+        val selected = selectedCaptureId ?: return device != null
+        if (AndroidCapturePolicy.isBuiltinCapture(selected)) {
+            return device?.type == AudioDeviceInfo.TYPE_BUILTIN_MIC
+        }
+        return device?.id?.toString() == selected || device?.let(::pairKey) == selected
+    }
+
+    private fun renderMatchesSelection(device: AudioDeviceInfo?): Boolean {
+        val selected = selectedRenderId ?: return device != null
+        if (AndroidCapturePolicy.isSpeakerRender(selected)) {
+            return device?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        }
+        if (selected == "handset-out") {
+            return device?.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+        }
+        return device?.id?.toString() == selected || device?.let(::pairKey) == selected
+    }
+
+    private fun catalogId(
+        device: AudioDeviceInfo,
+        capture: Boolean,
+    ): String {
+        val route = routeClass(device.type)
+        return when (route) {
+            "handset" -> if (capture) "handset-in" else "handset-out"
+            "speakerphone" -> if (capture) "speaker-in" else "speaker-out"
+            else -> device.id.toString()
+        }
+    }
+
+    private fun pairKey(device: AudioDeviceInfo): String =
+        device.address?.ifEmpty { device.id.toString() } ?: device.id.toString()
 
     private fun emitPath(alive: Boolean) {
         emit("path", mapOf("alive" to alive, "reason" to if (alive) null else "pathDead"))

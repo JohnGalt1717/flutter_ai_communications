@@ -28,11 +28,14 @@ final class CoverageHint {
 /// OS-forced capture/render change.
 final class OsRouteChange {
   /// Creates an OS-forced route change.
-  const OsRouteChange({this.captureId, this.renderId});
+  const OsRouteChange({this.captureId, this.renderId, this.generation});
 
   /// Forced capture Endpoint id.
   final String? captureId;
 
   /// Forced render Endpoint id.
   final String? renderId;
+
+  /// Native graph generation that produced this observation, if known.
+  final int? generation;
 }

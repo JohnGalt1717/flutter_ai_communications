@@ -102,6 +102,9 @@ final class LoopbackCommunicationsPlatform
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
     _captureId = captureId;
     _renderId = renderId;
@@ -117,6 +120,9 @@ final class LoopbackCommunicationsPlatform
       started = await inner.startNative(
         captureId: innerCapture,
         renderId: innerRender,
+        captureFormat: captureFormat,
+        playbackFormat: playbackFormat,
+        noiseCancelling: noiseCancelling,
       );
     } on Object {
       started = NativeGraphStart.failed;

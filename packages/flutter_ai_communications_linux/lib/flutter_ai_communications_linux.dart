@@ -51,6 +51,9 @@ final class FlutterAiCommunicationsLinux
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
     _lastIsolation = const IsolationEvent(IsolationState.unavailable);
     _isolation.add(_lastIsolation);

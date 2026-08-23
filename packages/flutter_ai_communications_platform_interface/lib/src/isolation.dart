@@ -6,8 +6,11 @@ enum IsolationState {
   /// Isolation is on.
   on,
 
-  /// Isolation is off.
+  /// Isolation is off and not required for this Session.
   off,
+
+  /// Noise cancelling is on and Isolation is still off.
+  required,
 
   /// This platform cannot detect Isolation.
   unavailable,
