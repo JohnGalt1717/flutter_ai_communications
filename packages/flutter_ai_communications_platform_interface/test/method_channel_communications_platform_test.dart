@@ -114,6 +114,25 @@ void main() {
     messenger.setMockStreamHandler(events, null);
   });
 
+  test('EventChannel listen waits for the first native call', () async {
+    await platform.dispose();
+    var listenCount = 0;
+    const events = EventChannel('flutter_ai_communications/events');
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          listenCount++;
+        },
+      ),
+    );
+    platform = MethodChannelCommunicationsPlatform(platformName: 'android');
+    expect(listenCount, 0);
+    await platform.enumerateEndpoints();
+    expect(listenCount, 1);
+    messenger.setMockStreamHandler(events, null);
+  });
+
   test('route events update last Observed Pair', () async {
     await platform.dispose();
     const events = EventChannel('flutter_ai_communications/events');

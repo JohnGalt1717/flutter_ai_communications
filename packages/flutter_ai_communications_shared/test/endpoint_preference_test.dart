@@ -163,6 +163,39 @@ void main() {
     expect(resolved.desired.captureId, 'speaker-in');
   });
 
+  test('host list ranks webcam capture and USB render above AirPods', () {
+    const desktop = [
+      Endpoint(
+        id: 'brio-in',
+        name: 'Logitech BRIO',
+        routeClass: RouteClass.wired,
+        isCapture: true,
+        pairId: 'logitech brio',
+      ),
+      Endpoint(
+        id: 'usb-out',
+        name: 'USB Audio',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+        pairId: 'usb audio',
+      ),
+      ...catalog,
+    ];
+    const preference = EndpointPreference(
+      entries: [
+        EndpointPreferenceEntry(id: 'brio-in'),
+        EndpointPreferenceEntry(id: 'usb-out'),
+        EndpointPreferenceEntry(id: 'airpods-in'),
+      ],
+    );
+    final resolved = resolver.resolve(catalog: desktop, preference: preference);
+    expect(resolved.preferenceControlled, isTrue);
+    expect(resolved.desired.captureId, 'brio-in');
+    expect(resolved.desired.renderId, 'usb-out');
+    expect(resolved.desired.captureOverride, isTrue);
+    expect(resolved.desired.renderOverride, isTrue);
+  });
+
   test('incomplete automatic Pairs are skipped', () {
     const captureOnlyBluetooth = [
       Endpoint(

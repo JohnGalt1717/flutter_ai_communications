@@ -26,16 +26,27 @@ final class FlutterAiCommunicationsLinux
       StreamController<List<Endpoint>>.broadcast();
   final StreamController<CoverageHint> _path =
       StreamController<CoverageHint>.broadcast();
+  final StreamController<OsRouteChange> _routes =
+      StreamController<OsRouteChange>.broadcast();
   IsolationEvent _lastIsolation = const IsolationEvent(
     IsolationState.unavailable,
   );
+  PairingSnapshot _observed = const PairingSnapshot();
   Timer? _catalogPoll;
+  var _running = false;
+  var _generation = 0;
 
   @override
   String get platformName => 'linux';
 
   @override
   IsolationEvent get lastIsolation => _lastIsolation;
+
+  @override
+  PairingSnapshot get lastObservedRoute => _observed;
+
+  @override
+  Stream<OsRouteChange> get osRouteChanges => _routes.stream;
 
   @override
   Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
@@ -59,8 +70,11 @@ final class FlutterAiCommunicationsLinux
     _isolation.add(_lastIsolation);
     final started = _backend.start(captureId: captureId, renderId: renderId);
     if (started == NativeGraphStart.started) {
+      _running = true;
+      _generation++;
       _catalog.add(_backend.enumerate());
       _path.add(const CoverageHint.ok());
+      _emitObserved();
       _catalogPoll?.cancel();
       _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
         _catalog.add(_backend.enumerate());
@@ -73,6 +87,7 @@ final class FlutterAiCommunicationsLinux
   Future<void> stopNative() async {
     _catalogPoll?.cancel();
     _catalogPoll = null;
+    _running = false;
     _backend.stop();
   }
 
@@ -91,6 +106,20 @@ final class FlutterAiCommunicationsLinux
   @override
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
+    if (_running) {
+      _emitObserved();
+    }
+  }
+
+  void _emitObserved() {
+    _observed = _backend.observed;
+    _routes.add(
+      OsRouteChange(
+        captureId: _observed.captureId,
+        renderId: _observed.renderId,
+        generation: _generation,
+      ),
+    );
   }
 
   @override

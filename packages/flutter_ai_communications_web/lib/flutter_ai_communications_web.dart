@@ -9,6 +9,7 @@ import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 import 'package:web/web.dart' as web;
 
 import 'src/web_endpoint_policy.dart';
+import 'src/web_route_class.dart';
 
 /// Web adapter: `getUserMedia` then `enumerateDevices` + `groupId` pairing.
 ///
@@ -82,7 +83,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async {
-    return _acquireCapture(_captureId);
+    final granted = await _acquireCapture(_captureId);
+    if (granted == MicrophonePermission.granted) {
+      await _refreshCatalog();
+    }
+    return granted;
   }
 
   @override
@@ -276,9 +281,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           Endpoint(
             id: device.deviceId,
             name: device.label.isEmpty ? device.deviceId : device.label,
-            routeClass: device.kind == 'audiooutput'
-                ? RouteClass.speakerphone
-                : RouteClass.wired,
+            routeClass: webRouteClass(
+              name: device.label.isEmpty ? device.deviceId : device.label,
+              isCapture: device.kind == 'audioinput',
+            ),
             isCapture: device.kind == 'audioinput',
             pairId: device.groupId.isEmpty ? device.deviceId : device.groupId,
           ),
@@ -301,17 +307,22 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _generation++;
     final source = context.createMediaStreamSource(stream);
     _source = source;
-    final processor = context.createScriptProcessor(2048, 1, 1);
+    final processor = context.createScriptProcessor(2048, 2, 1);
     _processor = processor;
     processor.onaudioprocess = ((web.AudioProcessingEvent event) {
       if (_paused || !_running) {
         return;
       }
-      final input = event.inputBuffer.getChannelData(0).toDart;
-      final out = Uint8List(input.length * 2);
+      final channels = event.inputBuffer.numberOfChannels;
+      final left = event.inputBuffer.getChannelData(0).toDart;
+      final right = channels > 1
+          ? event.inputBuffer.getChannelData(1).toDart
+          : left;
+      final out = Uint8List(left.length * 2);
       final data = ByteData.sublistView(out);
-      for (var i = 0; i < input.length; i++) {
-        final sample = (input[i] * 32767).round().clamp(-32767, 32767);
+      for (var i = 0; i < left.length; i++) {
+        final mixed = channels > 1 ? (left[i] + right[i]) / 2 : left[i];
+        final sample = (mixed * 32767).round().clamp(-32767, 32767);
         data.setInt16(i * 2, sample, Endian.little);
       }
       _capture.add(out);

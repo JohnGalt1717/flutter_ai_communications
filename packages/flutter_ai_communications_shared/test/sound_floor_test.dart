@@ -8,8 +8,18 @@ void main() {
   test('lounge rumble is dropped after the adaptive floor rises', () {
     final floor = SoundFloor();
     const rate = 24000;
-    final lounge = _tone(sampleRate: rate, hz: 80, seconds: 0.12, amplitude: 4000);
-    final voice = _tone(sampleRate: rate, hz: 700, seconds: 0.12, amplitude: 14000);
+    final lounge = _tone(
+      sampleRate: rate,
+      hz: 80,
+      seconds: 0.12,
+      amplitude: 4000,
+    );
+    final voice = _tone(
+      sampleRate: rate,
+      hz: 700,
+      seconds: 0.12,
+      amplitude: 14000,
+    );
 
     for (var i = 0; i < 8; i++) {
       floor.apply(lounge, sampleRate: rate);
@@ -26,12 +36,22 @@ void main() {
   test('fixed floor is honored; null returns to adaptive', () {
     final floor = SoundFloor(fixed: 0.9);
     const rate = 24000;
-    final voice = _tone(sampleRate: rate, hz: 700, seconds: 0.08, amplitude: 8000);
+    final voice = _tone(
+      sampleRate: rate,
+      hz: 700,
+      seconds: 0.08,
+      amplitude: 8000,
+    );
     expect(floor.apply(voice, sampleRate: rate), Uint8List(voice.length));
 
     floor.setFloor(null);
     expect(floor.fixed, isNull);
-    final quiet = _tone(sampleRate: rate, hz: 80, seconds: 0.08, amplitude: 400);
+    final quiet = _tone(
+      sampleRate: rate,
+      hz: 80,
+      seconds: 0.08,
+      amplitude: 400,
+    );
     floor.apply(quiet, sampleRate: rate);
     expect(floor.noiseRms, greaterThan(0));
   });

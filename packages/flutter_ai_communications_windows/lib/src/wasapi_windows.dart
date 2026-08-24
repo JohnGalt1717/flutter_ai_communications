@@ -50,6 +50,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
   var _paused = false;
   String? _captureId;
   String? _renderId;
+  String? _boundCaptureId;
+  String? _boundRenderId;
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -157,6 +159,12 @@ final class WasapiWindowsBackend implements WasapiBackend {
   }
 
   @override
+  PairingSnapshot get observed => PairingSnapshot(
+    captureId: _boundCaptureId ?? _captureId,
+    renderId: _boundRenderId ?? _renderId,
+  );
+
+  @override
   void flush() {
     try {
       _renderClient?.stop();
@@ -185,12 +193,21 @@ final class WasapiWindowsBackend implements WasapiBackend {
     }
     final graph = Arena();
     try {
-      final captureDevice = _device(enumerator, _captureId, eCapture, graph);
-      final renderDevice = _device(enumerator, _renderId, eRender, graph);
+      final captureOpened = _openDevice(
+        enumerator,
+        _captureId,
+        eCapture,
+        graph,
+      );
+      final renderOpened = _openDevice(enumerator, _renderId, eRender, graph);
+      final captureDevice = captureOpened.device;
+      final renderDevice = renderOpened.device;
       if (captureDevice == null || renderDevice == null) {
         graph.releaseAll();
         return false;
       }
+      _boundCaptureId = captureOpened.id;
+      _boundRenderId = renderOpened.id;
       final format = graph<WAVEFORMATEX>();
       format.ref
         ..wFormatTag = WAVE_FORMAT_PCM
@@ -267,6 +284,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
     _renderClient = null;
     _render = null;
     _renderFrames = 0;
+    _boundCaptureId = null;
+    _boundRenderId = null;
   }
 
   void _pumpCapture() {
@@ -302,7 +321,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
     _captureOut.add(Uint8List(_silenceBytes));
   }
 
-  IMMDevice? _device(
+  ({IMMDevice? device, String? id}) _openDevice(
     IMMDeviceEnumerator enumerator,
     String? id,
     EDataFlow flow,
@@ -314,7 +333,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
           PCWSTR(id.toNativeUtf16(allocator: arena)),
         );
         if (found != null) {
-          return arena.adopt(found);
+          return (device: arena.adopt(found), id: id);
         }
       } on Object {
         // Fall back to the default communications Endpoint.
@@ -325,9 +344,16 @@ final class WasapiWindowsBackend implements WasapiBackend {
         flow,
         eCommunications,
       );
-      return fallback == null ? null : arena.adopt(fallback);
+      if (fallback == null) {
+        return (device: null, id: null);
+      }
+      final adopted = arena.adopt(fallback);
+      final idPtr = adopted.getId();
+      final openedId = idPtr.toDartString();
+      free(idPtr);
+      return (device: adopted, id: openedId);
     } on Object {
-      return null;
+      return (device: null, id: null);
     }
   }
 

@@ -12,13 +12,21 @@ final class EchoTransport {
   ///
   /// [replay] plays capture back. Leave it on for digital identity.
   /// Turn it off on a live device so the mic does not hear itself.
-  EchoTransport(this.session, {this.replay = true});
+  /// [maxReceivedBytes] keeps the identity buffer finite.
+  EchoTransport(
+    this.session, {
+    this.replay = true,
+    this.maxReceivedBytes = 19200,
+  });
 
   /// Live Session this Transport is attached to.
   final Session session;
 
   /// Whether received frames are sent to [Session.play].
   final bool replay;
+
+  /// First-N capture bytes retained for identity.
+  final int maxReceivedBytes;
 
   final BytesBuilder _received = BytesBuilder();
   StreamSubscription<Uint8List>? _sub;
@@ -29,12 +37,7 @@ final class EchoTransport {
   /// Subscribes to [Session.capture] and plays each frame back.
   Future<void> attach() async {
     await _sub?.cancel();
-    _sub = session.capture.listen((bytes) {
-      _received.add(bytes);
-      if (replay) {
-        unawaited(session.play(bytes));
-      }
-    });
+    _sub = session.capture.listen(_onCapture);
   }
 
   /// Starts a new identity leg after an Endpoint pick.
@@ -46,5 +49,19 @@ final class EchoTransport {
   Future<void> dispose() async {
     await _sub?.cancel();
     _sub = null;
+  }
+
+  void _onCapture(Uint8List bytes) {
+    final room = maxReceivedBytes - _received.length;
+    if (room > 0) {
+      if (bytes.length <= room) {
+        _received.add(bytes);
+      } else {
+        _received.add(Uint8List.sublistView(bytes, 0, room));
+      }
+    }
+    if (replay) {
+      unawaited(session.play(bytes));
+    }
   }
 }

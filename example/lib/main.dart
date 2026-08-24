@@ -1,18 +1,38 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
-import 'package:logging/logging.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
+import 'package:logging/logging.dart';
+import 'package:marionette_flutter/marionette_flutter.dart';
+import 'package:marionette_logging/marionette_logging.dart';
 
 void main() {
+  _installMarionetteBinding();
   LoopbackCommunicationsPlatform.wrapRegistered();
   runApp(const ExampleApp());
+}
+
+/// Registers Marionette + `get_logs` in debug `flutter run` only.
+///
+/// Tests must not call this `main()`: [MarionetteBinding] is a
+/// [WidgetsBinding] and cannot share a process with the test binding.
+void _installMarionetteBinding() {
+  if (kDebugMode) {
+    hierarchicalLoggingEnabled = true;
+    Logger.root.level = Level.INFO;
+    Logger(PipelineLog.loggerName).level = Level.INFO;
+    MarionetteBinding.ensureInitialized(
+      MarionetteConfiguration(logCollector: LoggingLogCollector()),
+    );
+    return;
+  }
+  WidgetsFlutterBinding.ensureInitialized();
 }
 
 /// Marionette harness that looks like an AI voice client.
@@ -348,18 +368,9 @@ final class _SessionPageState extends State<SessionPage> {
         '${session.direction.name} ${session.purpose ?? ''}'.trim(),
         key: const Key('direction'),
       ),
-      Text(
-        session.status.severity.name,
-        key: const Key('status-severity'),
-      ),
-      Text(
-        session.status.action.name,
-        key: const Key('status-action'),
-      ),
-      Text(
-        '${diagnostics.selectionGeneration}',
-        key: const Key('generation'),
-      ),
+      Text(session.status.severity.name, key: const Key('status-severity')),
+      Text(session.status.action.name, key: const Key('status-action')),
+      Text('${diagnostics.selectionGeneration}', key: const Key('generation')),
       Text(
         diagnostics.desired.captureId ?? '',
         key: const Key('desired-capture'),
@@ -392,10 +403,7 @@ final class _SessionPageState extends State<SessionPage> {
         '${diagnostics.captureFrameCount}',
         key: const Key('capture-frames'),
       ),
-      Text(
-        '${diagnostics.recentRms ?? 0}',
-        key: const Key('capture-rms'),
-      ),
+      Text('${diagnostics.recentRms ?? 0}', key: const Key('capture-rms')),
       Text(
         '${diagnostics.playbackAccepted}/${diagnostics.playbackQueued}/'
         '${diagnostics.playbackRendered}/${diagnostics.playbackFlushed}',
@@ -437,18 +445,12 @@ final class _SessionPageState extends State<SessionPage> {
         diagnostics.captureProcessor?.toString() ?? '',
         key: const Key('capture-processor'),
       ),
-      Text(
-        '${diagnostics.activeFloor ?? ''}',
-        key: const Key('active-floor'),
-      ),
+      Text('${diagnostics.activeFloor ?? ''}', key: const Key('active-floor')),
       Text(
         diagnostics.profileConfidence?.name ?? '',
         key: const Key('profile-confidence'),
       ),
-      Text(
-        _pipeline.join('\n'),
-        key: const Key('pipeline-log'),
-      ),
+      Text(_pipeline.join('\n'), key: const Key('pipeline-log')),
     ];
   }
 }

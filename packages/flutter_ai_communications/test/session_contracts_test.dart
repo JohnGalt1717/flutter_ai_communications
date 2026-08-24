@@ -61,6 +61,92 @@ void main() {
       expect(session.preference.endpoints.entries.first.id, 'handset-in');
     });
 
+    test(
+      'AirPods remaining in the catalog lose when ranked below USB',
+      () async {
+        platform.catalog = [
+          ...FakeCommunicationsPlatform.defaultCatalog,
+          const Endpoint(
+            id: 'usb-in',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'usb',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb',
+          ),
+        ];
+        final session = await ready(
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(id: 'usb-in'),
+                EndpointPreferenceEntry(id: 'airpods-in'),
+              ],
+            ),
+          ),
+        );
+        expect(session.diagnostics.desired.captureId, 'usb-in');
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        expect(session.diagnostics.preferenceControlled, isTrue);
+        expect(platform.selectedCaptureId, 'usb-in');
+        expect(platform.selectedRenderId, 'usb-out');
+
+        platform.osRouteController.add(
+          const OsRouteChange(captureId: 'airpods-in', renderId: 'airpods-out'),
+        );
+        await _microtask();
+        expect(session.diagnostics.desired.captureId, 'usb-in');
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        expect(session.diagnostics.observed.captureId, 'airpods-in');
+        expect(session.diagnostics.observedMatchesDesired, isFalse);
+      },
+    );
+
+    test(
+      'host list uses webcam capture and USB render above AirPods',
+      () async {
+        platform.catalog = [
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb audio',
+          ),
+          ...FakeCommunicationsPlatform.defaultCatalog,
+        ];
+        final session = await ready(
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(id: 'brio-in'),
+                EndpointPreferenceEntry(id: 'usb-out'),
+                EndpointPreferenceEntry(id: 'airpods-in'),
+              ],
+            ),
+          ),
+        );
+        expect(session.diagnostics.preferenceControlled, isTrue);
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        expect(platform.selectedCaptureId, 'brio-in');
+        expect(platform.selectedRenderId, 'usb-out');
+      },
+    );
+
     test('explicit select overrides preference without rewriting it', () async {
       final session = await ready();
       await session.select(captureId: 'handset-in');

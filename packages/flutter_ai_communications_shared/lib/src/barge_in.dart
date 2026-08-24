@@ -31,7 +31,8 @@ final class BargeIn {
     _buffer.add(frame);
     _bufferedSamples += frame.length ~/ 2;
     final maxSamples = (sampleRate * preroll.inMilliseconds / 1000).round();
-    while (_buffer.length > 1 && _bufferedSamples - _buffer.first.length ~/ 2 > maxSamples) {
+    while (_buffer.length > 1 &&
+        _bufferedSamples - _buffer.first.length ~/ 2 > maxSamples) {
       _bufferedSamples -= _buffer.removeAt(0).length ~/ 2;
     }
   }

@@ -126,8 +126,10 @@ final class PreferenceResolver {
 
   /// Resolves the Desired Pair.
   ///
-  /// Automatic selection requires a complete Pair for the requested edges.
-  /// Explicit selection may be split and never falls back while available.
+  /// An empty host list uses platform default complete Pairs. A host-supplied
+  /// list fills capture and render independently, so a desktop webcam and a
+  /// USB render Endpoint can outrank AirPods. Explicit selection may be
+  /// split and never falls back while available.
   PreferenceResolution resolve({
     required List<Endpoint> catalog,
     EndpointPreference preference = const EndpointPreference(),
@@ -148,9 +150,31 @@ final class PreferenceResolver {
       return explicit;
     }
 
-    final entries = preference.isEmpty
-        ? EndpointPreference.platformDefault(catalog).entries
-        : preference.entries;
+    if (preference.isEmpty) {
+      return _walkCompletePairs(
+        catalog: catalog,
+        entries: EndpointPreference.platformDefault(catalog).entries,
+        requireCapture: requireCapture,
+        requireRender: requireRender,
+        unusablePairIds: unusablePairIds,
+      );
+    }
+    return _fillEdges(
+      catalog: catalog,
+      entries: preference.entries,
+      requireCapture: requireCapture,
+      requireRender: requireRender,
+      unusablePairIds: unusablePairIds,
+    );
+  }
+
+  PreferenceResolution _walkCompletePairs({
+    required List<Endpoint> catalog,
+    required List<EndpointPreferenceEntry> entries,
+    required bool requireCapture,
+    required bool requireRender,
+    required Set<String> unusablePairIds,
+  }) {
     final unresolved = <String>[];
     for (final entry in entries) {
       final endpoint = _byId(catalog, entry.id);
@@ -179,6 +203,73 @@ final class PreferenceResolver {
         preferenceControlled: true,
         unresolvedIds: unresolved,
       );
+    }
+    return PreferenceResolution(
+      desired: const PairingSnapshot(),
+      preferenceControlled: true,
+      unresolvedIds: unresolved,
+      exhausted: true,
+    );
+  }
+
+  PreferenceResolution _fillEdges({
+    required List<Endpoint> catalog,
+    required List<EndpointPreferenceEntry> entries,
+    required bool requireCapture,
+    required bool requireRender,
+    required Set<String> unusablePairIds,
+  }) {
+    final unresolved = <String>[];
+    String? captureId;
+    String? renderId;
+    String? capturePairId;
+    String? renderPairId;
+    for (final entry in entries) {
+      final endpoint = _byId(catalog, entry.id);
+      if (endpoint == null) {
+        unresolved.add(entry.id);
+        continue;
+      }
+      if (!entry.enabled) {
+        continue;
+      }
+      final pair = _pairer.pairFor(endpoint, catalog);
+      if (pair != null && unusablePairIds.contains(pair.id)) {
+        continue;
+      }
+      if (endpoint.isCapture && captureId == null) {
+        captureId = endpoint.id;
+        capturePairId = endpoint.pairId;
+      } else if (!endpoint.isCapture && renderId == null) {
+        renderId = endpoint.id;
+        renderPairId = endpoint.pairId;
+      }
+      if (captureId == null && pair?.capture != null) {
+        captureId = pair!.capture!.id;
+        capturePairId = pair.capture!.pairId;
+      }
+      if (renderId == null && pair?.render != null) {
+        renderId = pair!.render!.id;
+        renderPairId = pair.render!.pairId;
+      }
+      final captureReady = !requireCapture || captureId != null;
+      final renderReady = !requireRender || renderId != null;
+      if (captureReady && renderReady) {
+        final split =
+            captureId != null &&
+            renderId != null &&
+            capturePairId != renderPairId;
+        return PreferenceResolution(
+          desired: PairingSnapshot(
+            captureId: captureId,
+            renderId: renderId,
+            captureOverride: split,
+            renderOverride: split,
+          ),
+          preferenceControlled: true,
+          unresolvedIds: unresolved,
+        );
+      }
     }
     return PreferenceResolution(
       desired: const PairingSnapshot(),

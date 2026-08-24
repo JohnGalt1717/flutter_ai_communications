@@ -61,6 +61,7 @@ class FlutterAiCommunicationsPlugin :
     private var appliedCaptureId: String? = null
     private var appliedRenderId: String? = null
     private var noiseCancelling = true
+    private var communicationDeviceListener: Any? = null
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -115,6 +116,7 @@ class FlutterAiCommunicationsPlugin :
             },
         )
         audioManager?.registerAudioDeviceCallback(deviceCallback, main)
+        listenForCommunicationDevice()
     }
 
     override fun onMethodCall(
@@ -154,6 +156,7 @@ class FlutterAiCommunicationsPlugin :
                 selectedCaptureId = call.argument("captureId") ?: selectedCaptureId
                 selectedRenderId = call.argument("renderId") ?: selectedRenderId
                 applyRoute()
+                restartPlayback()
                 restartCapture()
                 result.success(null)
             }
@@ -174,6 +177,7 @@ class FlutterAiCommunicationsPlugin :
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         stopNative()
         audioManager?.unregisterAudioDeviceCallback(deviceCallback)
+        stopListeningForCommunicationDevice()
         methods.setMethodCallHandler(null)
         captureChannel.setStreamHandler(null)
         eventsChannel.setStreamHandler(null)
@@ -367,7 +371,9 @@ class FlutterAiCommunicationsPlugin :
     private fun applyPreferredCapture(rec: AudioRecord) {
         val device = resolveCaptureDevice() ?: return
         appliedCaptureId = catalogId(device, capture = true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            AndroidCapturePolicy.shouldPinPreferredCapture(selectedCaptureId)
+        ) {
             rec.preferredDevice = device
         }
     }
@@ -436,11 +442,25 @@ class FlutterAiCommunicationsPlugin :
         track?.write(bytes, 0, bytes.size)
     }
 
+    private fun restartPlayback() {
+        if (!running.get()) {
+            return
+        }
+        track?.stop()
+        track?.release()
+        track = null
+        startPlayback()
+    }
+
     private fun applyRoute() {
         val manager = audioManager ?: return
-        val speaker = AndroidCapturePolicy.isSpeakerRender(selectedRenderId)
+        manager.mode = AudioManager.MODE_IN_COMMUNICATION
+        val plan = AndroidCapturePolicy.planApplyRoute(selectedRenderId)
         @Suppress("DEPRECATION")
-        manager.isSpeakerphoneOn = speaker
+        manager.isSpeakerphoneOn = plan.speakerphoneOn
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && plan.clearCommunicationDevice) {
+            manager.clearCommunicationDevice()
+        }
         val render = resolveRenderDevice()
         if (render != null) {
             appliedRenderId = catalogId(render, capture = false)
@@ -453,8 +473,14 @@ class FlutterAiCommunicationsPlugin :
     private fun enumerate(): List<Map<String, Any>> {
         val manager = audioManager ?: return emptyList()
         val items = mutableListOf<Map<String, Any>>()
-        items += endpoint("handset-in", "Handset", "handset", true, "handset")
-        items += endpoint("handset-out", "Handset", "handset", false, "handset")
+        val hasEarpiece =
+            manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+                it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+        if (AndroidCapturePolicy.shouldAdvertiseHandset(hasEarpiece)) {
+            items += endpoint("handset-in", "Handset", "handset", true, "handset")
+            items += endpoint("handset-out", "Handset", "handset", false, "handset")
+        }
         items += endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone")
         items += endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone")
         for (device in manager.getDevices(AudioManager.GET_DEVICES_ALL)) {
@@ -541,9 +567,13 @@ class FlutterAiCommunicationsPlugin :
                 physicalMatchesSelected = captureMatchesSelection(captureDevice),
                 physicalCatalogId = captureDevice?.let { catalogId(it, capture = true) },
             )
+        val speakerphoneOn =
+            @Suppress("DEPRECATION")
+            audioManager?.isSpeakerphoneOn == true
         val renderId =
-            AndroidCapturePolicy.observedId(
+            AndroidCapturePolicy.observedRenderId(
                 selectedId = selectedRenderId,
+                speakerphoneOn = speakerphoneOn,
                 physicalMatchesSelected = renderMatchesSelection(renderDevice),
                 physicalCatalogId = renderDevice?.let { catalogId(it, capture = false) },
             )
@@ -572,14 +602,40 @@ class FlutterAiCommunicationsPlugin :
         }
     }
 
+    private fun listenForCommunicationDevice() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
+        }
+        val manager = audioManager ?: return
+        val listener =
+            AudioManager.OnCommunicationDeviceChangedListener {
+                emitRoute()
+            }
+        communicationDeviceListener = listener
+        manager.addOnCommunicationDeviceChangedListener({ runnable -> main.post(runnable) }, listener)
+    }
+
+    private fun stopListeningForCommunicationDevice() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
+        }
+        val listener = communicationDeviceListener as? AudioManager.OnCommunicationDeviceChangedListener
+        communicationDeviceListener = null
+        if (listener != null) {
+            audioManager?.removeOnCommunicationDeviceChangedListener(listener)
+        }
+    }
+
     private fun resolveRenderDevice(): AudioDeviceInfo? {
         val manager = audioManager ?: return null
-        val sinks =
+        val comms =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 manager.availableCommunicationDevices
             } else {
-                manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+                emptyList()
             }
+        val outputs = manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+        val sinks = (comms + outputs).distinctBy { it.id }
         val selected = selectedRenderId
         if (selected != null) {
             sinks.firstOrNull { it.id.toString() == selected }?.let { return it }

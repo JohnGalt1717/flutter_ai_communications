@@ -44,12 +44,46 @@ internal object AndroidCapturePolicy {
     fun isBuiltinCapture(selectedId: String?): Boolean =
         selectedId == "handset-in" || selectedId == "speaker-in"
 
+    fun shouldPinPreferredCapture(selectedId: String?): Boolean =
+        selectedId != null && !isBuiltinCapture(selectedId)
+
     fun isSpeakerRender(selectedId: String?): Boolean =
         selectedId == "speaker-out" || selectedId == "speakerphone-out"
+
+    /** Tablets have a speaker and a mic, not an earpiece. */
+    fun shouldAdvertiseHandset(hasEarpiece: Boolean): Boolean = hasEarpiece
+
+    fun planApplyRoute(selectedRenderId: String?): RouteApplyPlan {
+        val speaker = isSpeakerRender(selectedRenderId)
+        return RouteApplyPlan(
+            speakerphoneOn = speaker,
+            clearCommunicationDevice = !speaker,
+            preferEarpiece = selectedRenderId == "handset-out",
+        )
+    }
 
     fun observedId(
         selectedId: String?,
         physicalMatchesSelected: Boolean,
         physicalCatalogId: String?,
     ): String? = if (physicalMatchesSelected) selectedId else physicalCatalogId ?: selectedId
+
+    fun observedRenderId(
+        selectedId: String?,
+        speakerphoneOn: Boolean,
+        physicalMatchesSelected: Boolean,
+        physicalCatalogId: String?,
+    ): String? {
+        if (speakerphoneOn && !isSpeakerRender(selectedId)) {
+            return "speaker-out"
+        }
+        return observedId(selectedId, physicalMatchesSelected, physicalCatalogId)
+    }
 }
+
+/** How to leave or enter speakerphone without leaving a sticky OS route. */
+internal data class RouteApplyPlan(
+    val speakerphoneOn: Boolean,
+    val clearCommunicationDevice: Boolean,
+    val preferEarpiece: Boolean,
+)

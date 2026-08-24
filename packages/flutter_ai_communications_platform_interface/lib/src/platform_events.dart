@@ -37,5 +37,8 @@ final class OsRouteChange {
   final String? renderId;
 
   /// Native graph generation that produced this observation, if known.
+  ///
+  /// Session treats this as a lower bound: stamps from a prior graph are
+  /// ignored, and later stamps on the current graph still update Observed.
   final int? generation;
 }

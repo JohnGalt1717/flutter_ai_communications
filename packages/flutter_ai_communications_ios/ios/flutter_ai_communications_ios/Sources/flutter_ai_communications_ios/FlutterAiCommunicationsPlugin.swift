@@ -1,5 +1,6 @@
 import AVFoundation
 import Flutter
+import IosRoutePolicy
 import UIKit
 
 public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
@@ -18,6 +19,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var generation = 0
   private var noiseCancelling = true
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
+  private var playbackFormat: AVAudioFormat?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
@@ -127,6 +129,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     player?.stop()
     engine = nil
     player = nil
+    playbackFormat = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
@@ -162,16 +165,45 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     let next = AVAudioEngine()
     let playerNode = AVAudioPlayerNode()
     next.attach(playerNode)
-    let format = next.inputNode.outputFormat(forBus: 0)
-    next.connect(playerNode, to: next.mainMixerNode, format: format)
-    next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+    let inputFormat = next.inputNode.outputFormat(forBus: 0)
+    let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
+    let playerFormat = try Self.makePlaybackFormat(
+      inputFormat: inputFormat,
+      mixerFormat: mixerFormat
+    )
+    next.connect(playerNode, to: next.mainMixerNode, format: playerFormat)
+    let tapFormat = inputFormat.channelCount > 0 ? inputFormat : nil
+    next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
       self?.emitCapture(buffer)
     }
     try next.start()
     engine = next
     player = playerNode
+    playbackFormat = playerFormat
     queuedPlaybackFrames = 0
     playerNode.play()
+  }
+
+  private static func makePlaybackFormat(
+    inputFormat: AVAudioFormat,
+    mixerFormat: AVAudioFormat
+  ) throws -> AVAudioFormat {
+    let channels = AVAudioChannelCount(
+      IosGraphPolicy.playerConnectionChannelCount(
+        mixerOutputChannels: Int(mixerFormat.channelCount)
+      )
+    )
+    let sampleRate = mixerFormat.sampleRate > 0 ? mixerFormat.sampleRate : inputFormat.sampleRate
+    let common = mixerFormat.sampleRate > 0 ? mixerFormat.commonFormat : inputFormat.commonFormat
+    guard let format = AVAudioFormat(
+      commonFormat: common,
+      sampleRate: sampleRate,
+      channels: channels,
+      interleaved: false
+    ) else {
+      throw AVError(.fileFormatNotRecognized)
+    }
+    return format
   }
 
   private func emitCapture(_ buffer: AVAudioPCMBuffer) {
@@ -185,22 +217,36 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
           bytes[i * 2] = UInt8(truncatingIfNeeded: sample)
           bytes[i * 2 + 1] = UInt8(truncatingIfNeeded: sample >> 8)
         }
-        captureSink?(FlutterStandardTypedData(bytes: Data(bytes)))
+        emitCaptureBytes(FlutterStandardTypedData(bytes: Data(bytes)))
       }
       return
     }
     let count = Int(buffer.frameLength)
     let data = Data(bytes: channel, count: count * 2)
-    captureSink?(FlutterStandardTypedData(bytes: data))
+    emitCaptureBytes(FlutterStandardTypedData(bytes: data))
   }
 
   private func emitSilenceFrame() {
-    captureSink?(FlutterStandardTypedData(bytes: Data(repeating: 0, count: 480)))
+    emitCaptureBytes(FlutterStandardTypedData(bytes: Data(repeating: 0, count: 480)))
+  }
+
+  private func emitCaptureBytes(_ data: FlutterStandardTypedData) {
+    guard IosGraphPolicy.captureEventsRequirePlatformThread else {
+      captureSink?(data)
+      return
+    }
+    if Thread.isMainThread {
+      captureSink?(data)
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.captureSink?(data)
+    }
   }
 
   private func play(_ data: FlutterStandardTypedData?) {
     guard let data, let engine, let player, running, !paused else { return }
-    let format = engine.mainMixerNode.outputFormat(forBus: 0)
+    guard let format = playbackBufferFormat(engine: engine, player: player) else { return }
     let frames = UInt32(data.data.count / 2)
     guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
     buffer.frameLength = frames
@@ -225,6 +271,29 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     }
     player.scheduleBuffer(buffer, at: at, options: [], completionHandler: nil)
     queuedPlaybackFrames += AVAudioFramePosition(frames)
+  }
+
+  private func playbackBufferFormat(
+    engine: AVAudioEngine,
+    player: AVAudioPlayerNode
+  ) -> AVAudioFormat? {
+    let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+    let connected = playbackFormat ?? player.outputFormat(forBus: 0)
+    let channels = AVAudioChannelCount(
+      IosGraphPolicy.playbackBufferChannelCount(
+        playerConnectionChannels: Int(connected.channelCount),
+        mixerOutputChannels: Int(mixerFormat.channelCount)
+      )
+    )
+    if connected.channelCount == channels, connected.sampleRate > 0 {
+      return connected
+    }
+    return AVAudioFormat(
+      commonFormat: connected.commonFormat,
+      sampleRate: connected.sampleRate > 0 ? connected.sampleRate : mixerFormat.sampleRate,
+      channels: channels,
+      interleaved: connected.isInterleaved
+    )
   }
 
   private func flushPlayback() {
@@ -276,13 +345,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func enumerateEndpoints() -> [[String: Any]] {
     let session = AVAudioSession.sharedInstance()
-    var items: [[String: Any]] = [
-      endpoint("handset-in", "Handset", "handset", true, "handset"),
-      endpoint("handset-out", "Handset", "handset", false, "handset"),
-      endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone"),
-      endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone"),
-    ]
-    var seenPairs = Set(["handset", "speakerphone"])
+    let hasReceiver = IosRoutePolicy.hasReceiver(
+      currentOutputIsReceiver: session.currentRoute.outputs.contains {
+        $0.portType == .builtInReceiver
+      },
+      idiomIsPhone: UIDevice.current.userInterfaceIdiom == .phone
+    )
+    var items = IosRoutePolicy.builtinEndpoints(hasReceiver: hasReceiver).map {
+      endpoint($0.id, $0.name, $0.routeClass, $0.isCapture, $0.pairId)
+    }
+    var seenPairs = Set(items.compactMap { $0["pairId"] as? String })
     for input in session.availableInputs ?? [] {
       appendAccessory(input.portType, input.portName, input.uid, &items, &seenPairs)
     }
@@ -382,23 +454,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func isolationState() -> String {
     if #available(iOS 15.0, *) {
-      if AVAudioSession.sharedInstance().preferredMicrophoneMode == .voiceIsolation {
+      if AVCaptureDevice.preferredMicrophoneMode == .voiceIsolation {
         return "on"
       }
       return noiseCancelling ? "required" : "off"
     }
-    let session = AVAudioSession.sharedInstance()
-    let selector = NSSelectorFromString("preferredMicrophoneMode")
-    guard session.responds(to: selector),
-          let raw = session.perform(selector)?.takeUnretainedValue() as? Int
-    else {
-      return "unavailable"
-    }
-    // AVAudioSession.MicrophoneMode.voiceIsolation
-    if raw == 2 {
-      return "on"
-    }
-    return noiseCancelling ? "required" : "off"
+    return "unavailable"
   }
 
   private func openIsolationSettings() {
@@ -454,15 +515,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func catalogIds(from session: AVAudioSession) -> (capture: String?, render: String?) {
     if let output = session.currentRoute.outputs.first {
-      switch routeClass(for: output.portType) {
-      case "speakerphone":
-        return ("speaker-in", "speaker-out")
-      case "handset":
-        return ("handset-in", "handset-out")
-      default:
-        let pair = pairId(for: output)
-        return ("\(pair)-in", "\(pair)-out")
-      }
+      return IosRoutePolicy.catalogIds(
+        outputRouteClass: routeClass(for: output.portType),
+        accessoryPairId: pairId(for: output)
+      )
     }
     if let input = session.currentRoute.inputs.first {
       let pair = pairId(for: input)

@@ -159,6 +159,33 @@ void main() {
     );
 
     test(
+      'current-graph route events with a later native stamp update Observed',
+      () async {
+        final session = await ready();
+        platform.osRouteController.add(
+          const OsRouteChange(
+            captureId: 'speaker-in',
+            renderId: 'speaker-out',
+            generation: 1,
+          ),
+        );
+        await _microtask();
+        expect(session.diagnostics.observed.renderId, 'speaker-out');
+
+        platform.osRouteController.add(
+          const OsRouteChange(
+            captureId: 'handset-in',
+            renderId: 'handset-out',
+            generation: 2,
+          ),
+        );
+        await _microtask();
+        expect(session.diagnostics.observed.captureId, 'handset-in');
+        expect(session.diagnostics.observed.renderId, 'handset-out');
+      },
+    );
+
+    test(
       'capture stall resets under the same Session and Capture stream',
       () async {
         Session.stallTimeout = const Duration(milliseconds: 20);

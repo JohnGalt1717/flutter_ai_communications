@@ -157,8 +157,14 @@ void main() {
     });
 
     test('higher steps raise the floor', () {
-      expect(BaselinePolicy.rmsForStep(1), lessThan(BaselinePolicy.rmsForStep(5)));
-      expect(BaselinePolicy.rmsForStep(5), lessThan(BaselinePolicy.rmsForStep(10)));
+      expect(
+        BaselinePolicy.rmsForStep(1),
+        lessThan(BaselinePolicy.rmsForStep(5)),
+      );
+      expect(
+        BaselinePolicy.rmsForStep(5),
+        lessThan(BaselinePolicy.rmsForStep(10)),
+      );
       expect(
         BaselinePolicy.rmsForStep(3),
         lessThan(BaselinePolicy.rmsForStep(8)),

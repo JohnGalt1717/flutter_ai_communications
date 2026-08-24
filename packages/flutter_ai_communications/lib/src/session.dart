@@ -16,14 +16,13 @@ final class Session {
     required CoverageSource coverageSource,
     required PairingSnapshot desired,
     required bool preferenceControlled,
-    required EndpointPreference endpoints,
+    required this._endpoints,
     required List<Endpoint> catalog,
     required this._onStopped,
     required this._logger,
     NativeFormatReport? nativeFormats,
   }) : _platform = platform,
        _catalog = List<Endpoint>.of(catalog),
-       _endpoints = endpoints,
        _desired = desired,
        _applied = desired,
        _observed = platform.lastObservedRoute,
@@ -631,7 +630,7 @@ final class Session {
   }
 
   void _onOsRoute(OsRouteChange change) {
-    if (change.generation != null && change.generation != _graphGeneration) {
+    if (change.generation != null && change.generation! < _graphGeneration) {
       return;
     }
     _observed = PairingSnapshot(

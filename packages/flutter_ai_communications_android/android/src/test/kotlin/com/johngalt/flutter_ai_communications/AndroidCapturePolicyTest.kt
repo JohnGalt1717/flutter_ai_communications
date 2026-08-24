@@ -49,6 +49,14 @@ class AndroidCapturePolicyTest {
     }
 
     @Test
+    fun builtinCaptureDoesNotPinPreferredDevice() {
+        assertFalse(AndroidCapturePolicy.shouldPinPreferredCapture("handset-in"))
+        assertFalse(AndroidCapturePolicy.shouldPinPreferredCapture("speaker-in"))
+        assertFalse(AndroidCapturePolicy.shouldPinPreferredCapture(null))
+        assertTrue(AndroidCapturePolicy.shouldPinPreferredCapture("12"))
+    }
+
+    @Test
     fun observedCaptureKeepsAppliedBuiltinWhenPhysicalMatches() {
         assertEquals(
             "speaker-in",
@@ -68,6 +76,54 @@ class AndroidCapturePolicyTest {
                 selectedId = "3",
                 physicalMatchesSelected = false,
                 physicalCatalogId = "handset-in",
+            ),
+        )
+    }
+
+    @Test
+    fun handsetApplyClearsStickySpeakerBeforeSelectingEarpiece() {
+        val plan = AndroidCapturePolicy.planApplyRoute("handset-out")
+        assertFalse(plan.speakerphoneOn)
+        assertTrue(plan.clearCommunicationDevice)
+        assertTrue(plan.preferEarpiece)
+    }
+
+    @Test
+    fun speakerApplyKeepsCommunicationDeviceAndTurnsSpeakerphoneOn() {
+        val plan = AndroidCapturePolicy.planApplyRoute("speaker-out")
+        assertTrue(plan.speakerphoneOn)
+        assertFalse(plan.clearCommunicationDevice)
+        assertFalse(plan.preferEarpiece)
+    }
+
+    @Test
+    fun observedRenderReportsSpeakerWhileSpeakerphoneFlagStaysOn() {
+        assertEquals(
+            "speaker-out",
+            AndroidCapturePolicy.observedRenderId(
+                selectedId = "handset-out",
+                speakerphoneOn = true,
+                physicalMatchesSelected = false,
+                physicalCatalogId = "speaker-out",
+            ),
+        )
+    }
+
+    @Test
+    fun tabletWithoutEarpieceDoesNotAdvertiseHandset() {
+        assertFalse(AndroidCapturePolicy.shouldAdvertiseHandset(false))
+        assertTrue(AndroidCapturePolicy.shouldAdvertiseHandset(true))
+    }
+
+    @Test
+    fun observedRenderKeepsHandsetWhenSpeakerphoneClears() {
+        assertEquals(
+            "handset-out",
+            AndroidCapturePolicy.observedRenderId(
+                selectedId = "handset-out",
+                speakerphoneOn = false,
+                physicalMatchesSelected = true,
+                physicalCatalogId = "7",
             ),
         )
     }

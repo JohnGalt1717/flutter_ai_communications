@@ -112,6 +112,10 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   @override
+  PairingSnapshot get observed =>
+      PairingSnapshot(captureId: _captureId, renderId: _renderId);
+
+  @override
   void flush() {
     if (_render == nullptr) {
       return;

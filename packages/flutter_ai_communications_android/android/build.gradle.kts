@@ -3,7 +3,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
 }
 
 group = "com.johngalt.flutter_ai_communications"
@@ -68,6 +67,6 @@ dependencies {
     }
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
     implementation("androidx.core:core-ktx:1.15.0")
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.20")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

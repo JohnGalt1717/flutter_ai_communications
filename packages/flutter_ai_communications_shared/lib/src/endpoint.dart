@@ -44,7 +44,11 @@ final class EndpointCapabilities {
 
   /// Whether any native processing or form factor is verified.
   bool get hasVerifiedNative =>
-      aec || ns || agc || formFactor != EndpointFormFactor.unknown || carConnected;
+      aec ||
+      ns ||
+      agc ||
+      formFactor != EndpointFormFactor.unknown ||
+      carConnected;
 
   @override
   bool operator ==(Object other) =>

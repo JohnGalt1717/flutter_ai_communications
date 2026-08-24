@@ -30,6 +30,15 @@ final class AudioObjectPropertyAddress extends Struct {
   external int element;
 }
 
+/// Sample-rate range from `kAudioDevicePropertyAvailableNominalSampleRates`.
+final class AudioValueRange extends Struct {
+  @Double()
+  external double minimum;
+
+  @Double()
+  external double maximum;
+}
+
 /// Linear PCM description.
 final class AudioStreamBasicDescription extends Struct {
   @Double()
@@ -240,7 +249,17 @@ final class CoreAudio {
           .lookupFunction<
             Int32 Function(AudioQueueRef, Uint32, Pointer<Void>, Uint32),
             int Function(AudioQueueRef, int, Pointer<Void>, int)
-          >('AudioQueueSetProperty');
+          >('AudioQueueSetProperty'),
+      queueGetProperty = lib
+          .lookupFunction<
+            Int32 Function(
+              AudioQueueRef,
+              Uint32,
+              Pointer<Void>,
+              Pointer<Uint32>,
+            ),
+            int Function(AudioQueueRef, int, Pointer<Void>, Pointer<Uint32>)
+          >('AudioQueueGetProperty');
 
   /// Main CFRunLoop for AudioQueue callbacks.
   final Pointer<Void> Function() runLoopMain;
@@ -322,18 +341,131 @@ final class CoreAudio {
   /// Sets a queue property.
   final int Function(AudioQueueRef, int, Pointer<Void>, int) queueSetProperty;
 
-  /// Fills a PCM16 LE mono 24 kHz description.
-  void writePcm16(Pointer<AudioStreamBasicDescription> format) {
+  /// Reads a queue property.
+  final int Function(AudioQueueRef, int, Pointer<Void>, Pointer<Uint32>)
+  queueGetProperty;
+
+  /// Bound device UID for [queue], if Core Audio reports one.
+  String? queueCurrentDeviceUid(AudioQueueRef queue) {
+    if (queue == nullptr) {
+      return null;
+    }
+    final size = calloc<Uint32>()..value = sizeOf<Pointer>();
+    final value = calloc<Pointer<Void>>();
+    final status = queueGetProperty(queue, fourCC('aqcd'), value.cast(), size);
+    calloc.free(size);
+    if (status != noErr || value.value == nullptr) {
+      calloc.free(value);
+      return null;
+    }
+    final text = _cfStringToDart(value.value);
+    calloc.free(value);
+    return text;
+  }
+
+  /// Fills a PCM16 LE description. Defaults are the Session-edge Format.
+  void writePcm16(
+    Pointer<AudioStreamBasicDescription> format, {
+    double sampleRate = 24000,
+    int channels = 1,
+  }) {
+    final bytesPerFrame = 2 * (channels < 1 ? 1 : channels);
     format.ref
-      ..sampleRate = 24000
+      ..sampleRate = sampleRate
       ..formatId = fourCC('lpcm')
       ..formatFlags = 4 | 8
-      ..bytesPerPacket = 2
+      ..bytesPerPacket = bytesPerFrame
       ..framesPerPacket = 1
-      ..bytesPerFrame = 2
-      ..channelsPerFrame = 1
+      ..bytesPerFrame = bytesPerFrame
+      ..channelsPerFrame = channels < 1 ? 1 : channels
       ..bitsPerChannel = 16
       ..reserved = 0;
+  }
+
+  /// AudioDeviceID whose UID equals [uid], if any.
+  int? deviceIdForUid(String uid) {
+    for (final id in uint32Array(audioObjectSystemObject, fourCC('dev#'))) {
+      if (stringProperty(id, fourCC('uid ')) == uid) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  /// Channel count from virtual stream formats in [capture] scope.
+  int channelCount(int deviceId, {required bool capture}) {
+    final scope = capture ? fourCC('inpt') : fourCC('outp');
+    var channels = 0;
+    for (final stream in uint32Array(deviceId, fourCC('stm#'), scope: scope)) {
+      channels += streamVirtualFormat(stream)?.channels ?? 0;
+    }
+    return channels;
+  }
+
+  /// Virtual Format of an audio stream, if Core Audio reports one.
+  ({double sampleRate, int channels})? streamVirtualFormat(int streamId) {
+    final address = calloc<AudioObjectPropertyAddress>();
+    address.ref
+      ..selector = fourCC('sfmt')
+      ..scope = fourCC('glob')
+      ..element = 0;
+    final size = calloc<Uint32>()
+      ..value = sizeOf<AudioStreamBasicDescription>();
+    final value = calloc<AudioStreamBasicDescription>();
+    final status = getPropertyData(
+      streamId,
+      address,
+      0,
+      nullptr,
+      size,
+      value.cast(),
+    );
+    ({double sampleRate, int channels})? result;
+    if (status == noErr) {
+      result = (
+        sampleRate: value.ref.sampleRate,
+        channels: value.ref.channelsPerFrame,
+      );
+    }
+    calloc.free(address);
+    calloc.free(size);
+    calloc.free(value);
+    return result;
+  }
+
+  /// Available nominal sample-rate ranges for [deviceId].
+  List<(double, double)> availableSampleRateRanges(int deviceId) {
+    final bytes = propertySize(deviceId, fourCC('nsr#'));
+    if (bytes == null || bytes < 16) {
+      return const [];
+    }
+    final address = calloc<AudioObjectPropertyAddress>();
+    address.ref
+      ..selector = fourCC('nsr#')
+      ..scope = fourCC('glob')
+      ..element = 0;
+    final size = calloc<Uint32>()..value = bytes;
+    final count = bytes ~/ 16;
+    final values = calloc<AudioValueRange>(count);
+    final status = getPropertyData(
+      deviceId,
+      address,
+      0,
+      nullptr,
+      size,
+      values.cast(),
+    );
+    final ranges = <(double, double)>[];
+    if (status == noErr) {
+      final n = size.value ~/ 16;
+      for (var i = 0; i < n; i++) {
+        ranges.add((values[i].minimum, values[i].maximum));
+      }
+    }
+    calloc.free(address);
+    calloc.free(size);
+    calloc.free(values);
+    return ranges;
   }
 
   /// Reads a CFString property as UTF-8.

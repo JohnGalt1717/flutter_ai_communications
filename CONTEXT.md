@@ -89,7 +89,7 @@ A capture Endpoint, render Endpoint, or sound floor chosen on a live Session. It
 _Avoid_: preference (that is host-owned and passed at start)
 
 **Endpoint preference**:
-The host-persisted ordered list of enabled Endpoints that the Audio manager continuously resolves from most to least preferred. Persistence and editing belong to the host; live resolution and promotion belong to the Audio manager.
+The host-persisted ordered list of enabled Endpoints that the Audio manager continuously resolves from most to least preferred. A host list fills capture and render independently, so a desktop webcam and a USB render Endpoint may outrank AirPods. An empty list uses platform-default complete Pairs. Persistence and editing belong to the host; live resolution and promotion belong to the Audio manager.
 _Avoid_: device order, default device
 
 **Explicit selection**:

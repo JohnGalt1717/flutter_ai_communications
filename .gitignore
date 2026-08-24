@@ -36,3 +36,7 @@ packages/**/pubspec.lock
 **/test_cache/
 **/native_assets/
 **/android/bin/
+
+# Swift Package Manager
+**/.build/
+**/.swiftpm/

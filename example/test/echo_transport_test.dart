@@ -188,6 +188,20 @@ void main() {
       ..setInt16(2, -32768, Endian.little);
     expect(PcmQuality.clipped(pcm), isTrue);
   });
+
+  test('received buffer stays bounded after a long analog capture', () async {
+    final session = await ready();
+    const cap = 19200;
+    final echo = EchoTransport(session, replay: false, maxReceivedBytes: cap);
+    await echo.attach();
+    final frame = Uint8List(480);
+    for (var i = 0; i < 200; i++) {
+      platform.feedCapture(frame);
+    }
+    await Future<void>.delayed(Duration.zero);
+    expect(echo.received.length, cap);
+    await echo.dispose();
+  });
 }
 
 Uint8List _joined(List<Uint8List> frames) {

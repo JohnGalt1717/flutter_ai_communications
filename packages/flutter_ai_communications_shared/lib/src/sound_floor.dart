@@ -69,21 +69,24 @@ final class SoundFloor {
   }
 
   /// Active threshold after Isolation / legacy route boosts.
-  double threshold({
-    RouteClass? routeClass,
-    bool isolationMissing = false,
-  }) {
+  double threshold({RouteClass? routeClass, bool isolationMissing = false}) {
     final base = switch (processor) {
       PassThroughCaptureProcessor() => 0.0,
       FixedCaptureProcessor(:final normalizedRms) => normalizedRms,
-      ProfileScaledCaptureProcessor(:final step) => profile == null
-          ? BaselinePolicy.rmsForStep(step)
-          : BaselinePolicy.rmsFor(profile: profile!, scaledStep: step),
+      ProfileScaledCaptureProcessor(:final step) =>
+        profile == null
+            ? BaselinePolicy.rmsForStep(step)
+            : BaselinePolicy.rmsFor(profile: profile!, scaledStep: step),
       AdaptiveCaptureProcessor() =>
         (_noiseRms * _adaptiveMargin)
             .clamp(_minAdaptive, 1.0)
             .toDouble()
-            .clamp(profile == null ? 0.0 : BaselinePolicy.rmsForStep(profile!.baselineStep), 1.0),
+            .clamp(
+              profile == null
+                  ? 0.0
+                  : BaselinePolicy.rmsForStep(profile!.baselineStep),
+              1.0,
+            ),
     };
     var boost = 1.0;
     if (profile == null &&
