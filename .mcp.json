@@ -1,0 +1,45 @@
+{
+    "mcpServers": {
+        "debugmcp": {
+            "autoApprove": [],
+            "disabled": false,
+            "timeout": 300,
+            "type": "streamableHttp",
+            "url": "http://localhost:3001/mcp"
+        },
+        "marionette": {
+            "type": "stdio",
+            "command": "dart",
+            "args": [
+                "pub",
+                "global",
+                "run",
+                "marionette_mcp:marionette_mcp"
+            ]
+        },
+        "chrome-devtools": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "chrome-devtools-mcp@latest"
+            ]
+        },
+        "markitdown": {
+            "command": "docker",
+            "args": [
+                "run",
+                "-i",
+                "--rm",
+                "-v",
+                "./.markitdown:/local-directory",
+                "mcp/markitdown"
+            ]
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "@playwright/mcp@latest"
+            ]
+        }
+    }
+}
