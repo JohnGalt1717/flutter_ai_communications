@@ -28,4 +28,11 @@ packages/**/pubspec.lock
 .dart_tool/
 .flutter-plugins-dependencies
 /build/
+**/build/
 /coverage/
+
+# Generated Flutter test/native assets and Android compile output
+**/unit_test_assets/
+**/test_cache/
+**/native_assets/
+**/android/bin/
