@@ -9,6 +9,7 @@ Functional Teams/Zoom-class communications audio for Flutter. The host owns Tran
 3. `docs/agents/domain.md` — when to load domain docs.
 4. `docs/agents/issue-tracker.md` — GitHub Issues via `gh`.
 5. `docs/agents/triage-labels.md` — triage vocabulary.
+6. `.agents/workflows/` — how to run a named job (device matrix, receipts).
 
 If a term is missing from `CONTEXT.md`, stop and add it with `/domain-modeling` before inventing a synonym.
 
@@ -61,6 +62,9 @@ Load the skill before the work it covers:
 | Analyze | Dart MCP / `mcp_dart_and_flut_analyze_files` — not routine `dart analyze` |
 | This file or a skill | `writing-for-agents` |
 | Grill / plan | `grill-with-docs` (`grilling` + `domain-modeling`) |
+| Debug session → VM service URI → Marionette MCP; stale session kill/restart | `device-marionette` |
+| Mic / OS permission sheets, `pm grant`, `simctl privacy`, first-start Allow | `device-permission-prompts` |
+| Physical iOS/Android native receipts | `.agents/workflows/real-device-marionette.md` |
 
 ## Non-negotiables
 
@@ -75,3 +79,5 @@ Load the skill before the work it covers:
 ## Testing
 
 Test at public seams (`AudioManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the Marionette harness for iOS, Android, web, macOS, Windows, and Linux — not a SignalR demo.
+
+Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-marionette.md`. `flutter test` from a package dir. Loopback identity is not native proof.

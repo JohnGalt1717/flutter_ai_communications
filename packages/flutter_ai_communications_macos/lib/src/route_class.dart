@@ -39,8 +39,9 @@ String macosPairId({
   if (routeClass == RouteClass.speakerphone) {
     return macosBuiltInPairId;
   }
-  if (uid.isNotEmpty) {
-    return uid;
-  }
-  return name.isEmpty ? id : name;
+  return applePairId(
+    routeClass: routeClass,
+    uid: uid.isEmpty ? id : uid,
+    name: name,
+  );
 }

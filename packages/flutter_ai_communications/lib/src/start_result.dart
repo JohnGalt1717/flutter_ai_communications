@@ -35,7 +35,10 @@ final class StartUnavailable extends StartResult {
 /// This Audio manager already has a live Session.
 final class StartAlreadyActive extends StartResult {
   /// Creates an already-active result.
-  const StartAlreadyActive();
+  const StartAlreadyActive({this.purpose});
+
+  /// Purpose of the live Session that must be ended first.
+  final String? purpose;
 }
 
 /// The native graph or permission request failed unexpectedly.

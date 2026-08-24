@@ -31,6 +31,9 @@ abstract class WasapiBackend {
   /// Must not clear pause and must not pretend to be an OS-forced route.
   void select({String? captureId, String? renderId});
 
+  /// Bound capture/render after the last successful start or select.
+  PairingSnapshot get observed;
+
   /// Drops queued playback.
   void flush();
 

@@ -26,16 +26,28 @@ final class FlutterAiCommunicationsMacos
       StreamController<List<Endpoint>>.broadcast();
   final StreamController<CoverageHint> _path =
       StreamController<CoverageHint>.broadcast();
+  final StreamController<OsRouteChange> _routes =
+      StreamController<OsRouteChange>.broadcast();
   IsolationEvent _lastIsolation = const IsolationEvent(
     IsolationState.unavailable,
   );
+  PairingSnapshot _observed = const PairingSnapshot();
   Timer? _catalogPoll;
+  Timer? _observedPoll;
+  var _running = false;
+  var _generation = 0;
 
   @override
   String get platformName => 'macos';
 
   @override
   IsolationEvent get lastIsolation => _lastIsolation;
+
+  @override
+  PairingSnapshot get lastObservedRoute => _observed;
+
+  @override
+  Stream<OsRouteChange> get osRouteChanges => _routes.stream;
 
   @override
   Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
@@ -51,16 +63,26 @@ final class FlutterAiCommunicationsMacos
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
     _lastIsolation = const IsolationEvent(IsolationState.unavailable);
     _isolation.add(_lastIsolation);
     final started = _backend.start(captureId: captureId, renderId: renderId);
     if (started == NativeGraphStart.started) {
+      _running = true;
+      _generation++;
       _catalog.add(_backend.enumerate());
       _path.add(const CoverageHint.ok());
+      _emitObserved(force: true);
       _catalogPoll?.cancel();
       _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
         _catalog.add(_backend.enumerate());
+      });
+      _observedPoll?.cancel();
+      _observedPoll = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        _emitObserved();
       });
     }
     return started;
@@ -70,6 +92,9 @@ final class FlutterAiCommunicationsMacos
   Future<void> stopNative() async {
     _catalogPoll?.cancel();
     _catalogPoll = null;
+    _observedPoll?.cancel();
+    _observedPoll = null;
+    _running = false;
     _backend.stop();
   }
 
@@ -88,6 +113,24 @@ final class FlutterAiCommunicationsMacos
   @override
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
+    if (_running) {
+      _emitObserved(force: true);
+    }
+  }
+
+  void _emitObserved({bool force = false}) {
+    final next = _backend.observed;
+    if (!force && next == _observed) {
+      return;
+    }
+    _observed = next;
+    _routes.add(
+      OsRouteChange(
+        captureId: _observed.captureId,
+        renderId: _observed.renderId,
+        generation: _generation,
+      ),
+    );
   }
 
   @override

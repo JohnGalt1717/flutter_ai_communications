@@ -1,0 +1,22 @@
+/// Graph policy for the iOS adapter.
+///
+/// Session edges are PCM16 LE mono. The mixer is often stereo, so connecting
+/// the player and scheduling playback from the mixer format crashes:
+/// `_outputFormat.channelCount == buffer.format.channelCount`.
+public enum IosGraphPolicy {
+    /// Capture EventChannel payloads must hop to Flutter's platform thread.
+    public static let captureEventsRequirePlatformThread = true
+
+    /// Player connection stays Session-mono even when the mixer is stereo.
+    public static func playerConnectionChannelCount(mixerOutputChannels: Int) -> Int {
+        1
+    }
+
+    /// Scheduled buffers must match the player connection, not the mixer.
+    public static func playbackBufferChannelCount(
+        playerConnectionChannels: Int,
+        mixerOutputChannels: Int
+    ) -> Int {
+        playerConnectionChannels > 0 ? playerConnectionChannels : 1
+    }
+}

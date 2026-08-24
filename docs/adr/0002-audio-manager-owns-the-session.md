@@ -1,3 +1,3 @@
-# The host holds Transport and preference; this library is the Audio manager
+# The host holds Transport and preference persistence; this library is the Audio manager
 
-Scribe's `AiChatAudioEngine` mixed SignalR, Hive device-priority, Isolation dialogs, and audio. The public module here is a long-lived Audio manager with at most one live Session. The host passes preference at `start()`, attaches a Transport to the capture stream, and owns UI. Mid-session Endpoint and sound-floor picks are ephemeral and must not write back. Device-order preference is explicitly out of scope.
+Scribe's `AiChatAudioEngine` mixed SignalR, Hive preference persistence, Isolation dialogs, and audio. Each host application owns one long-lived Audio manager with at most one live Session, attaches Transport or local media edges, persists Endpoint preference, and owns UI. The Audio manager continuously enforces the supplied Endpoint preference; Explicit selection remains Session-scoped and never writes back.

@@ -8,10 +8,13 @@ packages.
 Dart FFI against Core Audio / AudioToolbox:
 
 - `AudioObjectGetPropertyData` — catalog (devices, UID, transport)
-- `AudioQueue` — capture and playback of PCM16 LE mono 24 kHz
+- `AudioQueue` — capture and playback. Native Format is the Endpoint's
+  best PCM16; the adapter transcodes once to PCM16 LE mono 24 kHz.
 
-There is no Swift MethodChannel plugin. The host app still owns
-`NSMicrophoneUsageDescription` and the `audio-input` entitlement.
+There is no Swift MethodChannel plugin and no CocoaPods podspec.
+The example app uses Flutter's generated Swift package.
+The host app still owns `NSMicrophoneUsageDescription` and the
+`audio-input` entitlement.
 
 ## Gaps versus iOS / Android
 

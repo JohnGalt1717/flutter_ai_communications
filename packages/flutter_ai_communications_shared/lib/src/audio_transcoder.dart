@@ -23,8 +23,11 @@ final class AudioTranscoder {
   Uint8List toWorking(Uint8List bytes, AudioFormat source) {
     _check(source);
     return switch (source.encoding) {
-      AudioEncoding.pcm16le =>
-        _resamplePcm16(bytes, source.sampleRate, working.sampleRate),
+      AudioEncoding.pcm16le => _resamplePcm16(
+        bytes,
+        source.sampleRate,
+        working.sampleRate,
+      ),
       AudioEncoding.pcmu => _g711ToWorking(bytes, _G711Law.muLaw),
       AudioEncoding.pcma => _g711ToWorking(bytes, _G711Law.aLaw),
       AudioEncoding.opus => throw UnsupportedError(
@@ -37,8 +40,11 @@ final class AudioTranscoder {
   Uint8List fromWorking(Uint8List bytes, AudioFormat target) {
     _check(target);
     return switch (target.encoding) {
-      AudioEncoding.pcm16le =>
-        _resamplePcm16(bytes, working.sampleRate, target.sampleRate),
+      AudioEncoding.pcm16le => _resamplePcm16(
+        bytes,
+        working.sampleRate,
+        target.sampleRate,
+      ),
       AudioEncoding.pcmu => _workingToG711(bytes, _G711Law.muLaw),
       AudioEncoding.pcma => _workingToG711(bytes, _G711Law.aLaw),
       AudioEncoding.opus => throw UnsupportedError(

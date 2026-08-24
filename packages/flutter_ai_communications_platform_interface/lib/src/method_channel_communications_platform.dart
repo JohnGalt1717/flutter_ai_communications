@@ -31,8 +31,6 @@ class MethodChannelCommunicationsPlatform
            eventsChannel ??
            const EventChannel('flutter_ai_communications/events') {
     nativeCapture = _captureOut.stream;
-    _captureSub = _capture.receiveBroadcastStream().listen(_onCaptureEvent);
-    _eventsSub = _events.receiveBroadcastStream().listen(_onControlEvent);
   }
 
   /// Federated adapter name.
@@ -59,12 +57,17 @@ class MethodChannelCommunicationsPlatform
   StreamSubscription<dynamic>? _captureSub;
   StreamSubscription<dynamic>? _eventsSub;
   IsolationEvent _lastIsolation = const IsolationEvent(IsolationState.unknown);
+  PairingSnapshot _lastObserved = const PairingSnapshot();
 
   @override
   IsolationEvent get lastIsolation => _lastIsolation;
 
   @override
+  PairingSnapshot get lastObservedRoute => _lastObserved;
+
+  @override
   Future<List<Endpoint>> enumerateEndpoints() async {
+    _ensureListening();
     final raw = await _methods.invokeMethod<List<dynamic>>(
       'enumerateEndpoints',
     );
@@ -72,10 +75,14 @@ class MethodChannelCommunicationsPlatform
   }
 
   @override
-  Stream<List<Endpoint>> get endpointCatalog => _catalogOut.stream;
+  Stream<List<Endpoint>> get endpointCatalog {
+    _ensureListening();
+    return _catalogOut.stream;
+  }
 
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async {
+    _ensureListening();
     final value = await _methods.invokeMethod<String>(
       'requestMicrophonePermission',
     );
@@ -86,63 +93,171 @@ class MethodChannelCommunicationsPlatform
     };
   }
 
+  NativeFormatReport _lastNativeFormats = const NativeFormatReport();
+
+  @override
+  NativeFormatReport get lastNativeFormats => _lastNativeFormats;
+
   @override
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) async {
-    final value = await _methods.invokeMethod<String>('startNative', {
+    _ensureListening();
+    final value = await _methods.invokeMethod<Object?>('startNative', {
       'captureId': captureId,
       'renderId': renderId,
+      'captureFormat': _formatMap(captureFormat),
+      'playbackFormat': _formatMap(playbackFormat),
+      'noiseCancelling': noiseCancelling,
     });
     return switch (value) {
       'unavailable' => NativeGraphStart.unavailable,
       'failed' => NativeGraphStart.failed,
-      _ => NativeGraphStart.started,
+      final Map<Object?, Object?> map => _startedFromMap(map),
+      _ => _startedFromEdges(captureFormat, playbackFormat),
     };
   }
 
-  @override
-  Future<void> stopNative() => _methods.invokeMethod<void>('stopNative');
+  NativeGraphStart _startedFromEdges(
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+  ) {
+    _lastNativeFormats = NativeFormatReport(
+      capture: captureFormat,
+      playback: playbackFormat,
+    );
+    return NativeGraphStart.started;
+  }
+
+  NativeGraphStart _startedFromMap(Map<Object?, Object?> map) {
+    final status = map['status'] as String? ?? 'started';
+    if (status == 'unavailable') {
+      return NativeGraphStart.unavailable;
+    }
+    if (status == 'failed') {
+      return NativeGraphStart.failed;
+    }
+    _lastNativeFormats = NativeFormatReport(
+      capture: _formatFrom(map['captureFormat']) ??
+          _formatFrom(map['nativeCaptureFormat']),
+      playback: _formatFrom(map['playbackFormat']) ??
+          _formatFrom(map['nativePlaybackFormat']),
+    );
+    return NativeGraphStart.started;
+  }
+
+  Map<String, Object?>? _formatMap(AudioFormat? format) {
+    if (format == null) {
+      return null;
+    }
+    return {
+      'encoding': format.encoding.name,
+      'sampleRate': format.sampleRate,
+      'channels': format.channels,
+    };
+  }
+
+  AudioFormat? _formatFrom(Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+    final encodingName = value['encoding'] as String?;
+    final sampleRate = value['sampleRate'] as int?;
+    if (encodingName == null || sampleRate == null) {
+      return null;
+    }
+    final encoding = AudioEncoding.values.where((e) => e.name == encodingName);
+    if (encoding.isEmpty) {
+      return null;
+    }
+    return AudioFormat(
+      encoding: encoding.first,
+      sampleRate: sampleRate,
+      channels: value['channels'] as int? ?? 1,
+    );
+  }
 
   @override
-  Future<void> pauseNative() => _methods.invokeMethod<void>('pauseNative');
+  Future<void> stopNative() {
+    _ensureListening();
+    return _methods.invokeMethod<void>('stopNative');
+  }
 
   @override
-  Future<void> resumeNative() => _methods.invokeMethod<void>('resumeNative');
+  Future<void> pauseNative() {
+    _ensureListening();
+    return _methods.invokeMethod<void>('pauseNative');
+  }
+
+  @override
+  Future<void> resumeNative() {
+    _ensureListening();
+    return _methods.invokeMethod<void>('resumeNative');
+  }
 
   @override
   late final Stream<Uint8List> nativeCapture;
 
   @override
-  Future<void> play(Uint8List bytes) =>
-      _methods.invokeMethod<void>('play', bytes);
+  Future<void> play(Uint8List bytes) {
+    _ensureListening();
+    return _methods.invokeMethod<void>('play', bytes);
+  }
 
   @override
-  Future<void> selectEndpoints({String? captureId, String? renderId}) =>
-      _methods.invokeMethod<void>('selectEndpoints', {
-        'captureId': captureId,
-        'renderId': renderId,
-      });
+  Future<void> selectEndpoints({String? captureId, String? renderId}) {
+    _ensureListening();
+    return _methods.invokeMethod<void>('selectEndpoints', {
+      'captureId': captureId,
+      'renderId': renderId,
+    });
+  }
 
   @override
-  Stream<IsolationEvent> get isolation => _isolationOut.stream;
+  Stream<IsolationEvent> get isolation {
+    _ensureListening();
+    return _isolationOut.stream;
+  }
 
   @override
-  Future<void> openIsolationSettings() =>
-      _methods.invokeMethod<void>('openIsolationSettings');
+  Future<void> openIsolationSettings() {
+    _ensureListening();
+    return _methods.invokeMethod<void>('openIsolationSettings');
+  }
 
   @override
-  Future<void> flushPlayback() => _methods.invokeMethod<void>('flushPlayback');
+  Future<void> flushPlayback() {
+    _ensureListening();
+    return _methods.invokeMethod<void>('flushPlayback');
+  }
 
   @override
-  Stream<CoverageHint> get pathCoverage => _pathOut.stream;
+  Stream<CoverageHint> get pathCoverage {
+    _ensureListening();
+    return _pathOut.stream;
+  }
 
   @override
-  Stream<AudioFocusState> get audioFocus => _focusOut.stream;
+  Stream<AudioFocusState> get audioFocus {
+    _ensureListening();
+    return _focusOut.stream;
+  }
 
   @override
-  Stream<OsRouteChange> get osRouteChanges => _routeOut.stream;
+  Stream<OsRouteChange> get osRouteChanges {
+    _ensureListening();
+    return _routeOut.stream;
+  }
+
+  /// EventChannels need ServicesBinding. Plugin [registerWith] runs first.
+  void _ensureListening() {
+    _captureSub ??= _capture.receiveBroadcastStream().listen(_onCaptureEvent);
+    _eventsSub ??= _events.receiveBroadcastStream().listen(_onControlEvent);
+  }
 
   void _onCaptureEvent(dynamic event) {
     if (event is Uint8List) {
@@ -181,12 +296,20 @@ class MethodChannelCommunicationsPlatform
         );
       case 'route':
         if (payload is Map) {
-          _routeOut.add(
-            OsRouteChange(
-              captureId: payload['captureId'] as String?,
-              renderId: payload['renderId'] as String?,
-            ),
+          final change = OsRouteChange(
+            captureId: payload['captureId'] as String?,
+            renderId: payload['renderId'] as String?,
+            generation: switch (payload['generation']) {
+              final int value => value,
+              final num value => value.toInt(),
+              _ => null,
+            },
           );
+          _lastObserved = PairingSnapshot(
+            captureId: change.captureId ?? _lastObserved.captureId,
+            renderId: change.renderId ?? _lastObserved.renderId,
+          );
+          _routeOut.add(change);
         }
     }
   }
@@ -221,6 +344,7 @@ class MethodChannelCommunicationsPlatform
   IsolationState _isolationState(String name) => switch (name) {
     'on' => IsolationState.on,
     'off' => IsolationState.off,
+    'required' => IsolationState.required,
     'unavailable' => IsolationState.unavailable,
     _ => IsolationState.unknown,
   };

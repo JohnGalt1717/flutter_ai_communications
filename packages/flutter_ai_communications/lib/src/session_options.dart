@@ -1,17 +1,63 @@
-/// Host preference passed only to [AudioManager.start].
+import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+
+/// Host preference passed to [AudioManager.start].
+///
+/// [endpoints] is the ordered enabled Endpoint preference. [captureId] and
+/// [renderId] are an optional Explicit selection for this Session only.
 final class SessionPreference {
   /// Creates a start preference.
-  const SessionPreference({this.captureId, this.renderId, this.soundFloor});
+  const SessionPreference({
+    this.captureId,
+    this.renderId,
+    this.soundFloor,
+    this.processor,
+    this.noiseCancelling = true,
+    this.endpoints = const EndpointPreference(),
+  });
 
-  /// Preferred capture Endpoint id.
+  /// Explicit capture Endpoint id for this Session, if any.
   final String? captureId;
 
-  /// Preferred render Endpoint id.
+  /// Explicit render Endpoint id for this Session, if any.
   final String? renderId;
 
-  /// Fixed sound floor, or `null` for adaptive.
+  /// Fixed sound floor, or `null` for adaptive. `0` is pass-through.
+  /// Ignored when [processor] is set.
   final double? soundFloor;
+
+  /// Capture processor for this Session. When omitted, [soundFloor] selects
+  /// adaptive, fixed, or pass-through.
+  final CaptureProcessor? processor;
+
+  /// Whether the Session asks the platform for AEC/NS/AGC and iOS Isolation.
+  ///
+  /// When Isolation is off or unavailable, the Session emits
+  /// [IsolationState.required] or [IsolationState.unavailable] and raises
+  /// the adaptive Sound floor. Hosts own every prompt string.
+  final bool noiseCancelling;
+
+  /// Ordered enabled Endpoint preference. Empty means platform default or the
+  /// preference bound on the Audio manager.
+  final EndpointPreference endpoints;
 }
 
 /// Whether barge-in is local or left to remote VAD.
 enum BargeInPolicy { local, remoteVad }
+
+/// Active edges of a Session.
+enum SessionDirection {
+  /// Capture only. Does not acquire playback resources.
+  captureOnly,
+
+  /// Playback only. Does not request the microphone.
+  playbackOnly,
+
+  /// Capture and playback.
+  duplex;
+
+  /// Whether this direction captures.
+  bool get hasCapture => this != SessionDirection.playbackOnly;
+
+  /// Whether this direction plays.
+  bool get hasPlayback => this != SessionDirection.captureOnly;
+}

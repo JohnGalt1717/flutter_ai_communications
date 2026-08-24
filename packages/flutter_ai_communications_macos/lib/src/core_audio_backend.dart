@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -8,10 +9,12 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 import 'audio_backend.dart';
 import 'core_audio_ffi.dart';
+import 'macos_format_plan.dart';
+import 'macos_pcm_convert.dart';
+import 'macos_queue_bind.dart';
 import 'route_class.dart';
 
 const _silenceBytes = 480;
-const _bufferBytes = 480;
 const _bufferCount = 3;
 
 /// Core Audio AudioQueue capture and render.
@@ -20,6 +23,7 @@ final class CoreAudioBackend implements AudioBackend {
   CoreAudioBackend() : _audio = CoreAudio();
 
   final CoreAudio _audio;
+  final MacPcmConvert _convert = const MacPcmConvert();
   AudioQueueRef _capture = nullptr;
   AudioQueueRef _render = nullptr;
   NativeCallable<AudioQueueInputNative>? _inputCallable;
@@ -29,6 +33,10 @@ final class CoreAudioBackend implements AudioBackend {
   var _paused = false;
   String? _captureId;
   String? _renderId;
+  AudioFormat _captureNative = AudioFormat.pcm16le24k;
+  AudioFormat _renderNative = AudioFormat.pcm16le24k;
+  var _captureBufferBytes = _silenceBytes;
+  var _renderBufferBytes = _silenceBytes;
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -95,7 +103,7 @@ final class CoreAudioBackend implements AudioBackend {
     if (!_running || _paused || bytes.isEmpty) {
       return;
     }
-    _playback.add(Uint8List.fromList(bytes));
+    _playback.add(_convert.fromEdge(bytes, native: _renderNative));
   }
 
   @override
@@ -109,14 +117,14 @@ final class CoreAudioBackend implements AudioBackend {
     if (!_running) {
       return;
     }
-    _emitSilence();
-    if (_capture != nullptr) {
-      _bindDevice(_capture, _captureId, capture: true);
-    }
-    if (_render != nullptr) {
-      _bindDevice(_render, _renderId, capture: false);
-    }
+    _startGraph();
   }
+
+  @override
+  PairingSnapshot get observed => PairingSnapshot(
+    captureId: observedQueueUid(boundUid: _boundUid(_capture)),
+    renderId: observedQueueUid(boundUid: _boundUid(_render)),
+  );
 
   @override
   void flush() {
@@ -137,10 +145,12 @@ final class CoreAudioBackend implements AudioBackend {
     _emitSilence();
     final keepPaused = _paused;
     _stopGraph();
-    final format = calloc<AudioStreamBasicDescription>();
-    _audio.writePcm16(format);
+    _captureNative = _planFor(_captureId, capture: true).native;
+    _renderNative = _planFor(_renderId, capture: false).native;
+    _captureBufferBytes = _bufferBytesFor(_captureNative);
+    _renderBufferBytes = _bufferBytesFor(_renderNative);
     try {
-      if (!_openCapture(format) || !_openRender(format)) {
+      if (!_openCapture() || !_openRender()) {
         _stopGraph();
         return false;
       }
@@ -151,8 +161,9 @@ final class CoreAudioBackend implements AudioBackend {
         _audio.queueStart(_render, nullptr);
       }
       return true;
-    } finally {
-      calloc.free(format);
+    } on Object {
+      _stopGraph();
+      return false;
     }
   }
 
@@ -177,11 +188,17 @@ final class CoreAudioBackend implements AudioBackend {
     _playback.clear();
   }
 
-  bool _openCapture(Pointer<AudioStreamBasicDescription> format) {
+  bool _openCapture() {
     final callable = NativeCallable<AudioQueueInputNative>.isolateLocal(
       _onInput,
     );
     _inputCallable = callable;
+    final format = calloc<AudioStreamBasicDescription>();
+    _audio.writePcm16(
+      format,
+      sampleRate: _captureNative.sampleRate.toDouble(),
+      channels: _captureNative.channels,
+    );
     final queue = calloc<AudioQueueRef>();
     final status = _audio.queueNewInput(
       format,
@@ -192,21 +209,30 @@ final class CoreAudioBackend implements AudioBackend {
       0,
       queue,
     );
+    calloc.free(format);
     if (status != noErr) {
       calloc.free(queue);
       return false;
     }
     _capture = queue.value;
     calloc.free(queue);
-    _bindDevice(_capture, _captureId, capture: true);
-    return _prime(_capture, fillSilence: false);
+    if (!_bindDevice(_capture, _captureId, capture: true)) {
+      return false;
+    }
+    return _prime(_capture, _captureBufferBytes, fillSilence: false);
   }
 
-  bool _openRender(Pointer<AudioStreamBasicDescription> format) {
+  bool _openRender() {
     final callable = NativeCallable<AudioQueueOutputNative>.isolateLocal(
       _onOutput,
     );
     _outputCallable = callable;
+    final format = calloc<AudioStreamBasicDescription>();
+    _audio.writePcm16(
+      format,
+      sampleRate: _renderNative.sampleRate.toDouble(),
+      channels: _renderNative.channels,
+    );
     final queue = calloc<AudioQueueRef>();
     final status = _audio.queueNewOutput(
       format,
@@ -217,32 +243,39 @@ final class CoreAudioBackend implements AudioBackend {
       0,
       queue,
     );
+    calloc.free(format);
     if (status != noErr) {
       calloc.free(queue);
       return false;
     }
     _render = queue.value;
     calloc.free(queue);
-    _bindDevice(_render, _renderId, capture: false);
-    return _prime(_render, fillSilence: true);
+    if (!_bindDevice(_render, _renderId, capture: false)) {
+      return false;
+    }
+    return _prime(_render, _renderBufferBytes, fillSilence: true);
   }
 
-  bool _prime(AudioQueueRef queue, {required bool fillSilence}) {
+  bool _prime(
+    AudioQueueRef queue,
+    int bufferBytes, {
+    required bool fillSilence,
+  }) {
     for (var i = 0; i < _bufferCount; i++) {
       final buffer = calloc<AudioQueueBufferRef>();
-      final status = _audio.queueAllocateBuffer(queue, _bufferBytes, buffer);
+      final status = _audio.queueAllocateBuffer(queue, bufferBytes, buffer);
       if (status != noErr) {
         calloc.free(buffer);
         return false;
       }
       final ref = buffer.value;
       calloc.free(buffer);
-      ref.ref.audioDataByteSize = _bufferBytes;
+      ref.ref.audioDataByteSize = bufferBytes;
       if (fillSilence) {
         ref.ref.audioData
             .cast<Uint8>()
-            .asTypedList(_bufferBytes)
-            .fillRange(0, _bufferBytes, 0);
+            .asTypedList(bufferBytes)
+            .fillRange(0, bufferBytes, 0);
       }
       if (_audio.queueEnqueueBuffer(queue, ref, 0, nullptr) != noErr) {
         return false;
@@ -251,17 +284,17 @@ final class CoreAudioBackend implements AudioBackend {
     return true;
   }
 
-  void _bindDevice(AudioQueueRef queue, String? id, {required bool capture}) {
+  bool _bindDevice(AudioQueueRef queue, String? id, {required bool capture}) {
     final uid = id ?? _defaultUid(capture: capture);
     if (uid == null || uid.isEmpty) {
-      return;
+      return true;
     }
     final cf = _cfString(uid);
     if (cf == nullptr) {
-      return;
+      return false;
     }
     final value = calloc<Pointer<Void>>()..value = cf;
-    _audio.queueSetProperty(
+    final status = _audio.queueSetProperty(
       queue,
       fourCC('aqcd'),
       value.cast(),
@@ -269,15 +302,25 @@ final class CoreAudioBackend implements AudioBackend {
     );
     calloc.free(value);
     _cfRelease(cf);
+    // Set must succeed. GetProperty is Observed only — a null get after
+    // a successful set is not a license to claim the requested UID.
+    return status == noErr;
+  }
+
+  String? _boundUid(AudioQueueRef queue) {
+    if (queue == nullptr) {
+      return null;
+    }
+    return _audio.queueCurrentDeviceUid(queue);
   }
 
   void _onInput(
     Pointer<Void> _,
     AudioQueueRef queue,
     AudioQueueBufferRef buffer,
-    Pointer<Void> __,
-    int ___,
-    Pointer<Void> ____,
+    Pointer<Void> _,
+    int _,
+    Pointer<Void> _,
   ) {
     if (!_running || _paused) {
       if (queue != nullptr && buffer != nullptr) {
@@ -287,11 +330,10 @@ final class CoreAudioBackend implements AudioBackend {
     }
     final size = buffer.ref.audioDataByteSize;
     if (size > 0 && buffer.ref.audioData != nullptr) {
-      _captureOut.add(
-        Uint8List.fromList(
-          buffer.ref.audioData.cast<Uint8>().asTypedList(size),
-        ),
+      final native = Uint8List.fromList(
+        buffer.ref.audioData.cast<Uint8>().asTypedList(size),
       );
+      _captureOut.add(_convert.toEdge(native, native: _captureNative));
     }
     _audio.queueEnqueueBuffer(queue, buffer, 0, nullptr);
   }
@@ -301,14 +343,16 @@ final class CoreAudioBackend implements AudioBackend {
     AudioQueueRef queue,
     AudioQueueBufferRef buffer,
   ) {
-    final dest = buffer.ref.audioData.cast<Uint8>().asTypedList(_bufferBytes);
-    dest.fillRange(0, _bufferBytes, 0);
+    final dest = buffer.ref.audioData.cast<Uint8>().asTypedList(
+      _renderBufferBytes,
+    );
+    dest.fillRange(0, _renderBufferBytes, 0);
     if (_running && !_paused && _playback.isNotEmpty) {
       final next = _playback.removeAt(0);
-      final count = next.length < _bufferBytes ? next.length : _bufferBytes;
+      final count = min(next.length, _renderBufferBytes);
       dest.setRange(0, count, next);
     }
-    buffer.ref.audioDataByteSize = _bufferBytes;
+    buffer.ref.audioDataByteSize = _renderBufferBytes;
     if (queue != nullptr) {
       _audio.queueEnqueueBuffer(queue, buffer, 0, nullptr);
     }
@@ -316,6 +360,29 @@ final class CoreAudioBackend implements AudioBackend {
 
   void _emitSilence() {
     _captureOut.add(Uint8List(_silenceBytes));
+  }
+
+  MacNativeFormatPlan _planFor(String? uid, {required bool capture}) {
+    final deviceId = switch (uid) {
+      null || '' => _defaultDeviceId(capture: capture),
+      final value => _audio.deviceIdForUid(value),
+    };
+    if (deviceId == null) {
+      return planMacNativeFormat(channels: 1);
+    }
+    final channels = _audio.channelCount(deviceId, capture: capture);
+    final rates = macosDiscreteRates(
+      _audio.availableSampleRateRanges(deviceId),
+    );
+    return planMacNativeFormat(
+      channels: channels < 1 ? 1 : channels,
+      availableRates: rates,
+    );
+  }
+
+  int _bufferBytesFor(AudioFormat format) {
+    final frames = max(format.sampleRate ~/ 100, 1);
+    return frames * format.channels * 2;
   }
 
   List<Endpoint> _collect({required bool capture}) {
@@ -356,11 +423,15 @@ final class CoreAudioBackend implements AudioBackend {
     return items;
   }
 
-  String? _defaultUid({required bool capture}) {
-    final defaultId = _audio.uint32Property(
+  int? _defaultDeviceId({required bool capture}) {
+    return _audio.uint32Property(
       audioObjectSystemObject,
       capture ? fourCC('dIn ') : fourCC('dOut'),
     );
+  }
+
+  String? _defaultUid({required bool capture}) {
+    final defaultId = _defaultDeviceId(capture: capture);
     if (defaultId != null) {
       return _audio.stringProperty(defaultId, fourCC('uid '));
     }

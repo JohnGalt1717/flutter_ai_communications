@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
@@ -9,13 +10,17 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:logging/logging.dart';
 
 import 'src/coverage.dart';
+import 'src/session_diagnostics.dart';
 import 'src/session_options.dart';
+import 'src/session_status.dart';
 
 export 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 export 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
 export 'src/coverage.dart';
+export 'src/session_diagnostics.dart';
 export 'src/session_options.dart';
+export 'src/session_status.dart';
 
 part 'src/audio_manager.dart';
 part 'src/session.dart';

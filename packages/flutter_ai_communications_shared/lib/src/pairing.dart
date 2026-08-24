@@ -110,10 +110,7 @@ final class EndpointPairer {
     if (!renderExists) {
       final capture = _byId(catalog, state.captureId);
       final mate = capture == null ? null : _mate(catalog, capture);
-      return PairingSnapshot(
-        captureId: state.captureId,
-        renderId: mate?.id,
-      );
+      return PairingSnapshot(captureId: state.captureId, renderId: mate?.id);
     }
     if (state.renderOverride && !renderExists) {
       return select(state, catalog, captureId: state.captureId);
@@ -184,10 +181,8 @@ final class EndpointPairer {
     );
   }
 
-  PairingSnapshot _fromPair(Pair? pair) => PairingSnapshot(
-    captureId: pair?.capture?.id,
-    renderId: pair?.render?.id,
-  );
+  PairingSnapshot _fromPair(Pair? pair) =>
+      PairingSnapshot(captureId: pair?.capture?.id, renderId: pair?.render?.id);
 
   Endpoint? _byId(List<Endpoint> catalog, String? id) {
     if (id == null) {
@@ -197,6 +192,8 @@ final class EndpointPairer {
   }
 
   Endpoint? _mate(List<Endpoint> catalog, Endpoint endpoint) => catalog
-      .where((e) => e.pairId == endpoint.pairId && e.isCapture != endpoint.isCapture)
+      .where(
+        (e) => e.pairId == endpoint.pairId && e.isCapture != endpoint.isCapture,
+      )
       .firstOrNull;
 }

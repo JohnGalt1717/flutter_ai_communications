@@ -36,6 +36,9 @@ final class UnavailableAudioBackend implements AudioBackend {
   void select({String? captureId, String? renderId}) {}
 
   @override
+  PairingSnapshot get observed => const PairingSnapshot();
+
+  @override
   void flush() {}
 
   @override

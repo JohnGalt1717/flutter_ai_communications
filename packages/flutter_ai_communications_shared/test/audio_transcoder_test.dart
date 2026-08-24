@@ -51,11 +51,16 @@ void main() {
 
   test('µ-law silence stays silence', () {
     final silence = Uint8List.fromList(
-      List<int>.filled(80, transcoder.transcode(
-        Uint8List(160),
-        const AudioFormat.pcm16le(sampleRate: 8000),
-        const AudioFormat.pcmu(),
-      ).first),
+      List<int>.filled(
+        80,
+        transcoder
+            .transcode(
+              Uint8List(160),
+              const AudioFormat.pcm16le(sampleRate: 8000),
+              const AudioFormat.pcmu(),
+            )
+            .first,
+      ),
     );
     final pcm = _sinePcm(sampleRate: 8000, hz: 440, seconds: 0, amplitude: 0);
     final encoded = transcoder.transcode(
@@ -136,10 +141,7 @@ void main() {
   });
 
   test('unsupported Format is rejected', () {
-    const bad = AudioFormat(
-      encoding: AudioEncoding.pcmu,
-      sampleRate: 16000,
-    );
+    const bad = AudioFormat(encoding: AudioEncoding.pcmu, sampleRate: 16000);
     expect(bad.isSupported, isFalse);
     expect(
       () => transcoder.toWorking(Uint8List(1), bad),

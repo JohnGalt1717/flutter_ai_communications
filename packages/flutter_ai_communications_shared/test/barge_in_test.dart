@@ -8,8 +8,18 @@ void main() {
   test('voice during playback is barge-in and preroll is kept', () {
     final barge = BargeIn(preroll: const Duration(milliseconds: 250));
     const rate = 24000;
-    final rumble = _tone(sampleRate: rate, hz: 80, seconds: 0.05, amplitude: 800);
-    final word = _tone(sampleRate: rate, hz: 700, seconds: 0.05, amplitude: 14000);
+    final rumble = _tone(
+      sampleRate: rate,
+      hz: 80,
+      seconds: 0.05,
+      amplitude: 800,
+    );
+    final word = _tone(
+      sampleRate: rate,
+      hz: 700,
+      seconds: 0.05,
+      amplitude: 14000,
+    );
 
     barge.onPlay();
     barge.remember(rumble, rate);

@@ -6,6 +6,11 @@ Drive **Start → Mute → Pause → Isolation event** from the widget test
 (`flutter test` in this package) or by running the app on iOS, Android, web,
 macOS, Windows, or Linux.
 
+Debug-mode runs initialize `MarionetteBinding` plus
+`LoggingLogCollector` so an agent can `connect` with the printed VM
+service URI and read `get_logs`. That binding is skipped under
+`flutter test`. See `.agents/skills/device-marionette/SKILL.md`.
+
 The visualizer plots the same capture stream the Transport would send. There is
 no SignalR. Web, macOS, Windows, and Linux have no Isolation and no handset
 Endpoint — those are documented limits, not bugs.

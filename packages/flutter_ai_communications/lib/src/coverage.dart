@@ -43,8 +43,15 @@ final class AlwaysOkCoverageSource implements CoverageSource {
   /// Creates a source that never degrades.
   const AlwaysOkCoverageSource();
 
+  static final StreamController<Coverage> _controller =
+      StreamController<Coverage>.broadcast(sync: true)
+        ..onListen = () {
+          _controller.add(const Coverage.ok());
+        };
+
+  /// Broadcast Coverage that replays [Coverage.ok] without a Timer.
   @override
-  Stream<Coverage> get coverage => Stream<Coverage>.value(const Coverage.ok());
+  Stream<Coverage> get coverage => _controller.stream;
 }
 
 /// Host-driven Coverage. Starts [Coverage.ok]; push airplane / hub loss here.
@@ -53,7 +60,13 @@ final class AlwaysOkCoverageSource implements CoverageSource {
 final class DefaultCoverageSource implements CoverageSource {
   /// Creates a host Coverage source.
   DefaultCoverageSource({Coverage initial = const Coverage.ok()})
-    : _latest = initial;
+    : _latest = initial {
+    _controller.onListen = () {
+      if (!_controller.isClosed) {
+        _controller.add(_latest);
+      }
+    };
+  }
 
   final StreamController<Coverage> _controller =
       StreamController<Coverage>.broadcast();
@@ -65,14 +78,13 @@ final class DefaultCoverageSource implements CoverageSource {
   /// Reports a Coverage snapshot.
   void report(Coverage next) {
     _latest = next;
-    _controller.add(next);
+    if (!_controller.isClosed) {
+      _controller.add(next);
+    }
   }
 
   @override
-  Stream<Coverage> get coverage async* {
-    yield _latest;
-    yield* _controller.stream;
-  }
+  Stream<Coverage> get coverage => _controller.stream;
 
   /// Closes the source.
   Future<void> dispose() => _controller.close();

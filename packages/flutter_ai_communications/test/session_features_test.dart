@@ -50,18 +50,21 @@ void main() {
       expect(session.selectedRenderId, 'speaker-out');
     });
 
-    test('OS-forced re-pair applies and clears a render override', () async {
-      final session = await ready();
-      await session.select(captureId: 'airpods-in', renderId: 'speaker-out');
-      expect(session.pairing.renderOverride, isTrue);
-      platform.osRouteController.add(
-        const OsRouteChange(captureId: 'airpods-in'),
-      );
-      await _microtask();
-      expect(session.selectedCaptureId, 'airpods-in');
-      expect(session.selectedRenderId, 'airpods-out');
-      expect(session.pairing.renderOverride, isFalse);
-    });
+    test(
+      'OS-forced route updates Observed without rewriting Desired',
+      () async {
+        final session = await ready();
+        await session.select(captureId: 'airpods-in', renderId: 'speaker-out');
+        expect(session.pairing.renderOverride, isTrue);
+        platform.osRouteController.add(
+          const OsRouteChange(captureId: 'airpods-in', renderId: 'airpods-out'),
+        );
+        await _microtask();
+        expect(session.diagnostics.desired.renderId, 'speaker-out');
+        expect(session.diagnostics.observed.renderId, 'airpods-out');
+        expect(session.pairing.renderOverride, isTrue);
+      },
+    );
   });
 
   group('barge-in', () {
@@ -79,8 +82,27 @@ void main() {
       expect(platform.played, isEmpty);
     });
 
+    test('play queues without marking rendered; flush zeros queued', () async {
+      final session = await ready();
+      await session.play(Uint8List(2400));
+      expect(session.diagnostics.playbackAccepted, 1);
+      expect(session.diagnostics.playbackQueued, 1);
+      expect(session.diagnostics.playbackRendered, 0);
+
+      platform.feedCapture(_tone(hz: 80, amplitude: 800));
+      await _microtask();
+      platform.feedCapture(_tone(hz: 700, amplitude: 14000));
+      await _microtask();
+
+      expect(session.diagnostics.playbackQueued, 0);
+      expect(session.diagnostics.playbackFlushed, 1);
+      expect(platform.flushPlaybackCalls, 1);
+    });
+
     test('remoteVad does not flush playback', () async {
-      final result = await manager.start(bargeInPolicy: BargeInPolicy.remoteVad);
+      final result = await manager.start(
+        bargeInPolicy: BargeInPolicy.remoteVad,
+      );
       final session = (result as StartReady).session;
       await session.play(Uint8List.fromList([1, 2, 3, 4]));
       platform.feedCapture(_tone(hz: 700, amplitude: 14000));

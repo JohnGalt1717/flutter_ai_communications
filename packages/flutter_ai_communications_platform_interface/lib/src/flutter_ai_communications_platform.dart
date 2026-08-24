@@ -67,16 +67,44 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   }
 
   /// Starts the native capture/render graph.
+  ///
+  /// [captureFormat] and [playbackFormat] are the Session edge Formats.
+  /// After [NativeGraphStart.started], [lastNativeFormats] holds the
+  /// negotiated Native Formats.
   Future<NativeGraphStart> startNative({
     String? captureId,
     String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
   }) {
     throw UnimplementedError('startNative() has not been implemented.');
   }
 
+  /// Native Formats from the last start, reset, or Endpoint apply.
+  NativeFormatReport get lastNativeFormats => const NativeFormatReport();
+
   /// Stops the native graph. Does not replace Session streams.
   Future<void> stopNative() {
     throw UnimplementedError('stopNative() has not been implemented.');
+  }
+
+  /// Tears down and rebuilds the native graph without replacing Session streams.
+  Future<NativeGraphStart> resetNative({
+    String? captureId,
+    String? renderId,
+    AudioFormat? captureFormat,
+    AudioFormat? playbackFormat,
+    bool noiseCancelling = true,
+  }) async {
+    await stopNative();
+    return startNative(
+      captureId: captureId,
+      renderId: renderId,
+      captureFormat: captureFormat,
+      playbackFormat: playbackFormat,
+      noiseCancelling: noiseCancelling,
+    );
   }
 
   /// Pauses native capture and render without tearing down Session streams.
@@ -133,4 +161,10 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
 
   /// OS-forced Endpoint changes.
   Stream<OsRouteChange> get osRouteChanges => const Stream.empty();
+
+  /// Last Observed Pair reported by the platform, if any.
+  ///
+  /// Command completion is not observation. Adapters update this only from
+  /// native route state.
+  PairingSnapshot get lastObservedRoute => const PairingSnapshot();
 }

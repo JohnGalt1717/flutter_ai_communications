@@ -63,21 +63,24 @@ void main() {
     expect(next.renderOverride, isFalse);
   });
 
-  test('render override stays split until the override Endpoint disappears', () {
-    var state = pairer.select(
-      const PairingSnapshot(),
-      catalog,
-      captureId: 'airpods-in',
-    );
-    state = pairer.select(state, catalog, renderId: 'speaker-out');
-    expect(state.captureId, 'airpods-in');
-    expect(state.renderId, 'speaker-out');
-    expect(state.renderOverride, isTrue);
+  test(
+    'render override stays split until the override Endpoint disappears',
+    () {
+      var state = pairer.select(
+        const PairingSnapshot(),
+        catalog,
+        captureId: 'airpods-in',
+      );
+      state = pairer.select(state, catalog, renderId: 'speaker-out');
+      expect(state.captureId, 'airpods-in');
+      expect(state.renderId, 'speaker-out');
+      expect(state.renderOverride, isTrue);
 
-    state = pairer.select(state, catalog, captureId: 'airpods-in');
-    expect(state.renderId, 'speaker-out');
-    expect(state.renderOverride, isTrue);
-  });
+      state = pairer.select(state, catalog, captureId: 'airpods-in');
+      expect(state.renderId, 'speaker-out');
+      expect(state.renderOverride, isTrue);
+    },
+  );
 
   test('AirPods-out falls back to speakerphone', () {
     var state = pairer.select(
@@ -85,9 +88,7 @@ void main() {
       catalog,
       captureId: 'airpods-in',
     );
-    final withoutAirPods = catalog
-        .where((e) => e.pairId != 'airpods')
-        .toList();
+    final withoutAirPods = catalog.where((e) => e.pairId != 'airpods').toList();
     state = pairer.onCatalogChanged(state, withoutAirPods);
     expect(state.captureId, 'speaker-in');
     expect(state.renderId, 'speaker-out');

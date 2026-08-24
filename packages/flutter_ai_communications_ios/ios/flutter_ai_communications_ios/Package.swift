@@ -9,16 +9,18 @@ let package = Package(
         .iOS("13.0")
     ],
     products: [
-        .library(name: "flutter-ai-communications-ios", targets: ["flutter_ai_communications_ios"])
+        .library(name: "flutter-ai-communications-ios", targets: ["flutter_ai_communications_ios"]),
     ],
     dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
+        .package(name: "FlutterFramework", path: "../FlutterFramework"),
+        .package(path: "./IosRoutePolicy"),
     ],
     targets: [
         .target(
             name: "flutter_ai_communications_ios",
             dependencies: [
-                .product(name: "FlutterFramework", package: "FlutterFramework")
+                .product(name: "FlutterFramework", package: "FlutterFramework"),
+                .product(name: "IosRoutePolicy", package: "IosRoutePolicy"),
             ],
             resources: [
                 // If your plugin requires a privacy manifest, for example if it uses any required

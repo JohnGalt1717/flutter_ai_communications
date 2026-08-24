@@ -1,3 +1,68 @@
+/// Hardware form factor when the platform reports one.
+enum EndpointFormFactor {
+  /// Unknown or unreported.
+  unknown,
+
+  /// Near-mouth headset or earbuds.
+  headset,
+
+  /// Loudspeaker.
+  speaker,
+
+  /// Phone receiver.
+  handset,
+
+  /// Vehicle audio.
+  car,
+}
+
+/// Native capability evidence on an Endpoint.
+final class EndpointCapabilities {
+  /// Creates capability evidence.
+  const EndpointCapabilities({
+    this.aec = false,
+    this.ns = false,
+    this.agc = false,
+    this.formFactor = EndpointFormFactor.unknown,
+    this.carConnected = false,
+  });
+
+  /// Active acoustic echo cancellation.
+  final bool aec;
+
+  /// Active noise suppression.
+  final bool ns;
+
+  /// Active automatic gain control.
+  final bool agc;
+
+  /// Reported form factor, when known.
+  final EndpointFormFactor formFactor;
+
+  /// Independent car/transport evidence (CarPlay / Android Auto).
+  final bool carConnected;
+
+  /// Whether any native processing or form factor is verified.
+  bool get hasVerifiedNative =>
+      aec ||
+      ns ||
+      agc ||
+      formFactor != EndpointFormFactor.unknown ||
+      carConnected;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EndpointCapabilities &&
+      other.aec == aec &&
+      other.ns == ns &&
+      other.agc == agc &&
+      other.formFactor == formFactor &&
+      other.carConnected == carConnected;
+
+  @override
+  int get hashCode => Object.hash(aec, ns, agc, formFactor, carConnected);
+}
+
 /// Communications role of an Endpoint.
 enum RouteClass {
   /// Phone receiver.
@@ -28,6 +93,7 @@ final class Endpoint {
     required this.routeClass,
     required this.isCapture,
     String? pairId,
+    this.capabilities = const EndpointCapabilities(),
   }) : name = name,
        pairId = pairId ?? name;
 
@@ -46,6 +112,9 @@ final class Endpoint {
   /// Hardware identity shared by a capture/render Pair.
   final String pairId;
 
+  /// Native capability evidence used for Acoustic-profile classification.
+  final EndpointCapabilities capabilities;
+
   @override
   bool operator ==(Object other) =>
       other is Endpoint &&
@@ -53,10 +122,12 @@ final class Endpoint {
       other.name == name &&
       other.routeClass == routeClass &&
       other.isCapture == isCapture &&
-      other.pairId == pairId;
+      other.pairId == pairId &&
+      other.capabilities == capabilities;
 
   @override
-  int get hashCode => Object.hash(id, name, routeClass, isCapture, pairId);
+  int get hashCode =>
+      Object.hash(id, name, routeClass, isCapture, pairId, capabilities);
 
   @override
   String toString() =>

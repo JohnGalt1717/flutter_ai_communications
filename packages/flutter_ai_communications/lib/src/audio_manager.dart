@@ -12,13 +12,15 @@ final class AudioManager {
     Logger? logger,
   }) : _platform = platform ?? FlutterAiCommunicationsPlatform.instance,
        _coverageSource = coverageSource ?? DefaultCoverageSource(),
-       _logger = logger ?? Logger('AudioManager');
+       _logger = logger ?? Logger(PipelineLog.loggerName);
 
   final FlutterAiCommunicationsPlatform _platform;
   final CoverageSource _coverageSource;
   final Logger _logger;
+  static const _resolver = PreferenceResolver();
 
   Session? _session;
+  EndpointPreference _boundPreference = const EndpointPreference();
 
   /// The live Session, if [start] succeeded and [Session.stop] has not run.
   Session? get session => _session;
@@ -29,6 +31,20 @@ final class AudioManager {
   /// Live catalog updates.
   Stream<List<Endpoint>> get endpointCatalog => _platform.endpointCatalog;
 
+  /// Host-persisted Endpoint preference used when start omits
+  /// [SessionPreference.endpoints].
+  EndpointPreference get boundPreference => _boundPreference;
+
+  /// Replaces the bound Endpoint preference. Ends a live Session.
+  Future<void> bindPreference(EndpointPreference preference) async {
+    _boundPreference = preference;
+    _log(PipelineLog.preferenceBound, {
+      'count': preference.entries.length,
+      'empty': preference.isEmpty,
+    });
+    await _session?.stop();
+  }
+
   /// Requests permission, then starts at most one Session.
   ///
   /// Expected failures are [StartResult] values, not thrown exceptions.
@@ -37,9 +53,24 @@ final class AudioManager {
     AudioFormat? playbackFormat,
     SessionPreference preference = const SessionPreference(),
     BargeInPolicy bargeInPolicy = BargeInPolicy.local,
+    SessionDirection direction = SessionDirection.duplex,
+    String? purpose,
   }) async {
+    _log(PipelineLog.startRequested, {
+      'direction': direction.name,
+      'purpose': purpose,
+    });
+    final live = _session;
+    if (live != null && !live.isStopping) {
+      _log(PipelineLog.startAlreadyActive, {'purpose': live.purpose});
+      return StartAlreadyActive(purpose: live.purpose);
+    }
+    if (live != null && live.isStopping) {
+      await live.whenStopped;
+    }
     if (_session != null) {
-      return const StartAlreadyActive();
+      _log(PipelineLog.startAlreadyActive, {'purpose': _session!.purpose});
+      return StartAlreadyActive(purpose: _session!.purpose);
     }
 
     final capture = captureFormat ?? AudioTranscoder.defaultEdge;
@@ -47,37 +78,80 @@ final class AudioManager {
     if (!capture.isSupported || !playback.isSupported) {
       return StartFailed(ArgumentError('unsupported Format'));
     }
-
-    final MicrophonePermission permission;
-    try {
-      permission = await _platform.requestMicrophonePermission();
-    } catch (error, stack) {
-      _logger.warning('microphone permission request failed', error, stack);
-      return StartFailed(error);
+    if (capture.encoding == AudioEncoding.opus ||
+        playback.encoding == AudioEncoding.opus) {
+      return StartFailed(UnsupportedError('opus'));
     }
 
-    switch (permission) {
-      case MicrophonePermission.denied:
-        return const StartDenied();
-      case MicrophonePermission.restricted:
-        return const StartRestricted();
-      case MicrophonePermission.granted:
-        break;
+    if (direction.hasCapture) {
+      final MicrophonePermission permission;
+      try {
+        permission = await _platform.requestMicrophonePermission();
+      } catch (error, stack) {
+        _logger.warning(
+          PipelineLog.line(PipelineLog.permission, {'result': 'failed'}),
+          error,
+          stack,
+        );
+        return StartFailed(error);
+      }
+      _log(PipelineLog.permission, {
+        'requested': true,
+        'result': permission.name,
+      });
+      switch (permission) {
+        case MicrophonePermission.denied:
+          return const StartDenied();
+        case MicrophonePermission.restricted:
+          return const StartRestricted();
+        case MicrophonePermission.granted:
+          break;
+      }
+    } else {
+      _log(PipelineLog.permission, {'requested': false, 'result': 'skipped'});
     }
 
     final catalog = await _platform.enumerateEndpoints();
-    final pairing = _initialPairing(catalog, preference);
+    _log(PipelineLog.catalog, {'count': catalog.length});
+    final resolvedPreference = preference.endpoints.isEmpty
+        ? _boundPreference
+        : preference.endpoints;
+    final resolution = _resolver.resolve(
+      catalog: catalog,
+      preference: resolvedPreference,
+      requireCapture: direction.hasCapture,
+      requireRender: direction.hasPlayback,
+      explicitCaptureId: preference.captureId,
+      explicitRenderId: preference.renderId,
+    );
+    _log(PipelineLog.preferenceResolved, {
+      'preferenceControlled': resolution.preferenceControlled,
+      'captureId': resolution.desired.captureId,
+      'renderId': resolution.desired.renderId,
+      'exhausted': resolution.exhausted,
+    });
+    if (resolution.exhausted) {
+      return const StartUnavailable();
+    }
 
     final NativeGraphStart native;
     try {
       native = await _platform.startNative(
-        captureId: pairing.captureId,
-        renderId: pairing.renderId,
+        captureId: resolution.desired.captureId,
+        renderId: resolution.desired.renderId,
+        captureFormat: capture,
+        playbackFormat: playback,
+        noiseCancelling: preference.noiseCancelling,
       );
     } catch (error, stack) {
-      _logger.warning('native start failed', error, stack);
+      _logger.warning(
+        PipelineLog.line(PipelineLog.nativeStart, {'result': 'failed'}),
+        error,
+        stack,
+      );
       return StartFailed(error);
     }
+    _log(PipelineLog.nativeStart, {'result': native.name});
 
     return switch (native) {
       NativeGraphStart.unavailable => const StartUnavailable(),
@@ -87,30 +161,13 @@ final class AudioManager {
         playbackFormat: playback,
         preference: preference,
         bargeInPolicy: bargeInPolicy,
-        pairing: pairing,
+        direction: direction,
+        purpose: purpose,
+        resolution: resolution,
+        resolvedPreference: resolvedPreference,
         catalog: catalog,
       ),
     };
-  }
-
-  PairingSnapshot _initialPairing(
-    List<Endpoint> catalog,
-    SessionPreference preference,
-  ) {
-    const pairer = EndpointPairer();
-    if (preference.captureId != null || preference.renderId != null) {
-      return pairer.select(
-        const PairingSnapshot(),
-        catalog,
-        captureId: preference.captureId,
-        renderId: preference.renderId,
-      );
-    }
-    final speaker = pairer.speakerphone(catalog);
-    return PairingSnapshot(
-      captureId: speaker?.capture?.id,
-      renderId: speaker?.render?.id,
-    );
   }
 
   StartReady _attachSession({
@@ -118,7 +175,10 @@ final class AudioManager {
     required AudioFormat playbackFormat,
     required SessionPreference preference,
     required BargeInPolicy bargeInPolicy,
-    required PairingSnapshot pairing,
+    required SessionDirection direction,
+    required String? purpose,
+    required PreferenceResolution resolution,
+    required EndpointPreference resolvedPreference,
     required List<Endpoint> catalog,
   }) {
     final session = Session._(
@@ -127,13 +187,27 @@ final class AudioManager {
       playbackFormat: playbackFormat,
       preference: preference,
       bargeInPolicy: bargeInPolicy,
+      direction: direction,
+      purpose: purpose,
       coverageSource: _coverageSource,
-      pairing: pairing,
+      desired: resolution.desired,
+      preferenceControlled: resolution.preferenceControlled,
+      endpoints: resolvedPreference,
       catalog: catalog,
       onStopped: () => _session = null,
       logger: _logger,
+      nativeFormats: _platform.lastNativeFormats,
     );
     _session = session;
+    _log(PipelineLog.sessionAttached, {
+      'direction': direction.name,
+      'purpose': purpose,
+      'generation': session.diagnostics.selectionGeneration,
+    });
     return StartReady(session);
+  }
+
+  void _log(String code, [Map<String, Object?> fields = const {}]) {
+    _logger.info(PipelineLog.line(code, fields));
   }
 }
