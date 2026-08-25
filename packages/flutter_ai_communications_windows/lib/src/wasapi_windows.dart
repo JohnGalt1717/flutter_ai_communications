@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+import 'package:logging/logging.dart';
 import 'package:win32/win32.dart';
 
 import 'route_class.dart';
@@ -29,13 +30,17 @@ final _mmDeviceEnumerator = GUID.fromComponents(
 final class WasapiWindowsBackend implements WasapiBackend {
   /// Creates the backend and initializes COM.
   WasapiWindowsBackend() {
-    CoInitializeEx(COINIT_MULTITHREADED);
+    // Flutter's runner already initialized STA. RPC_E_CHANGED_MODE is fine.
+    CoInitializeEx(COINIT_APARTMENTTHREADED);
     try {
       _enumerator = _lifetime.com<IMMDeviceEnumerator>(_mmDeviceEnumerator);
-    } on Object {
+    } on Object catch (error, stack) {
+      _log.warning('WASAPI enumerator create failed', error, stack);
       _enumerator = null;
     }
   }
+
+  static final _log = Logger('WasapiWindows');
 
   final Arena _lifetime = Arena();
   IMMDeviceEnumerator? _enumerator;
@@ -52,6 +57,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
   String? _renderId;
   String? _boundCaptureId;
   String? _boundRenderId;
+  NativeFormatReport _nativeFormats = const NativeFormatReport();
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -160,9 +166,12 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   @override
   PairingSnapshot get observed => PairingSnapshot(
-    captureId: _boundCaptureId ?? _captureId,
-    renderId: _boundRenderId ?? _renderId,
+    captureId: _boundCaptureId,
+    renderId: _boundRenderId,
   );
+
+  @override
+  NativeFormatReport get nativeFormats => _nativeFormats;
 
   @override
   void flush() {
@@ -184,8 +193,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
     unawaited(_captureOut.close());
   }
 
+  bool get _wantCapture => _captureId != null || _renderId == null;
+
+  bool get _wantRender => _renderId != null || _captureId == null;
+
   bool _startGraph() {
-    _emitSilence();
+    if (_wantCapture) {
+      _emitSilence();
+    }
     _stopGraph();
     final enumerator = _enumerator;
     if (enumerator == null) {
@@ -193,78 +208,137 @@ final class WasapiWindowsBackend implements WasapiBackend {
     }
     final graph = Arena();
     try {
-      final captureOpened = _openDevice(
-        enumerator,
-        _captureId,
-        eCapture,
-        graph,
-      );
-      final renderOpened = _openDevice(enumerator, _renderId, eRender, graph);
-      final captureDevice = captureOpened.device;
-      final renderDevice = renderOpened.device;
-      if (captureDevice == null || renderDevice == null) {
-        graph.releaseAll();
-        return false;
+      String? boundCapture;
+      String? boundRender;
+      AudioFormat? captureFormat;
+      AudioFormat? renderFormat;
+      if (_wantCapture) {
+        final opened = _openDevice(
+          enumerator,
+          _captureId,
+          eCapture,
+          graph,
+          fallback: _captureId == null || _captureId!.isEmpty,
+        );
+        final device = opened.device;
+        if (device == null) {
+          graph.releaseAll();
+          return false;
+        }
+        final bound = _bindClient(device, graph);
+        if (bound == null) {
+          graph.releaseAll();
+          return false;
+        }
+        _captureClient = bound.client;
+        _capture = graph.adopt(bound.client.getService<IAudioCaptureClient>());
+        boundCapture = opened.id;
+        captureFormat = AudioFormat.pcm16le(sampleRate: bound.rate);
       }
-      _boundCaptureId = captureOpened.id;
-      _boundRenderId = renderOpened.id;
-      final format = graph<WAVEFORMATEX>();
-      format.ref
-        ..wFormatTag = WAVE_FORMAT_PCM
-        ..nChannels = 1
-        ..nSamplesPerSec = _sampleRate
-        ..wBitsPerSample = 16
-        ..nBlockAlign = 2
-        ..nAvgBytesPerSec = _sampleRate * 2
-        ..cbSize = 0;
-      final flags = _autoConvertPcm | _srcDefaultQuality;
-      final captureClient = graph.adopt(
-        captureDevice.activate<IAudioClient>(CLSCTX_ALL, null),
-      );
-      captureClient.initialize(
-        AUDCLNT_SHAREMODE_SHARED,
-        flags,
-        _refTimes20ms,
-        0,
-        format,
-        null,
-      );
-      final capture = graph.adopt(
-        captureClient.getService<IAudioCaptureClient>(),
-      );
-      final renderClient = graph.adopt(
-        renderDevice.activate<IAudioClient>(CLSCTX_ALL, null),
-      );
-      renderClient.initialize(
-        AUDCLNT_SHAREMODE_SHARED,
-        flags,
-        _refTimes20ms,
-        0,
-        format,
-        null,
-      );
-      final render = graph.adopt(renderClient.getService<IAudioRenderClient>());
+      if (_wantRender) {
+        final opened = _openDevice(
+          enumerator,
+          _renderId,
+          eRender,
+          graph,
+          fallback: _renderId == null || _renderId!.isEmpty,
+        );
+        final device = opened.device;
+        if (device == null) {
+          graph.releaseAll();
+          return false;
+        }
+        final bound = _bindClient(device, graph);
+        if (bound == null) {
+          graph.releaseAll();
+          return false;
+        }
+        _renderClient = bound.client;
+        _render = graph.adopt(bound.client.getService<IAudioRenderClient>());
+        _renderFrames = bound.client.getBufferSize();
+        boundRender = opened.id;
+        renderFormat = AudioFormat.pcm16le(sampleRate: bound.rate);
+      }
       _graph = graph;
-      _captureClient = captureClient;
-      _capture = capture;
-      _renderClient = renderClient;
-      _render = render;
-      _renderFrames = renderClient.getBufferSize();
       final keepPaused = _paused;
       _running = true;
       _paused = keepPaused;
       if (!keepPaused) {
-        captureClient.start();
-        renderClient.start();
+        _captureClient?.start();
+        _renderClient?.start();
       }
-      _poll = Timer.periodic(const Duration(milliseconds: 10), (_) {
-        _pumpCapture();
-      });
+      if (_wantCapture) {
+        _poll = Timer.periodic(const Duration(milliseconds: 10), (_) {
+          _pumpCapture();
+        });
+      }
+      _boundCaptureId = boundCapture;
+      _boundRenderId = boundRender;
+      _nativeFormats = NativeFormatReport(
+        capture: captureFormat,
+        playback: renderFormat,
+      );
       return true;
-    } on Object {
+    } on Object catch (error, stack) {
+      _log.warning('WASAPI graph start failed', error, stack);
+      _boundCaptureId = null;
+      _boundRenderId = null;
+      _nativeFormats = const NativeFormatReport();
       graph.releaseAll();
       return false;
     }
+  }
+
+  IAudioClient _activateClient(IMMDevice device, Arena graph) {
+    try {
+      final client = graph.adopt(
+        device.activate<IAudioClient2>(CLSCTX_ALL, null),
+      );
+      final properties = graph<AudioClientProperties>();
+      properties.ref
+        ..cbSize = sizeOf<AudioClientProperties>()
+        ..bIsOffload = false
+        ..eCategory = AudioCategory_Communications;
+      try {
+        client.setClientProperties(properties);
+      } on Object {
+        // Communications category is best-effort.
+      }
+      return client;
+    } on Object {
+      return graph.adopt(device.activate<IAudioClient>(CLSCTX_ALL, null));
+    }
+  }
+
+  ({IAudioClient client, int rate})? _bindClient(IMMDevice device, Arena graph) {
+    const rates = [_sampleRate, 48000, 16000];
+    final flags = _autoConvertPcm | _srcDefaultQuality;
+    for (final rate in rates) {
+      try {
+        final client = _activateClient(device, graph);
+        final format = graph<WAVEFORMATEX>();
+        format.ref
+          ..wFormatTag = WAVE_FORMAT_PCM
+          ..nChannels = 1
+          ..nSamplesPerSec = rate
+          ..wBitsPerSample = 16
+          ..nBlockAlign = 2
+          ..nAvgBytesPerSec = rate * 2
+          ..cbSize = 0;
+        client.initialize(
+          AUDCLNT_SHAREMODE_SHARED,
+          flags,
+          _refTimes20ms,
+          0,
+          format,
+          null,
+        );
+        return (client: client, rate: rate);
+      } on Object {
+        continue;
+      }
+    }
+    return null;
   }
 
   void _stopGraph() {
@@ -286,6 +360,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
     _renderFrames = 0;
     _boundCaptureId = null;
     _boundRenderId = null;
+    _nativeFormats = const NativeFormatReport();
   }
 
   void _pumpCapture() {
@@ -325,18 +400,25 @@ final class WasapiWindowsBackend implements WasapiBackend {
     IMMDeviceEnumerator enumerator,
     String? id,
     EDataFlow flow,
-    Arena arena,
-  ) {
+    Arena arena, {
+    required bool fallback,
+  }) {
     if (id != null && id.isNotEmpty) {
       try {
         final found = enumerator.getDevice(
           PCWSTR(id.toNativeUtf16(allocator: arena)),
         );
         if (found != null) {
-          return (device: arena.adopt(found), id: id);
+          final adopted = arena.adopt(found);
+          return (device: adopted, id: _openedId(adopted));
         }
       } on Object {
-        // Fall back to the default communications Endpoint.
+        if (!fallback) {
+          return (device: null, id: null);
+        }
+      }
+      if (!fallback) {
+        return (device: null, id: null);
       }
     }
     try {
@@ -348,12 +430,20 @@ final class WasapiWindowsBackend implements WasapiBackend {
         return (device: null, id: null);
       }
       final adopted = arena.adopt(fallback);
-      final idPtr = adopted.getId();
-      final openedId = idPtr.toDartString();
-      free(idPtr);
-      return (device: adopted, id: openedId);
+      return (device: adopted, id: _openedId(adopted));
     } on Object {
       return (device: null, id: null);
+    }
+  }
+
+  String? _openedId(IMMDevice device) {
+    try {
+      final idPtr = device.getId();
+      final openedId = idPtr.toDartString();
+      free(idPtr);
+      return openedId;
+    } on Object {
+      return null;
     }
   }
 
@@ -435,11 +525,20 @@ final class WasapiWindowsBackend implements WasapiBackend {
     return null;
   }
 
+  String _guidText(GUID guid) {
+    final bytes = List<int>.generate(8, (i) => guid.Data4[i]);
+    String hex(int value, int width) =>
+        value.toRadixString(16).padLeft(width, '0');
+    return '{${hex(guid.Data1, 8)}-${hex(guid.Data2, 4)}-${hex(guid.Data3, 4)}-'
+        '${hex(bytes[0], 2)}${hex(bytes[1], 2)}-'
+        '${bytes.sublist(2).map((b) => hex(b, 2)).join()}}';
+  }
+
   String? _guidProp(IPropertyStore store, Pointer<PROPERTYKEY> key) {
     try {
       final value = PropVariant.fromPointer(store.getValue(key));
       if (value.vt == VT_CLSID && value.puuid != nullptr) {
-        final text = value.puuid.toString();
+        final text = _guidText(value.puuid.ref);
         value.free();
         return text;
       }

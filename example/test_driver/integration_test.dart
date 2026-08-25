@@ -11,7 +11,11 @@ Future<void> main() async {
     writeResponseOnFailure: true,
     responseDataCallback: (data) async {
       await writeResponseData(data);
-      final dir = Directory('/tmp/flutter_ai_communications_receipts');
+      final dir = Directory(
+        Platform.isWindows
+            ? '${Directory.systemTemp.path}${Platform.pathSeparator}flutter_ai_communications_receipts'
+            : '/tmp/flutter_ai_communications_receipts',
+      );
       await dir.create(recursive: true);
       if (data == null) {
         return;

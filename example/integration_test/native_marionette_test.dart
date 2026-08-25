@@ -211,4 +211,64 @@ void main() {
       'nativeFailuresSkipped': false,
     });
   });
+
+  testWidgets('native Marionette: desktop capture x render combinations', (
+    tester,
+  ) async {
+    if (runningOnWeb) {
+      return;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.windows:
+      case TargetPlatform.macOS:
+      case TargetPlatform.linux:
+        break;
+      default:
+        return;
+    }
+
+    final manager = AudioManager();
+    addTearDown(() async {
+      await manager.session?.stop();
+    });
+
+    var catalog = await manager.endpoints();
+    if (catalog.isEmpty) {
+      final primed = await requireReady(manager, purpose: 'desktop-catalog');
+      catalog = await manager.endpoints();
+      await primed.stop();
+    }
+    expect(catalog, isNotEmpty);
+    final captures = catalog.where((e) => e.isCapture).toList();
+    final renders = catalog.where((e) => !e.isCapture).toList();
+    expect(captures, isNotEmpty, reason: 'desktop catalog must list capture');
+    expect(renders, isNotEmpty, reason: 'desktop catalog must list render');
+
+    final combos = <Map<String, Object?>>[];
+    for (final capture in captures) {
+      for (final render in renders) {
+        final session = await requireReady(
+          manager,
+          purpose: 'desktop-combo-${capture.id}-${render.id}',
+        );
+        final captureStream = session.capture;
+        await session.select(captureId: capture.id, renderId: render.id);
+        await assertObserved(session);
+        expect(identical(session.capture, captureStream), isTrue);
+        combos.add(snapshot(session, caseName: 'combo'));
+        await session.stop();
+      }
+    }
+
+    await writeReceipt({
+      'commit': hostCommit(),
+      'platform': defaultTargetPlatform.name,
+      'os': hostOs(),
+      'hardware': hostHardware(),
+      'permission': 'granted',
+      'combinations': combos,
+      'combinationCount': combos.length,
+      'nativeFailuresSkipped': false,
+    });
+  });
 }
