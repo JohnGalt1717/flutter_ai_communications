@@ -2,7 +2,7 @@
 
 **Status:** Planning landed. Implementation starts at tickets 01–02.
 **Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
-**Host plan:** `ProjectFulcrum/Apps/.agents/plans/2026-08-25-communications-video-host-integration.md`.
+**Host plan:** `ProjectFulcrum/.agents/plans/2026-08-25-communications-video-host-integration.md`.
 
 ## Goal
 
@@ -12,7 +12,7 @@ Parity bar: a host must be able to build both a Teams-like and a Zoom-like produ
 
 Audio production work in `.agents/plans/production-audio-manager-and-real-device-conformance.md` stays on its own track. Video must not regress one-Session, one audio Capture stream, or ADR-0004 reset identity.
 
-Fulcrum Apps does not implement camera graphs. That host work is a separate markdown plan and ticket set under `FULCRUM/Apps`.
+Fulcrum Apps does not implement camera graphs. That host work is a separate markdown plan under `FULCRUM/.agents/plans` and tickets under `FULCRUM/Apps/.scratch`.
 
 ## Gate
 
