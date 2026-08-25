@@ -99,7 +99,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       result("denied")
     case .notDetermined:
       AVCaptureDevice.requestAccess(for: .audio) { granted in
-        result(granted ? "granted" : "denied")
+        // FlutterResult must be invoked on the platform-channel thread (main).
+        DispatchQueue.main.async {
+          result(granted ? "granted" : "denied")
+        }
       }
     @unknown default:
       result("denied")
@@ -234,7 +237,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         let count = Int(buffer.frameLength)
         var bytes = [UInt8](repeating: 0, count: count * 2)
         for i in 0..<count {
-          let sample = Int16((floats[i] * 32767).rounded())
+          let clamped = max(-1.0, min(1.0, Double(floats[i])))
+          let sample = Int16((clamped * 32767.0).rounded())
           bytes[i * 2] = UInt8(truncatingIfNeeded: sample)
           bytes[i * 2 + 1] = UInt8(truncatingIfNeeded: sample >> 8)
         }

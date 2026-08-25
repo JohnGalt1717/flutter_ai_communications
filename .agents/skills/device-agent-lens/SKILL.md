@@ -27,24 +27,17 @@ Prefer Agent Lens / flutter-skill launch over `workbench.action.debug.*`.
 Do **not** use VS Code debug configurations.
 
 `.mcp.json` must start flutter-skill via the Dart package (the npm
-`flutter-skill` wrapper on this machine ships an empty native binary):
+`flutter-skill` wrapper on this machine ships an empty native binary). Prefer
+`$HOME` so the path is portable:
 
 ```json
 "flutter-skill": {
-  "command": "dart",
+  "command": "bash",
   "args": [
-    "run",
-    "--directory=/Users/jameshancock/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36",
-    "bin/server.dart"
+    "-lc",
+    "cd \"$HOME/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36\" && dart run bin/server.dart"
   ]
 }
-```
-
-If `dart run --directory=...` is unsupported on the host Dart SDK, use:
-
-```json
-"command": "bash",
-"args": ["-lc", "cd /Users/jameshancock/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36 && dart run bin/server.dart"]
 ```
 
 Launch the app:

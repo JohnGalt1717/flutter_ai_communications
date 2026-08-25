@@ -7,7 +7,7 @@
             "command": "bash",
             "args": [
                 "-lc",
-                "cd /Users/jameshancock/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36 && dart run bin/server.dart"
+                "cd \"$HOME/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36\" && dart run bin/server.dart"
             ]
         },
         "chrome-devtools": {
