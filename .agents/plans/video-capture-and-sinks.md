@@ -1,5 +1,9 @@
 # Video Capture, Processors, and Sink Providers Plan
 
+**Status:** Planning landed. Implementation starts at tickets 01–02.
+**Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
+**Host plan:** `ProjectFulcrum/Apps/.agents/plans/2026-08-25-communications-video-host-integration.md`.
+
 ## Goal
 
 Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications` without turning Session into a WebRTC client. Cameras, Pre-join preview, Production video path, Mute-video, Camera-off, library-owned Video processors, and attachable Video sinks. First sink is flutter_webrtc. First platforms are iOS, Android, Web, macOS, and Windows.
@@ -7,6 +11,8 @@ Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications
 Parity bar: a host must be able to build both a Teams-like and a Zoom-like product on this API. Missing in-call or lobby capability is a spec bug.
 
 Audio production work in `.agents/plans/production-audio-manager-and-real-device-conformance.md` stays on its own track. Video must not regress one-Session, one audio Capture stream, or ADR-0004 reset identity.
+
+Fulcrum Apps does not implement camera graphs. That host work is a separate markdown plan and ticket set under `FULCRUM/Apps`.
 
 ## Gate
 
@@ -33,6 +39,37 @@ Linux and screen share are later plans.
 - Session direction is a capability mask. Video attaches and detaches without replacing audio streams.
 - Video sinks are providers. This repo does not own PeerConnection or signaling.
 - Video processors: none, blur(intensity), replace(bytes or asset). Fallback to none is a warning, not a start failure.
+
+## Public API sketch (host-facing)
+
+Names follow `CONTEXT.md`. Exact types land in ticket 01.
+
+```text
+manager.cameras()
+manager.bindCameraPreference(orderedIds)
+preview = await manager.startPreview(videoFormat, cameraId?, processor)
+preview.textureId
+preview.selectCamera(id)
+preview.setProcessor(...)
+preview.setCameraEnabled(false)
+await preview.stop()
+
+result = await manager.start(
+  direction,
+  captureFormat, playbackFormat, videoFormat,
+  preference, cameraPreference,
+  videoProcessor,
+)
+session.enableVideo(...)
+session.selectCamera(id)
+session.muteVideo() / unmuteVideo()
+session.setCameraEnabled(false)
+session.setVideoProcessor(...)
+session.attachSink(sink) / detachSink(sink)
+session.pause() / stop()
+```
+
+Default Video Format: 1280×720 at 30 fps.
 
 ## Work order
 
@@ -111,6 +148,22 @@ Tickets 13–14.
 - Marionette keys for the above
 - `docs/host-prejoin-narrative.md` kept accurate
 
+## Ticket map
+
+| # | Title | Blocked by |
+| --- | --- | --- |
+| 00 | Spec, glossary, ADRs | — |
+| 01 | Shared video types | 00 |
+| 02 | Session and platform-interface contracts | 01 |
+| 03 | Pre-join preview | 02 |
+| 04 | Video sink provider seam | 02 |
+| 05–09 | iOS / Android / macOS / Windows / Web graphs | 02 |
+| 10 | Processors on iOS and Android | 03, 05, 06 |
+| 11 | Processors on macOS, Windows, Web | 07, 08, 09, 10 |
+| 12 | flutter_webrtc sink package | 04 and one native graph |
+| 13 | Example landing + in-session harness | 03 and one native graph |
+| 14 | Host guide accuracy pass | 13 |
+
 ## Physical-device matrix
 
 Primary gate on relevant video changes:
@@ -136,6 +189,28 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 6. Example + narrative (13–14) after preview + one native graph; full platform matrix after 05–09
 7. User approval that Teams-like and Zoom-like hosts can be built
 
+## Files likely touched
+
+- `packages/flutter_ai_communications_shared` — video types
+- `packages/flutter_ai_communications_platform_interface` — new methods default unimplemented
+- `packages/flutter_ai_communications` — AudioManager / Session
+- per-platform packages — camera graphs and processor hooks
+- new `flutter_ai_communications_webrtc` workspace package
+- `example/` — landing + in-session AV
+- `docs/spec-video-v1.md`, `docs/host-prejoin-narrative.md`, ADRs 0012–0017
+
+## Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| Dart production frame pump | ADR-0013. Calibration tap off by default |
+| Preview implemented as a Session | ADR-0014. alreadyActive still holds |
+| Mute-video == Camera-off | ADR-0016. Separate tests |
+| Host injects a processor object | ADR-0017. Selectable values only |
+| Session knows flutter_webrtc | Sink package only. Ticket 12 tests |
+| Audio stream identity changes | Enable-video-later tests; ADR-0004 |
+| Apps repo reimplements CameraX | Host plan forbids it; markdown tickets there |
+
 ## Definition of done
 
 - Tickets in `.scratch/video-v1-issues/` complete
@@ -145,3 +220,4 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 - flutter_webrtc sink package attaches without Session knowing WebRTC types
 - Example landing page is Marionette-drivable
 - Audio ADR-0003 and ADR-0004 still hold
+- No GitHub issues required for this slice unless a human asks
