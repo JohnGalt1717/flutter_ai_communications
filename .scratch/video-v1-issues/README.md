@@ -2,9 +2,9 @@
 
 Local tracker for `docs/spec-video-v1.md`. Numbered in dependency order. Work the frontier: any ticket whose blockers are done. Do not open GitHub issues for this slice unless a human asks.
 
-Host (Fulcrum Apps) tickets live in
-`ProjectFulcrum/Apps/.scratch/video-host-issues/` and the host plan
-`ProjectFulcrum/Apps/.agents/plans/2026-08-25-communications-video-host-integration.md`.
+Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
+`.agents/plans/2026-08-25-communications-video-host-integration.md`.
+Both are in this repository. First host surface is `example/`.
 
 | # | Title | Blocked by |
 | --- | --- | --- |

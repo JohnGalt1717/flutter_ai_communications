@@ -2,7 +2,8 @@
 
 **Status:** Planning landed. Implementation starts at tickets 01–02.
 **Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
-**Host plan:** `ProjectFulcrum/.agents/plans/2026-08-25-communications-video-host-integration.md`.
+**Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
+**Host tickets:** `.scratch/video-host-issues/`.
 
 ## Goal
 
@@ -12,7 +13,7 @@ Parity bar: a host must be able to build both a Teams-like and a Zoom-like produ
 
 Audio production work in `.agents/plans/production-audio-manager-and-real-device-conformance.md` stays on its own track. Video must not regress one-Session, one audio Capture stream, or ADR-0004 reset identity.
 
-Fulcrum Apps does not implement camera graphs. That host work is a separate markdown plan under `FULCRUM/.agents/plans` and tickets under `FULCRUM/Apps/.scratch`.
+Host integration lives in this repository. The first host surface is `example/`. Host work does not implement camera graphs.
 
 ## Gate
 
@@ -78,7 +79,7 @@ Default Video Format: 1280×720 at 30 fps.
 Tickets 00–02.
 
 - Glossary terms in `CONTEXT.md`
-- ADRs 0012–0017
+- ADRs 0012–017
 - `docs/spec-video-v1.md` and this plan
 - Shared types: Camera Endpoint, Camera facing, Camera preference, Video Format, Native Video Format, Video processor, sink handle
 - Platform interface methods defaulting to unimplemented
@@ -141,7 +142,7 @@ Complete when the example can attach the sink and a loopback PeerConnection show
 
 ### 7. Example harness and host narrative
 
-Tickets 13–14.
+Tickets 13–14, plus `.scratch/video-host-issues/`.
 
 - Landing page: mode, audio picks, camera pick, preview, processor, join
 - In-session: mute-audio, mute-video, Camera-off, switch camera, pause, stop
@@ -197,7 +198,7 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 - per-platform packages — camera graphs and processor hooks
 - new `flutter_ai_communications_webrtc` workspace package
 - `example/` — landing + in-session AV
-- `docs/spec-video-v1.md`, `docs/host-prejoin-narrative.md`, ADRs 0012–0017
+- `docs/spec-video-v1.md`, `docs/host-prejoin-narrative.md`, ADRs 0012–017
 
 ## Risks
 
@@ -209,11 +210,12 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 | Host injects a processor object | ADR-0017. Selectable values only |
 | Session knows flutter_webrtc | Sink package only. Ticket 12 tests |
 | Audio stream identity changes | Enable-video-later tests; ADR-0004 |
-| Apps repo reimplements CameraX | Host plan forbids it; markdown tickets there |
+| Host reimplements CameraX | Host plan forbids it; markdown tickets in this repo |
 
 ## Definition of done
 
 - Tickets in `.scratch/video-v1-issues/` complete
+- Host tickets in `.scratch/video-host-issues/` complete or explicitly deferred
 - Fake-platform and public-seam tests pass
 - Five-platform receipts for catalog, preview, start, mute-video, Camera-off
 - Processors work on iOS and Android at minimum; other platforms documented if delayed
