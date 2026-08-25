@@ -1,20 +1,13 @@
 {
     "mcpServers": {
-        "debugmcp": {
-            "autoApprove": [],
-            "disabled": false,
-            "timeout": 300,
-            "type": "streamableHttp",
-            "url": "http://localhost:3001/mcp"
+        "flutter_agent_lens": {
+            "command": "flutter-agent-lens"
         },
-        "marionette": {
-            "type": "stdio",
-            "command": "dart",
+        "flutter-skill": {
+            "command": "bash",
             "args": [
-                "pub",
-                "global",
-                "run",
-                "marionette_mcp:marionette_mcp"
+                "-lc",
+                "cd /Users/jameshancock/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36 && dart run bin/server.dart"
             ]
         },
         "chrome-devtools": {
