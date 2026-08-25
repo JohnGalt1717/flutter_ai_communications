@@ -3,7 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
-/// Core Audio graph used by the macOS adapter.
+/// Native graph used by the macOS adapter.
+///
+/// Capture and playback must share one duplex engine so VoiceProcessingIO
+/// receives the rendered reference. Separate AudioQueues recreate the Scribe
+/// speaker leak.
 abstract class AudioBackend {
   /// Snapshot of capture and render Endpoints.
   List<Endpoint> enumerate();
@@ -12,7 +16,11 @@ abstract class AudioBackend {
   MicrophonePermission probePermission();
 
   /// Starts capture and render. Same subscription must survive restarts.
-  NativeGraphStart start({String? captureId, String? renderId});
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  });
 
   /// Tears down the graph. Does not close Session streams.
   void stop();

@@ -17,8 +17,11 @@ final class UnavailableAudioBackend implements AudioBackend {
   MicrophonePermission probePermission() => MicrophonePermission.denied;
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) =>
-      NativeGraphStart.unavailable;
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) => NativeGraphStart.unavailable;
 
   @override
   void stop() {}

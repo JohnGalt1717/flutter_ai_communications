@@ -29,10 +29,11 @@ final class SessionPreference {
   /// adaptive, fixed, or pass-through.
   final CaptureProcessor? processor;
 
-  /// Whether the Session asks the platform for AEC/NS/AGC and iOS Isolation.
+  /// Whether the Session asks the platform for AEC/NS/AGC and Isolation.
   ///
-  /// When Isolation is off or unavailable, the Session emits
-  /// [IsolationState.required] or [IsolationState.unavailable] and raises
+  /// Isolation is user-chosen. When it is off, the Session emits
+  /// [IsolationState.required] so the host can prompt. If Isolation stays
+  /// off or is unavailable (macOS), the Session still starts and raises
   /// the adaptive Sound floor. Hosts own every prompt string.
   final bool noiseCancelling;
 

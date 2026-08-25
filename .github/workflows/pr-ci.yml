@@ -1,0 +1,77 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: pr-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart-tests:
+    name: Flutter package tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get (workspace)
+        run: flutter pub get
+
+      - name: Test flutter_ai_communications
+        working-directory: packages/flutter_ai_communications
+        run: flutter test
+
+      - name: Test shared
+        working-directory: packages/flutter_ai_communications_shared
+        run: flutter test
+
+      - name: Test platform_interface
+        working-directory: packages/flutter_ai_communications_platform_interface
+        run: flutter test
+
+      - name: Test macOS adapter
+        working-directory: packages/flutter_ai_communications_macos
+        run: flutter test
+
+      - name: Test iOS adapter
+        working-directory: packages/flutter_ai_communications_ios
+        run: flutter test
+
+      - name: Test Android adapter
+        working-directory: packages/flutter_ai_communications_android
+        run: flutter test
+
+      - name: Test web adapter
+        working-directory: packages/flutter_ai_communications_web
+        run: flutter test
+
+      - name: Test Windows adapter
+        working-directory: packages/flutter_ai_communications_windows
+        run: flutter test
+
+      - name: Test Linux adapter
+        working-directory: packages/flutter_ai_communications_linux
+        run: flutter test
+
+  ios-route-policy:
+    name: iOS route policy (Swift)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift test IosRoutePolicy
+        working-directory: packages/flutter_ai_communications_ios/ios/flutter_ai_communications_ios/IosRoutePolicy
+        run: swift test

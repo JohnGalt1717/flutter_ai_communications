@@ -18,6 +18,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var running = false
   private var generation = 0
   private var noiseCancelling = true
+  private var voiceProcessingEnabled = false
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
 
@@ -116,6 +117,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       emitCatalog()
       emitIsolation()
       emitRoute()
+      scheduleSpeakerReassert()
       result("started")
     } catch {
       result("failed")
@@ -124,24 +126,32 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func stopNative() {
     running = false
-    engine?.inputNode.removeTap(onBus: 0)
-    engine?.stop()
-    player?.stop()
-    engine = nil
-    player = nil
-    playbackFormat = nil
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    teardownEngine(keepSessionActive: false)
   }
 
   private func configureSession() throws {
     let session = AVAudioSession.sharedInstance()
+    var options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
+    if IosVoiceProcessingPolicy.sessionCategoryIncludesDefaultToSpeaker {
+      options.insert(.defaultToSpeaker)
+    }
     try session.setCategory(
       .playAndRecord,
       mode: .voiceChat,
-      options: [.allowBluetooth, .allowBluetoothA2DP]
+      options: options
     )
     try session.setPreferredSampleRate(24_000)
     try session.setActive(true)
+    let voiceProcessing = IosVoiceProcessingPolicy.shouldEnableVoiceProcessing(
+      noiseCancelling: noiseCancelling,
+      routeClass: selectedRouteClass()
+    )
+    try? session.setPreferredInputNumberOfChannels(
+      IosVoiceProcessingPolicy.preferredInputChannelCount(voiceProcessing: voiceProcessing)
+    )
+    try? session.setPreferredOutputNumberOfChannels(
+      IosVoiceProcessingPolicy.preferredOutputChannelCount(voiceProcessing: voiceProcessing)
+    )
     applyRoute()
     NotificationCenter.default.removeObserver(self)
     NotificationCenter.default.addObserver(
@@ -156,32 +166,108 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       name: AVAudioSession.interruptionNotification,
       object: session
     )
+    observeMicrophoneMode()
   }
 
   private func startEngine() throws {
     emitSilenceFrame()
-    engine?.inputNode.removeTap(onBus: 0)
-    engine?.stop()
+    teardownEngine(keepSessionActive: true)
     let next = AVAudioEngine()
     let playerNode = AVAudioPlayerNode()
     next.attach(playerNode)
-    let inputFormat = next.inputNode.outputFormat(forBus: 0)
     let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
+    let inputFormat = next.inputNode.outputFormat(forBus: 0)
     let playerFormat = try Self.makePlaybackFormat(
       inputFormat: inputFormat,
       mixerFormat: mixerFormat
     )
     next.connect(playerNode, to: next.mainMixerNode, format: playerFormat)
-    let tapFormat = inputFormat.channelCount > 0 ? inputFormat : nil
+    if IosVoiceProcessingPolicy.mixerMustConnectToOutputOnSameEngine {
+      next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
+    }
+
+    let enableVoiceProcessing = IosVoiceProcessingPolicy.shouldEnableVoiceProcessing(
+      noiseCancelling: noiseCancelling,
+      routeClass: selectedRouteClass()
+    )
+    if enableVoiceProcessing {
+      do {
+        try next.inputNode.setVoiceProcessingEnabled(true)
+        if next.inputNode.isVoiceProcessingBypassed {
+          next.inputNode.isVoiceProcessingBypassed = false
+        }
+        voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
+      } catch {
+        voiceProcessingEnabled = false
+      }
+    } else if next.inputNode.isVoiceProcessingEnabled {
+      try? next.inputNode.setVoiceProcessingEnabled(false)
+      voiceProcessingEnabled = false
+    } else {
+      voiceProcessingEnabled = false
+    }
+    if IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
+      applyRoute()
+    }
+
+    let processedInput = next.inputNode.outputFormat(forBus: 0)
+    let tapChannels = IosVoiceProcessingPolicy.captureTapChannelCount(
+      voiceProcessingEnabled: voiceProcessingEnabled,
+      inputNodeChannels: Int(processedInput.channelCount)
+    )
+    let tapFormat = captureTapFormat(
+      inputFormat: processedInput,
+      channels: tapChannels
+    )
     next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
       self?.emitCapture(buffer)
     }
     try next.start()
+    if IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
+      applyRoute()
+      scheduleSpeakerReassert()
+    }
     engine = next
     player = playerNode
     playbackFormat = playerFormat
     queuedPlaybackFrames = 0
     playerNode.play()
+  }
+
+  private func teardownEngine(keepSessionActive: Bool) {
+    if let engine {
+      if IosVoiceProcessingPolicy.mustDisableVoiceProcessingBeforeEngineStop,
+         engine.inputNode.isVoiceProcessingEnabled
+      {
+        try? engine.inputNode.setVoiceProcessingEnabled(false)
+      }
+      engine.inputNode.removeTap(onBus: 0)
+      player?.stop()
+      engine.stop()
+    }
+    engine = nil
+    player = nil
+    playbackFormat = nil
+    voiceProcessingEnabled = false
+    if !keepSessionActive {
+      try? AVAudioSession.sharedInstance().setActive(
+        false,
+        options: .notifyOthersOnDeactivation
+      )
+    }
+  }
+
+  private func captureTapFormat(inputFormat: AVAudioFormat, channels: Int) -> AVAudioFormat? {
+    guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else { return nil }
+    if inputFormat.channelCount == AVAudioChannelCount(channels) {
+      return inputFormat
+    }
+    return AVAudioFormat(
+      commonFormat: inputFormat.commonFormat,
+      sampleRate: inputFormat.sampleRate,
+      channels: AVAudioChannelCount(channels),
+      interleaved: inputFormat.isInterleaved
+    )
   }
 
   private static func makePlaybackFormat(
@@ -311,6 +397,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     do {
       try startEngine()
       emitRoute()
+      emitIsolation()
+      scheduleSpeakerReassert()
     } catch {
       emitPath(alive: false)
     }
@@ -318,7 +406,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func applyRoute() {
     let session = AVAudioSession.sharedInstance()
-    if selectedRenderId == "speakerphone-out" || selectedRenderId == "speaker-out" {
+    let wantsSpeaker = desiresSpeaker()
+    // Do not clear .speaker first: VPIO races that flash to the receiver and
+    // latches Observed as handset even when Desired remains speakerphone.
+    if wantsSpeaker {
       try? session.overrideOutputAudioPort(.speaker)
     } else {
       try? session.overrideOutputAudioPort(.none)
@@ -326,11 +417,46 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     if let preferred = preferredInput() {
       try? session.setPreferredInput(preferred)
     }
+    // Speaker override after preferredInput: VPIO/input selection can flip
+    // output back to the receiver if we stop here.
+    if wantsSpeaker {
+      try? session.overrideOutputAudioPort(.speaker)
+    }
+  }
+
+  private func desiresSpeaker() -> Bool {
+    selectedRenderId == "speakerphone-out" || selectedRenderId == "speaker-out"
+  }
+
+  private func observedMatchesDesired() -> Bool {
+    let session = AVAudioSession.sharedInstance()
+    let ids = catalogIds(from: session)
+    return ids.capture == selectedCaptureId && ids.render == selectedRenderId
+  }
+
+  /// VPIO restores the receiver asynchronously after override. Reassert only
+  /// while Desired is still speaker and Observed has not converged.
+  private func scheduleSpeakerReassert() {
+    guard desiresSpeaker() else { return }
+    let generationAtSchedule = generation
+    for delay in [0.05, 0.15, 0.35, 0.75, 1.25] as [TimeInterval] {
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        guard let self, self.running, self.generation == generationAtSchedule else { return }
+        guard self.desiresSpeaker(), !self.observedMatchesDesired() else { return }
+        self.applyRoute()
+        self.emitRoute()
+      }
+    }
   }
 
   private func preferredInput() -> AVAudioSessionPortDescription? {
     let session = AVAudioSession.sharedInstance()
     let inputs = session.availableInputs ?? []
+    if IosVoiceProcessingPolicy.shouldPreferBuiltInMic(selectedCaptureId: selectedCaptureId),
+       let mic = inputs.first(where: { $0.portType == .builtInMic })
+    {
+      return mic
+    }
     if let selectedCaptureId {
       let wanted = pairKey(selectedCaptureId)
       if let match = inputs.first(where: { pairId(for: $0) == wanted }) {
@@ -454,12 +580,86 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func isolationState() -> String {
     if #available(iOS 15.0, *) {
-      if AVCaptureDevice.preferredMicrophoneMode == .voiceIsolation {
-        return "on"
-      }
-      return noiseCancelling ? "required" : "off"
+      return IosVoiceProcessingPolicy.isolationState(
+        noiseCancelling: noiseCancelling,
+        isolationApiAvailable: true,
+        preferredMode: Self.microphoneMode(AVCaptureDevice.preferredMicrophoneMode),
+        activeMode: activeMicrophoneMode(),
+        voiceProcessingEnabled: voiceProcessingEnabled,
+        routeClass: selectedRouteClass()
+      )
     }
-    return "unavailable"
+    return IosVoiceProcessingPolicy.isolationState(
+      noiseCancelling: noiseCancelling,
+      isolationApiAvailable: false,
+      preferredMode: .unknown,
+      activeMode: nil,
+      voiceProcessingEnabled: voiceProcessingEnabled,
+      routeClass: selectedRouteClass()
+    )
+  }
+
+  private func activeMicrophoneMode() -> IosVoiceProcessingPolicy.MicrophoneMode? {
+    if #available(iOS 18.0, *) {
+      return Self.microphoneMode(AVCaptureDevice.activeMicrophoneMode)
+    }
+    return nil
+  }
+
+  @available(iOS 15.0, *)
+  private static func microphoneMode(
+    _ mode: AVCaptureDevice.MicrophoneMode
+  ) -> IosVoiceProcessingPolicy.MicrophoneMode {
+    switch mode {
+    case .standard:
+      return .standard
+    case .wideSpectrum:
+      return .wideSpectrum
+    case .voiceIsolation:
+      return .voiceIsolation
+    default:
+      // iOS 18 Automatic Mic Mode. Matched by raw value so older SDKs compile.
+      if mode.rawValue == 3 {
+        return .automatic
+      }
+      return .unknown
+    }
+  }
+
+  private func observeMicrophoneMode() {
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleMicrophoneModeChange),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+  }
+
+  @objc private func handleMicrophoneModeChange() {
+    emitIsolation()
+  }
+
+  private func selectedRouteClass() -> String {
+    if let selectedRenderId {
+      if selectedRenderId == "speaker-out" || selectedRenderId == "speakerphone-out" {
+        return "speakerphone"
+      }
+      if selectedRenderId == "handset-out" {
+        return "handset"
+      }
+    }
+    if let output = AVAudioSession.sharedInstance().currentRoute.outputs.first {
+      return routeClass(for: output.portType)
+    }
+    if let selectedCaptureId {
+      if selectedCaptureId == "speaker-in" {
+        return "speakerphone"
+      }
+      if selectedCaptureId == "handset-in" {
+        return "handset"
+      }
+    }
+    return "speakerphone"
   }
 
   private func openIsolationSettings() {
@@ -475,6 +675,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       AVCaptureDevice.showSystemUserInterface(.microphoneModes)
       if hold {
         try? AVAudioSession.sharedInstance().setActive(true)
+        applyRoute()
         try? engine?.start()
         player?.play()
       }
@@ -493,8 +694,15 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   @objc private func handleRouteChange(_ notification: Notification) {
+    // VPIO and setPreferredInput can asynchronously restore the receiver.
+    // Reassert only on mismatch so override itself does not loop forever.
+    if running, desiresSpeaker(), !observedMatchesDesired() {
+      applyRoute()
+      scheduleSpeakerReassert()
+    }
     emitCatalog()
     emitRoute()
+    emitIsolation()
     emitPath(alive: !AVAudioSession.sharedInstance().currentRoute.outputs.isEmpty)
   }
 

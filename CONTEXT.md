@@ -53,7 +53,7 @@ User speech that interrupts playback without clipping the first word.
 _Avoid_: interrupt, duck, cutoff
 
 **Isolation**:
-The iOS microphone isolation / voice-isolation mode the Session can detect. The host owns the prompt; the Session can open the system Isolation UI when asked.
+The iOS microphone isolation / voice-isolation mode the Session can detect while noise cancelling is on. Automatic Mic Mode may use Isolation on the handset and Standard on speakerphone. The host owns the prompt; the Session can open the system Isolation UI when asked. If Isolation stays off or is unavailable, the Session raises the Sound floor.
 _Avoid_: ANC, noise cancellation (headset hardware or OS AEC/NS)
 
 **Coverage**:

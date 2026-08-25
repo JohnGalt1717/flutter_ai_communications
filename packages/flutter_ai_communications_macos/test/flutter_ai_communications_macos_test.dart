@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_macos/flutter_ai_communications_macos.dart';
 import 'package:flutter_ai_communications_macos/src/audio_backend.dart';
+import 'package:flutter_ai_communications_macos/src/macos_voice_processing_policy.dart';
 import 'package:flutter_ai_communications_macos/src/route_class.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -22,8 +23,18 @@ void main() {
   });
 
   test('macOS Isolation is unavailable', () {
-    final adapter = FlutterAiCommunicationsMacos();
+    final adapter = FlutterAiCommunicationsMacos(backend: _RecordingBackend());
     expect(adapter.lastIsolation.state, IsolationState.unavailable);
+  });
+
+  test('macOS duplex policy keeps capture and playback on one engine', () {
+    expect(MacosVoiceProcessingPolicy.usesSingleDuplexEngine, isTrue);
+    expect(MacosVoiceProcessingPolicy.playbackMustShareCaptureEngine, isTrue);
+    expect(
+      MacosVoiceProcessingPolicy.mixerMustConnectToOutputOnSameEngine,
+      isTrue,
+    );
+    expect(MacosVoiceProcessingPolicy.isolationState, 'unavailable');
   });
 
   test('built-in speakers pair as speakerphone', () {
@@ -165,7 +176,11 @@ final class _RecordingBackend implements AudioBackend {
   MicrophonePermission probePermission() => MicrophonePermission.granted;
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) {
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) {
     if (failBind) {
       bound = const PairingSnapshot();
       return NativeGraphStart.failed;

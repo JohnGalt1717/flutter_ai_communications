@@ -12,12 +12,13 @@ import 'core_audio_ffi.dart';
 import 'macos_format_plan.dart';
 import 'macos_pcm_convert.dart';
 import 'macos_queue_bind.dart';
+import 'macos_voice_processing_policy.dart';
 import 'route_class.dart';
 
 const _silenceBytes = 480;
 const _bufferCount = 3;
 
-/// Core Audio AudioQueue capture and render.
+/// Catalog and Observed UID lookup. Duplex capture/playback is native.
 final class CoreAudioBackend implements AudioBackend {
   /// Opens Core Audio in-process.
   CoreAudioBackend() : _audio = CoreAudio();
@@ -33,6 +34,7 @@ final class CoreAudioBackend implements AudioBackend {
   var _paused = false;
   String? _captureId;
   String? _renderId;
+  var _noiseCancelling = true;
   AudioFormat _captureNative = AudioFormat.pcm16le24k;
   AudioFormat _renderNative = AudioFormat.pcm16le24k;
   var _captureBufferBytes = _silenceBytes;
@@ -64,9 +66,20 @@ final class CoreAudioBackend implements AudioBackend {
   }
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) {
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) {
     _captureId = captureId;
     _renderId = renderId;
+    _noiseCancelling = noiseCancelling;
+    // Production duplex is the native AVAudioEngine plugin. This FFI path
+    // remains for catalog/UID helpers and injected test doubles only.
+    // VoiceProcessing still requires MacosVoiceProcessingPolicy.usesSingleDuplexEngine.
+    assert(
+      !_noiseCancelling || MacosVoiceProcessingPolicy.usesSingleDuplexEngine,
+    );
     return _startGraph() ? NativeGraphStart.started : NativeGraphStart.failed;
   }
 

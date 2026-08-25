@@ -65,6 +65,7 @@ Load the skill before the work it covers:
 | Debug session → VM service URI → Marionette MCP; stale session kill/restart | `device-marionette` |
 | Mic / OS permission sheets, `pm grant`, `simctl privacy`, first-start Allow | `device-permission-prompts` |
 | Physical iOS/Android native receipts | `.agents/workflows/real-device-marionette.md` |
+| Ship PR → CI → Copilot review → squash-merge | `/ship-pr-review-loop` |
 
 ## Non-negotiables
 

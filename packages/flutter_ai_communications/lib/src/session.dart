@@ -545,6 +545,9 @@ final class Session {
       _ => event,
     };
     _lastIsolation = presented;
+    // Prompt via Isolation required. If Isolation stays off, unavailable, or
+    // the user refuses, adapt: raise the Sound floor as if there is no
+    // Isolation / noise cancelling.
     _isolationMissing = switch (presented.state) {
       IsolationState.off ||
       IsolationState.required ||
