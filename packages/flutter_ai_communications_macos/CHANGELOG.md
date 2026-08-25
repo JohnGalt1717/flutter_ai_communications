@@ -2,4 +2,6 @@
 
 ## 0.0.1
 
-* Initial macOS adapter. Core Audio / AudioQueue via Dart FFI.
+* Initial macOS adapter.
+* Production duplex uses one native AVAudioEngine (capture + playback).
+* Isolation is unavailable; the Session raises the Sound floor.

@@ -21,7 +21,9 @@ void main() {
     FlutterAiCommunicationsPlatform.debugReset();
   });
 
-  Future<Session> ready({SessionPreference preference = const SessionPreference()}) async {
+  Future<Session> ready({
+    SessionPreference preference = const SessionPreference(),
+  }) async {
     final result = await manager.start(
       preference: preference,
       bargeInPolicy: BargeInPolicy.remoteVad,
@@ -29,17 +31,23 @@ void main() {
     return (result as StartReady).session;
   }
 
-  test('default Session is adaptive on the resolved Acoustic profile', () async {
-    final session = await ready();
-    expect(session.captureProcessor, const CaptureProcessor.adaptive());
-    expect(
-      session.diagnostics.acousticProfile?.family,
-      AcousticFamily.communicationsHeadset,
-    );
-    expect(session.diagnostics.baselineStep, 3);
-    expect(session.diagnostics.profileConfidence, ProfileConfidence.known);
-    expect(session.diagnostics.captureProcessor, const CaptureProcessor.adaptive());
-  });
+  test(
+    'default Session is adaptive on the resolved Acoustic profile',
+    () async {
+      final session = await ready();
+      expect(session.captureProcessor, const CaptureProcessor.adaptive());
+      expect(
+        session.diagnostics.acousticProfile?.family,
+        AcousticFamily.communicationsHeadset,
+      );
+      expect(session.diagnostics.baselineStep, 3);
+      expect(session.diagnostics.profileConfidence, ProfileConfidence.known);
+      expect(
+        session.diagnostics.captureProcessor,
+        const CaptureProcessor.adaptive(),
+      );
+    },
+  );
 
   test('soundFloor zero is pass-through compatibility', () async {
     final session = await ready(
@@ -95,55 +103,64 @@ void main() {
       ),
     );
     expect(session.diagnostics.baselineStep, 3);
-    expect(
-      session.diagnostics.activeFloor,
-      BaselinePolicy.rmsForStep(3),
-    );
+    expect(session.diagnostics.activeFloor, BaselinePolicy.rmsForStep(3));
   });
 
   test('Isolation missing raises adaptive floor only', () async {
     final session = await ready();
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.on),
-    );
+    platform.isolationController.add(const IsolationEvent(IsolationState.on));
     await Future<void>.delayed(Duration.zero);
     final before = session.diagnostics.activeFloor!;
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.off),
-    );
+    platform.isolationController.add(const IsolationEvent(IsolationState.off));
     await Future<void>.delayed(Duration.zero);
     expect(session.diagnostics.activeFloor, greaterThan(before));
 
     session.setCaptureProcessor(const CaptureProcessor.profileScaled(5));
     final scaled = session.diagnostics.activeFloor;
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.off),
-    );
+    platform.isolationController.add(const IsolationEvent(IsolationState.off));
     await Future<void>.delayed(Duration.zero);
     expect(session.diagnostics.activeFloor, scaled);
   });
 
-  test('noiseCancelling remaps Isolation off to required and raises floor',
-      () async {
-    final session = await ready();
-    expect(session.lastIsolation.state, IsolationState.required);
-    expect(
-      session.diagnostics.activeFloor,
-      greaterThan(BaselinePolicy.rmsForStep(3)),
-    );
+  test(
+    'Isolation unavailable raises floor so refuse-or-missing adapts',
+    () async {
+      final session = await ready();
+      platform.isolationController.add(const IsolationEvent(IsolationState.on));
+      await Future<void>.delayed(Duration.zero);
+      final before = session.diagnostics.activeFloor!;
 
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.on),
-    );
-    await Future<void>.delayed(Duration.zero);
-    expect(session.lastIsolation.state, IsolationState.on);
+      // Host prompted via required; user refused / platform has no Isolation.
+      platform.isolationController.add(
+        const IsolationEvent(IsolationState.unavailable),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(session.lastIsolation.state, IsolationState.unavailable);
+      expect(session.diagnostics.activeFloor, greaterThan(before));
+    },
+  );
 
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.off),
-    );
-    await Future<void>.delayed(Duration.zero);
-    expect(session.lastIsolation.state, IsolationState.required);
-  });
+  test(
+    'noiseCancelling remaps Isolation off to required and raises floor',
+    () async {
+      final session = await ready();
+      expect(session.lastIsolation.state, IsolationState.required);
+      expect(
+        session.diagnostics.activeFloor,
+        greaterThan(BaselinePolicy.rmsForStep(3)),
+      );
+
+      platform.isolationController.add(const IsolationEvent(IsolationState.on));
+      await Future<void>.delayed(Duration.zero);
+      expect(session.lastIsolation.state, IsolationState.on);
+
+      platform.isolationController.add(
+        const IsolationEvent(IsolationState.off),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(session.lastIsolation.state, IsolationState.required);
+    },
+  );
 
   test('noiseCancelling off does not emit Isolation required', () async {
     final session = await ready(
@@ -152,9 +169,7 @@ void main() {
     expect(session.lastIsolation.state, isNot(IsolationState.required));
     expect(session.lastIsolation.state, IsolationState.unavailable);
 
-    platform.isolationController.add(
-      const IsolationEvent(IsolationState.off),
-    );
+    platform.isolationController.add(const IsolationEvent(IsolationState.off));
     await Future<void>.delayed(Duration.zero);
     expect(session.lastIsolation.state, IsolationState.off);
   });
@@ -175,14 +190,17 @@ void main() {
         processor: CaptureProcessor.profileScaled(5),
       ),
     );
-    expect(session.diagnostics.acousticProfile?.family, AcousticFamily.communicationsHeadset);
-    await session.select(captureId: 'speaker-in');
-    expect(session.diagnostics.acousticProfile?.family, AcousticFamily.speakerphone);
-    expect(session.diagnostics.baselineStep, 6);
     expect(
-      session.diagnostics.activeFloor,
-      BaselinePolicy.rmsForStep(6),
+      session.diagnostics.acousticProfile?.family,
+      AcousticFamily.communicationsHeadset,
     );
+    await session.select(captureId: 'speaker-in');
+    expect(
+      session.diagnostics.acousticProfile?.family,
+      AcousticFamily.speakerphone,
+    );
+    expect(session.diagnostics.baselineStep, 6);
+    expect(session.diagnostics.activeFloor, BaselinePolicy.rmsForStep(6));
   });
 }
 

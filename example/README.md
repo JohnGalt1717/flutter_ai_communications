@@ -1,15 +1,15 @@
 # flutter_ai_communications_example
 
-AI-voice Marionette harness for the federated Audio manager.
+AI-voice agent harness for the federated Audio manager.
 
 Drive **Start → Mute → Pause → Isolation event** from the widget test
 (`flutter test` in this package) or by running the app on iOS, Android, web,
 macOS, Windows, or Linux.
 
-Debug-mode runs initialize `MarionetteBinding` plus
-`LoggingLogCollector` so an agent can `connect` with the printed VM
-service URI and read `get_logs`. That binding is skipped under
-`flutter test`. See `.agents/skills/device-marionette/SKILL.md`.
+Debug-mode runs initialize `FlutterSkillBinding` so **flutter-skill** can
+tap/type/scroll the UI. Use **flutter_agent_lens** to discover/attach to the
+VM service, read console logs, set breakpoints, and evaluate expressions.
+That binding is skipped under `flutter test`.
 
 The visualizer plots the same capture stream the Transport would send. There is
 no SignalR. Web, macOS, Windows, and Linux have no Isolation and no handset

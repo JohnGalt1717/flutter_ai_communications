@@ -1,11 +1,11 @@
 ---
 name: device-permission-prompts
-description: Grant OS permission prompts during Flutter debug and native Marionette. Use when start() hangs on a microphone Allow dialog, Android pm grant, iOS simctl privacy, physical-device TCC, Mac Automation, Patrol grantPermissionWhenInUse, or XCTest addUIInterruptionMonitor.
+description: Grant OS permission prompts during Flutter debug and Agent Lens / flutter-skill device runs. Use when start() hangs on a microphone Allow dialog, Android pm grant, iOS simctl privacy, physical-device TCC, Mac Automation, Patrol grantPermissionWhenInUse, or XCTest addUIInterruptionMonitor.
 ---
 
 # Device permission prompts
 
-`start()` requests permission and **blocks until the OS answers**. The dialog is a system sheet (SpringBoard / package installer / TCC), not Flutter UI. Marionette, `integration_test`, and `widget_inspector` cannot tap it.
+`start()` requests permission and **blocks until the OS answers**. The dialog is a system sheet (SpringBoard / package installer / TCC), not Flutter UI. flutter-skill, Agent Lens, `integration_test`, and `widget_inspector` cannot tap it.
 
 Receipts stay in [real-device-marionette.md](../../workflows/real-device-marionette.md). The grant job is [grant-device-permissions.md](../../workflows/grant-device-permissions.md).
 
@@ -47,7 +47,7 @@ xcrun simctl privacy <udid> reset microphone com.example.flutterAiCommunications
 
 ## Physical iOS / iPadOS
 
-There is no `devicectl` / `simctl` grant for microphone on hardware. XCTest `addUIInterruptionMonitor` and Appium `autoAcceptAlerts` run only inside an XCUITest / WebDriverAgent process. `flutter drive`, `flutter test integration_test/…`, and Marionette are not that process.
+There is no `devicectl` / `simctl` grant for microphone on hardware. XCTest `addUIInterruptionMonitor` and Appium `autoAcceptAlerts` run only inside an XCUITest / WebDriverAgent process. `flutter drive`, `flutter test integration_test/…`, flutter-skill, and Agent Lens are not that process.
 
 1. Keep the exclusive `flutter drive` / `flutter run` alive.
 2. Ask the human: tap **Allow** on the microphone sheet. Isolation Open is host UI — leave it; it is not a suite gate.

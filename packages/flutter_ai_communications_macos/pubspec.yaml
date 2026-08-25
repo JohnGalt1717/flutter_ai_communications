@@ -26,4 +26,5 @@ flutter:
     implements: flutter_ai_communications
     platforms:
       macos:
+        pluginClass: FlutterAiCommunicationsPlugin
         dartPluginClass: FlutterAiCommunicationsMacos

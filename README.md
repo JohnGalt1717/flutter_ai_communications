@@ -109,7 +109,7 @@ Default when omitted: PCM16 LE mono 24 kHz on both edges.
 
 ## Example
 
-`example/` is an AI-voice debug harness (Marionette-friendly): device list, start/mute/pause, Isolation event surface, fixture loopback. It is not a SignalR client.
+`example/` is an AI-voice debug harness (flutter-skill + flutter_agent_lens): device list, start/mute/pause, Isolation event surface, fixture loopback. It is not a SignalR client.
 
 ## Agents
 

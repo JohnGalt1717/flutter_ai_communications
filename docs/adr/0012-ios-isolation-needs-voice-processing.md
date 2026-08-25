@@ -1,0 +1,3 @@
+# Isolation needs VoiceProcessingIO on speakerphone and handset
+
+iOS Isolation is a user-chosen microphone mode that only applies while VoiceProcessingIO is enabled. Speakerphone and handset share the built-in mic array; pinning a Front/Bottom data source or tapping stereo before VPIO is on is the Scribe speaker leak. The adapter enables VPIO after attaching playback on one duplex engine, prefers Session-mono channels, re-applies the Desired Pair after VPIO, and reads the active Mic Mode so Automatic on speakerphone is Isolation required, not on. The host prompts from Isolation required. If Isolation stays off or is unavailable, the Session raises the Sound floor.

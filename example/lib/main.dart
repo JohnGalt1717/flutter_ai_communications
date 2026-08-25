@@ -8,39 +8,38 @@ import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
+import 'package:flutter_skill/flutter_skill.dart';
 import 'package:logging/logging.dart';
-import 'package:marionette_flutter/marionette_flutter.dart';
-import 'package:marionette_logging/marionette_logging.dart';
 
 void main() {
-  _installMarionetteBinding();
+  // FlutterSkillBinding is not a WidgetsBinding; initialize ServicesBinding
+  // before any platform EventChannel listen (loopback wrap).
+  WidgetsFlutterBinding.ensureInitialized();
+  _installAgentBindings();
   LoopbackCommunicationsPlatform.wrapRegistered();
   runApp(const ExampleApp());
 }
 
-/// Registers Marionette + `get_logs` in debug `flutter run` only.
+/// Registers flutter-skill UI automation in debug `flutter run` only.
 ///
-/// Tests must not call this `main()`: [MarionetteBinding] is a
-/// [WidgetsBinding] and cannot share a process with the test binding.
-void _installMarionetteBinding() {
-  if (kDebugMode) {
-    hierarchicalLoggingEnabled = true;
-    Logger.root.level = Level.INFO;
-    Logger(PipelineLog.loggerName).level = Level.INFO;
-    MarionetteBinding.ensureInitialized(
-      MarionetteConfiguration(logCollector: LoggingLogCollector()),
-    );
+/// Use flutter_agent_lens for attach/logs/breakpoints; flutter-skill for taps.
+/// Tests should not call this `main()` if they need a different binding.
+void _installAgentBindings() {
+  if (!kDebugMode) {
     return;
   }
-  WidgetsFlutterBinding.ensureInitialized();
+  hierarchicalLoggingEnabled = true;
+  Logger.root.level = Level.INFO;
+  Logger(PipelineLog.loggerName).level = Level.INFO;
+  FlutterSkillBinding.ensureInitialized();
 }
 
-/// Marionette harness that looks like an AI voice client.
+/// AI-voice harness that looks like a communications client.
 final class ExampleApp extends StatelessWidget {
   /// Creates the example app.
   const ExampleApp({super.key, this.manager});
 
-  /// Optional injected Audio manager (tests / Marionette).
+  /// Optional injected Audio manager (tests / agent harness).
   final AudioManager? manager;
 
   @override
@@ -215,7 +214,7 @@ final class _SessionPageState extends State<SessionPage> {
     final session = _session;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Marionette'),
+        title: const Text('AI Communications'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
