@@ -74,20 +74,22 @@ void main() {
         }
       }
     }
+    final observedCapture = backend.observed.captureId;
+    final observedRender = backend.observed.renderId;
     backend.stop();
 
     expect(
       frames.length,
       greaterThan(1),
       reason:
-          'no capture frames observed=${backend.observed.captureId}/${backend.observed.renderId} catalog=$summary logs=$logs',
+          'no capture frames observed=$observedCapture/$observedRender catalog=$summary logs=$logs',
     );
     expect(
       peak,
       greaterThan(0),
       reason:
           'capture stayed silent frames=${frames.length} '
-          'observed=${backend.observed.captureId}/${backend.observed.renderId} '
+          'observed=$observedCapture/$observedRender '
           'catalog=$summary logs=$logs',
     );
   });
@@ -220,5 +222,5 @@ void main() {
     backend.play(Uint8List(480));
     backend.stop();
   });
-  }, skip: !Platform.isWindows);
+  }, skip: !Platform.isWindows || Platform.environment['WASAPI_LIVE'] != '1');
 }

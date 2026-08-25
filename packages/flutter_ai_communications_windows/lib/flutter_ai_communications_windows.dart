@@ -80,10 +80,7 @@ final class FlutterAiCommunicationsWindows
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
-      _lastNativeFormats = _backend.nativeFormats.withEdges(
-        capture: captureFormat ?? AudioFormat.pcm16le24k,
-        playback: playbackFormat ?? AudioFormat.pcm16le24k,
-      );
+      _lastNativeFormats = _backend.nativeFormats;
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
       _publishCatalog();
@@ -115,6 +112,7 @@ final class FlutterAiCommunicationsWindows
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
+      _lastNativeFormats = _backend.nativeFormats;
       _emitObserved(force: true);
     }
   }

@@ -147,6 +147,8 @@ void main() {
     expect(started, NativeGraphStart.started);
     expect(adapter.lastObservedRoute.captureId, 'usb-in');
     expect(adapter.lastObservedRoute.renderId, isNull);
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, isNull);
   });
 
   test('playback-only start does not bind capture', () async {
@@ -158,6 +160,8 @@ void main() {
     expect(started, NativeGraphStart.started);
     expect(adapter.lastObservedRoute.captureId, isNull);
     expect(adapter.lastObservedRoute.renderId, 'usb-out');
+    expect(adapter.lastNativeFormats.capture, isNull);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
   });
 
   test('endpoint catalog emits before startNative', () async {
