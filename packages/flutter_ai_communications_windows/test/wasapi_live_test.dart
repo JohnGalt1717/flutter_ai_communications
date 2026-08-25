@@ -9,8 +9,8 @@ import 'package:logging/logging.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('live WASAPI catalog starts and emits non-zero capture', () async {
-    expect(Platform.isWindows, isTrue);
+  group('live WASAPI', () {
+  test('catalog starts and emits non-zero capture', () async {
     hierarchicalLoggingEnabled = true;
     Logger.root.level = Level.ALL;
     final logs = <String>[];
@@ -92,8 +92,7 @@ void main() {
     );
   });
 
-  test('live WASAPI start of a catalog Pair reports those Observed ids', () async {
-    expect(Platform.isWindows, isTrue);
+  test('start of a catalog Pair reports those Observed ids', () async {
     final backend = WasapiWindowsBackend();
     addTearDown(backend.dispose);
     final catalog = backend.enumerate();
@@ -152,8 +151,7 @@ void main() {
     );
   });
 
-  test('live WASAPI split capture/render stays on those Endpoints', () async {
-    expect(Platform.isWindows, isTrue);
+  test('split capture/render stays on those Endpoints', () async {
     final backend = WasapiWindowsBackend();
     addTearDown(backend.dispose);
     final catalog = backend.enumerate();
@@ -195,8 +193,7 @@ void main() {
     backend.stop();
   });
 
-  test('live WASAPI capture-only does not bind render', () async {
-    expect(Platform.isWindows, isTrue);
+  test('capture-only does not bind render', () async {
     final backend = WasapiWindowsBackend();
     addTearDown(backend.dispose);
     final capture = backend.enumerate().where((e) => e.isCapture).firstOrNull;
@@ -212,8 +209,7 @@ void main() {
     expect(frames.length, greaterThan(1));
   });
 
-  test('live WASAPI playback-only does not bind capture', () async {
-    expect(Platform.isWindows, isTrue);
+  test('playback-only does not bind capture', () async {
     final backend = WasapiWindowsBackend();
     addTearDown(backend.dispose);
     final render = backend.enumerate().where((e) => !e.isCapture).firstOrNull;
@@ -224,4 +220,5 @@ void main() {
     backend.play(Uint8List(480));
     backend.stop();
   });
+  }, skip: !Platform.isWindows);
 }
