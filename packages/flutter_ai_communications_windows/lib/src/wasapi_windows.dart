@@ -235,13 +235,11 @@ final class WasapiWindowsBackend implements WasapiBackend {
         );
         final device = opened.device;
         if (device == null) {
-          graph.releaseAll();
-          return false;
+          return _abortGraph(graph);
         }
         final bound = _bindClient(device, graph);
         if (bound == null) {
-          graph.releaseAll();
-          return false;
+          return _abortGraph(graph);
         }
         _captureClient = bound.client;
         _capture = graph.adopt(bound.client.getService<IAudioCaptureClient>());
@@ -258,13 +256,11 @@ final class WasapiWindowsBackend implements WasapiBackend {
         );
         final device = opened.device;
         if (device == null) {
-          graph.releaseAll();
-          return false;
+          return _abortGraph(graph);
         }
         final bound = _bindClient(device, graph);
         if (bound == null) {
-          graph.releaseAll();
-          return false;
+          return _abortGraph(graph);
         }
         _renderClient = bound.client;
         _render = graph.adopt(bound.client.getService<IAudioRenderClient>());
@@ -294,12 +290,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
       return true;
     } on Object catch (error, stack) {
       _log.warning('WASAPI graph start failed', error, stack);
-      // Own the Arena so _stopGraph releases it once and clears _running
-      // plus any client fields assigned before the throw.
-      _graph = graph;
-      _stopGraph();
-      return false;
+      return _abortGraph(graph);
     }
+  }
+
+  bool _abortGraph(Arena graph) {
+    _graph = graph;
+    _stopGraph();
+    return false;
   }
 
   IAudioClient _activateClient(IMMDevice device, Arena graph) {
