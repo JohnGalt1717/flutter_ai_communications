@@ -12,10 +12,17 @@ Dart FFI against WASAPI via `package:win32`:
 
 ## Host package (Store / MSIX)
 
-This plugin cannot write the host `Package.appxmanifest`. A Microsoft Store
-or other packaged host must declare capabilities itself. `start()` then
-requests access with first-party WinRT (`AppCapability` /
-`DeviceAccessInformation`) and waits for the consent UI.
+This plugin cannot write the host `Package.appxmanifest`. Consent is
+package-identity gated:
+
+- **Unpackaged Win32** (`flutter run -d windows`, sideloaded `.exe`): no
+  Store prompt. `start()` probes WASAPI. The user allows capture in
+  Settings → Privacy → Microphone → “Let desktop apps access your
+  microphone”.
+- **Microsoft Store / MSIX** (process has package identity): `start()`
+  requests `microphone` with first-party WinRT (`AppCapability` /
+  `DeviceAccessInformation`) and waits for the consent UI. The host must
+  declare the capability itself.
 
 Required for capture Sessions:
 

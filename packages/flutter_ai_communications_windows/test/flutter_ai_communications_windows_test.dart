@@ -79,6 +79,44 @@ void main() {
     expect(permissionFromAppCapabilityStatus(3), isNull);
   });
 
+  test('unpackaged Win32 skips Store consent and probes WASAPI', () async {
+    final backend = _RecordingBackend();
+    final packaged = _RecordingConsent();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: GatedWindowsMicrophoneConsent(
+        isPackaged: () => false,
+        packaged: packaged,
+      ),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.granted,
+    );
+    expect(packaged.calls, 0);
+    expect(backend.probeCalls, 1);
+  });
+
+  test('packaged Store host requests consent before WASAPI probe', () async {
+    final backend = _RecordingBackend();
+    final packaged = _RecordingConsent()..result = MicrophonePermission.denied;
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: GatedWindowsMicrophoneConsent(
+        isPackaged: () => true,
+        packaged: packaged,
+      ),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.denied,
+    );
+    expect(packaged.calls, 1);
+    expect(backend.probeCalls, 0);
+  });
+
   test('granted Store consent still probes WASAPI capture', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(
@@ -315,6 +353,17 @@ final class _FixedConsent implements WindowsMicrophoneConsent {
 
   @override
   Future<MicrophonePermission> request() async => result;
+}
+
+final class _RecordingConsent implements WindowsMicrophoneConsent {
+  var calls = 0;
+  MicrophonePermission result = MicrophonePermission.granted;
+
+  @override
+  Future<MicrophonePermission> request() async {
+    calls++;
+    return result;
+  }
 }
 
 final class _RecordingBackend implements WasapiBackend {

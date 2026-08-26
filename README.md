@@ -37,8 +37,8 @@ The federated iOS / Android / Web / macOS / Windows / Linux implementations are 
 - **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement
 - **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - **Linux:** PulseAudio or PipeWire's Pulse compatibility (`libpulse.so.0`, `libpulse-simple.so.0`). No Isolation, no handset.
-- **Windows (unpackaged Win32):** Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
-- **Windows (Microsoft Store / MSIX):** in the host `Package.appxmanifest` (or `msix_config.capabilities` if you use the `msix` tool):
+- **Windows (unpackaged Win32):** no Store prompt. `start()` probes WASAPI. Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
+- **Windows (Microsoft Store / MSIX):** process has package identity, so `start()` requests WinRT microphone consent and waits. Declare in the host `Package.appxmanifest` (or `msix_config.capabilities` if you use the `msix` tool):
   - required: `microphone` (`<DeviceCapability Name="microphone"/>`)
   - optional: `bluetooth` if you later want extra headset identity beyond the WASAPI catalog. Denial must not block audio. The library does not call Bluetooth APIs yet.
 - **Web:** served over HTTPS / localhost so `getUserMedia` can run

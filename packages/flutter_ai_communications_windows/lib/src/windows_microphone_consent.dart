@@ -26,9 +26,44 @@ final class GrantedWindowsMicrophoneConsent
 /// Creates the consent implementation for this host.
 WindowsMicrophoneConsent createWindowsMicrophoneConsent() {
   if (Platform.isWindows) {
-    return WinrtWindowsMicrophoneConsent();
+    return GatedWindowsMicrophoneConsent(
+      isPackaged: isWindowsPackagedProcess,
+      packaged: WinrtWindowsMicrophoneConsent(),
+    );
   }
   return const GrantedWindowsMicrophoneConsent();
+}
+
+/// Store/MSIX consent only. Unpackaged Win32 skips WinRT and uses WASAPI.
+final class GatedWindowsMicrophoneConsent implements WindowsMicrophoneConsent {
+  /// [packaged] runs only when [isPackaged] is true.
+  GatedWindowsMicrophoneConsent({
+    required this.isPackaged,
+    required this.packaged,
+  });
+
+  /// Whether this process has package identity.
+  final bool Function() isPackaged;
+
+  /// First-party Store consent UI.
+  final WindowsMicrophoneConsent packaged;
+
+  @override
+  Future<MicrophonePermission> request() async {
+    if (!isPackaged()) {
+      return MicrophonePermission.granted;
+    }
+    return packaged.request();
+  }
+}
+
+/// `GetCurrentPackageFullName` reports package identity.
+bool isWindowsPackagedProcess() {
+  return using((arena) {
+    final length = arena<Uint32>();
+    final err = GetCurrentPackageFullName(length, null);
+    return err == ERROR_INSUFFICIENT_BUFFER;
+  });
 }
 
 /// DeviceAccessStatus.Allowed / DeniedByUser / DeniedBySystem.
@@ -67,9 +102,7 @@ final class WinrtWindowsMicrophoneConsent implements WindowsMicrophoneConsent {
     if (capability != null) {
       return capability;
     }
-    // Unpackaged Win32: Settings → Privacy → Microphone → desktop apps.
-    // Packaged hosts that omitted the capability fall through to WASAPI,
-    // which then fails closed.
+    // Capability missing from the host manifest: WASAPI then fails closed.
     return MicrophonePermission.granted;
   }
 }
@@ -80,14 +113,6 @@ void _ensureWinrt() {
   } on WindowsException {
     // Already initialized, including RPC_E_CHANGED_MODE.
   }
-}
-
-bool _isPackagedProcess() {
-  return using((arena) {
-    final length = arena<Uint32>();
-    final err = GetCurrentPackageFullName(length, null);
-    return err == ERROR_INSUFFICIENT_BUFFER;
-  });
 }
 
 int? _deviceAccessStatus() {
@@ -154,10 +179,6 @@ Future<MicrophonePermission?> _requestAppCapability() async {
     });
     final fromCheck = permissionFromAppCapabilityStatus(checked ?? -1);
     if (fromCheck != null) {
-      // Unpackaged Win32 has no AppxManifest. NotDeclaredByApp is not a denial.
-      if (checked == 1 && !_isPackagedProcess()) {
-        return null;
-      }
       return fromCheck;
     }
     operation = _requestAccessAsync(capability);
@@ -180,17 +201,11 @@ Future<MicrophonePermission?> _requestAppCapability() async {
       }
       return status.value;
     });
-    if (result == 1 && !_isPackagedProcess()) {
-      return null;
-    }
     return permissionFromAppCapabilityStatus(result ?? -1) ??
         MicrophonePermission.denied;
   } on Object catch (error, stack) {
     _logIfNeeded(error, stack);
-    if (_isPackagedProcess()) {
-      return MicrophonePermission.denied;
-    }
-    return null;
+    return MicrophonePermission.denied;
   } finally {
     asyncInfo?.release();
     operation?.release();
