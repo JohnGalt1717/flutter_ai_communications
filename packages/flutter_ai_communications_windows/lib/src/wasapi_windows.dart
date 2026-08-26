@@ -31,7 +31,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
   /// Creates the backend and initializes COM.
   WasapiWindowsBackend() {
     // Flutter's runner already initialized STA. RPC_E_CHANGED_MODE is fine.
-    CoInitializeEx(COINIT_APARTMENTTHREADED);
+    final hr = CoInitializeEx(COINIT_APARTMENTTHREADED);
+    _comInitialized = hr.isOk;
     try {
       _enumerator = _lifetime.com<IMMDeviceEnumerator>(_mmDeviceEnumerator);
     } on Object catch (error, stack) {
@@ -42,6 +43,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   static final _log = Logger('WasapiWindows');
 
+  var _comInitialized = false;
   final Arena _lifetime = Arena();
   IMMDeviceEnumerator? _enumerator;
   Arena? _graph;
@@ -92,8 +94,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {
-    _captureId = captureId;
-    _renderId = renderId;
+    _captureId = _presentId(captureId);
+    _renderId = _presentId(renderId);
     return _startGraph() ? NativeGraphStart.started : NativeGraphStart.failed;
   }
 
@@ -154,10 +156,10 @@ final class WasapiWindowsBackend implements WasapiBackend {
   @override
   void select({String? captureId, String? renderId}) {
     if (captureId != null) {
-      _captureId = captureId;
+      _captureId = _presentId(captureId);
     }
     if (renderId != null) {
-      _renderId = renderId;
+      _renderId = _presentId(renderId);
     }
     if (_running) {
       _startGraph();
@@ -191,7 +193,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
     stop();
     _lifetime.releaseAll();
     unawaited(_captureOut.close());
+    if (_comInitialized) {
+      CoUninitialize();
+      _comInitialized = false;
+    }
   }
+
+  String? _presentId(String? id) =>
+      id == null || id.isEmpty ? null : id;
 
   bool get _wantCapture => _captureId != null || _renderId == null;
 

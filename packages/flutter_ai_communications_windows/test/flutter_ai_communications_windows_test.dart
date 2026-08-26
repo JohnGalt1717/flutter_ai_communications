@@ -164,6 +164,42 @@ void main() {
     expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
   });
 
+  test('empty capture id is treated as playback-only', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(
+      captureId: '',
+      renderId: 'usb-out',
+    );
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+  });
+
+  test('stop and failed start clear Observed and Native Formats', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out');
+    expect(adapter.lastNativeFormats.capture, isNotNull);
+    await adapter.stopNative();
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastNativeFormats.capture, isNull);
+
+    await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out');
+    backend.failBind = true;
+    final failed = await adapter.startNative(
+      captureId: 'usb-in',
+      renderId: 'usb-out',
+    );
+    expect(failed, NativeGraphStart.failed);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastNativeFormats.capture, isNull);
+  });
+
   test('endpoint catalog emits before startNative', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -222,16 +258,20 @@ final class _RecordingBackend implements WasapiBackend {
       bound = const PairingSnapshot();
       return NativeGraphStart.failed;
     }
-    if (captureId == null && renderId == null) {
+    final capture = _presentId(captureId);
+    final render = _presentId(renderId);
+    if (capture == null && render == null) {
       bound = const PairingSnapshot(
         captureId: 'built-in-in',
         renderId: 'built-in-out',
       );
     } else {
-      bound = PairingSnapshot(captureId: captureId, renderId: renderId);
+      bound = PairingSnapshot(captureId: capture, renderId: render);
     }
     return NativeGraphStart.started;
   }
+
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
 
   @override
   void stop() {}

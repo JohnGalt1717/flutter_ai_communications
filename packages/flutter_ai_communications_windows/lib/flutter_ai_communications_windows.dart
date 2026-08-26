@@ -85,6 +85,10 @@ final class FlutterAiCommunicationsWindows
       _emitObserved(force: true);
       _publishCatalog();
       _ensureCatalogWatch();
+    } else {
+      _running = false;
+      _lastNativeFormats = const NativeFormatReport();
+      _emitObserved(force: true);
     }
     return started;
   }
@@ -93,6 +97,7 @@ final class FlutterAiCommunicationsWindows
   Future<void> stopNative() async {
     _running = false;
     _backend.stop();
+    _lastNativeFormats = const NativeFormatReport();
     _observed = const PairingSnapshot();
   }
 
