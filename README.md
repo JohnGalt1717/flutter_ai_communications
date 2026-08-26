@@ -31,13 +31,16 @@ dependencies:
   flutter_ai_communications: ^0.1.0
 ```
 
-The federated iOS / Android / Web / macOS / Windows / Linux implementations are pulled in by the app package. Declare microphone usage in the host app:
+The federated iOS / Android / Web / macOS / Windows / Linux implementations are pulled in by the app package. `start()` requests microphone permission with first-party OS APIs (not `permission_handler`) and waits for the OS. The host still has to declare usage where the OS reads it from the app package — plugins cannot inject a Windows `Package.appxmanifest`.
 
 - **iOS:** `NSMicrophoneUsageDescription` (and Bluetooth usage strings if you route to headsets)
 - **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement
 - **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - **Linux:** PulseAudio or PipeWire's Pulse compatibility (`libpulse.so.0`, `libpulse-simple.so.0`). No Isolation, no handset.
-- **Windows:** Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
+- **Windows (unpackaged Win32):** Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
+- **Windows (Microsoft Store / MSIX):** in the host `Package.appxmanifest` (or `msix_config.capabilities` if you use the `msix` tool):
+  - required: `microphone` (`<DeviceCapability Name="microphone"/>`)
+  - optional: `bluetooth` if you later want extra headset identity beyond the WASAPI catalog. Denial must not block audio. The library does not call Bluetooth APIs yet.
 - **Web:** served over HTTPS / localhost so `getUserMedia` can run
 
 ## Quick start

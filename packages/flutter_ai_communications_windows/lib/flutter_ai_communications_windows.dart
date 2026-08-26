@@ -6,13 +6,17 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 import 'src/wasapi_backend.dart';
 import 'src/wasapi_factory.dart';
+import 'src/windows_microphone_consent.dart';
 
 /// Windows adapter. Isolation is unavailable. WASAPI is called via Dart FFI.
 final class FlutterAiCommunicationsWindows
     extends FlutterAiCommunicationsPlatform {
   /// Creates the Windows adapter.
-  FlutterAiCommunicationsWindows({WasapiBackend? backend})
-    : _backend = backend ?? createWasapiBackend();
+  FlutterAiCommunicationsWindows({
+    WasapiBackend? backend,
+    WindowsMicrophoneConsent? consent,
+  }) : _backend = backend ?? createWasapiBackend(),
+       _consent = consent ?? createWindowsMicrophoneConsent();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -20,6 +24,7 @@ final class FlutterAiCommunicationsWindows
   }
 
   final WasapiBackend _backend;
+  final WindowsMicrophoneConsent _consent;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -70,8 +75,13 @@ final class FlutterAiCommunicationsWindows
   }
 
   @override
-  Future<MicrophonePermission> requestMicrophonePermission() async =>
-      _backend.probePermission();
+  Future<MicrophonePermission> requestMicrophonePermission() async {
+    final consent = await _consent.request();
+    if (consent != MicrophonePermission.granted) {
+      return consent;
+    }
+    return _backend.probePermission();
+  }
 
   @override
   Future<NativeGraphStart> startNative({

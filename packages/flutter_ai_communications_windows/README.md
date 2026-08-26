@@ -10,6 +10,41 @@ Dart FFI against WASAPI via `package:win32`:
 - `IMMDeviceEnumerator` — catalog (capture / render Endpoints)
 - Shared-mode `IAudioClient` with `AUTOCONVERTPCM` — PCM16 LE mono 24 kHz
 
+## Host package (Store / MSIX)
+
+This plugin cannot write the host `Package.appxmanifest`. A Microsoft Store
+or other packaged host must declare capabilities itself. `start()` then
+requests access with first-party WinRT (`AppCapability` /
+`DeviceAccessInformation`) and waits for the consent UI.
+
+Required for capture Sessions:
+
+```xml
+<Capabilities>
+  <DeviceCapability Name="microphone"/>
+</Capabilities>
+```
+
+If you package with the `msix` tool:
+
+```yaml
+msix_config:
+  capabilities: microphone
+```
+
+Optional, only if the host wants extra Bluetooth headset identity (alias,
+class of device) beyond the WASAPI catalog. The adapter does not call
+Bluetooth APIs yet; WASAPI already lists Bluetooth Endpoints as audio
+devices. Do not block start if the user denies Bluetooth:
+
+```xml
+<DeviceCapability Name="bluetooth"/>
+```
+
+Unpackaged Win32 (the default `flutter run -d windows` binary) has no
+manifest. Permission is Settings → Privacy → Microphone → “Let desktop
+apps access your microphone”, plus any per-app prompt Windows shows.
+
 ## Gaps versus iOS / Android
 
 These are documented limits, not bugs:
@@ -18,10 +53,9 @@ These are documented limits, not bugs:
   `openIsolationSettings()` is a no-op.
 - **No handset Endpoint.** Built-in speakers and mics are
   `speakerphone`. Bluetooth / USB are `bluetooth` / `wired`.
-- **No OS microphone prompt from this package.** Permission is
-  “can we open a capture client?” — granted if WASAPI allows it.
-  The host must keep Windows Settings → Privacy → Microphone →
-  “Let desktop apps access your microphone” allowed.
+- **Packaged microphone consent** is requested at `start()`. The host
+  must declare `microphone` in its own manifest; this package cannot
+  inject that file.
 - **AEC / NS / AGC** are whatever the communications Endpoint
   already applies. The graph asks WASAPI for the communications
   stream category; it does not configure a vendor APO.

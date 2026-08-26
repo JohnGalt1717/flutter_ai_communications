@@ -5,6 +5,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:flutter_ai_communications_windows/flutter_ai_communications_windows.dart';
 import 'package:flutter_ai_communications_windows/src/route_class.dart';
 import 'package:flutter_ai_communications_windows/src/wasapi_backend.dart';
+import 'package:flutter_ai_communications_windows/src/windows_microphone_consent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -24,6 +25,72 @@ void main() {
   test('Windows Isolation is unavailable', () {
     final adapter = FlutterAiCommunicationsWindows();
     expect(adapter.lastIsolation.state, IsolationState.unavailable);
+  });
+
+  test('denied Store consent is denied without opening WASAPI', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: _FixedConsent(MicrophonePermission.denied),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.denied,
+    );
+    expect(backend.probeCalls, 0);
+  });
+
+  test(
+    'restricted Store consent is restricted without opening WASAPI',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsWindows(
+        backend: backend,
+        consent: _FixedConsent(MicrophonePermission.restricted),
+      );
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.requestMicrophonePermission(),
+        MicrophonePermission.restricted,
+      );
+      expect(backend.probeCalls, 0);
+    },
+  );
+
+  test('DeviceAccessStatus maps to MicrophonePermission', () {
+    expect(permissionFromDeviceAccessStatus(1), MicrophonePermission.granted);
+    expect(permissionFromDeviceAccessStatus(2), MicrophonePermission.denied);
+    expect(
+      permissionFromDeviceAccessStatus(3),
+      MicrophonePermission.restricted,
+    );
+    expect(permissionFromDeviceAccessStatus(0), isNull);
+  });
+
+  test('AppCapabilityAccessStatus maps to MicrophonePermission', () {
+    expect(permissionFromAppCapabilityStatus(4), MicrophonePermission.granted);
+    expect(permissionFromAppCapabilityStatus(2), MicrophonePermission.denied);
+    expect(permissionFromAppCapabilityStatus(1), MicrophonePermission.denied);
+    expect(
+      permissionFromAppCapabilityStatus(0),
+      MicrophonePermission.restricted,
+    );
+    expect(permissionFromAppCapabilityStatus(3), isNull);
+  });
+
+  test('granted Store consent still probes WASAPI capture', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: _FixedConsent(MicrophonePermission.granted),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.granted,
+    );
+    expect(backend.probeCalls, 1);
   });
 
   test('built-in speakers pair as speakerphone', () {
@@ -241,9 +308,19 @@ void main() {
   );
 }
 
+final class _FixedConsent implements WindowsMicrophoneConsent {
+  _FixedConsent(this.result);
+
+  final MicrophonePermission result;
+
+  @override
+  Future<MicrophonePermission> request() async => result;
+}
+
 final class _RecordingBackend implements WasapiBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var failBind = false;
+  var probeCalls = 0;
 
   @override
   List<Endpoint> enumerate() => const [
@@ -278,7 +355,10 @@ final class _RecordingBackend implements WasapiBackend {
   ];
 
   @override
-  MicrophonePermission probePermission() => MicrophonePermission.granted;
+  MicrophonePermission probePermission() {
+    probeCalls++;
+    return MicrophonePermission.granted;
+  }
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {
