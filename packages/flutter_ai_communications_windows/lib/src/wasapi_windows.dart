@@ -167,10 +167,8 @@ final class WasapiWindowsBackend implements WasapiBackend {
   }
 
   @override
-  PairingSnapshot get observed => PairingSnapshot(
-    captureId: _boundCaptureId,
-    renderId: _boundRenderId,
-  );
+  PairingSnapshot get observed =>
+      PairingSnapshot(captureId: _boundCaptureId, renderId: _boundRenderId);
 
   @override
   NativeFormatReport get nativeFormats => _nativeFormats;
@@ -199,8 +197,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
     }
   }
 
-  String? _presentId(String? id) =>
-      id == null || id.isEmpty ? null : id;
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
 
   bool get _wantCapture => _captureId != null || _renderId == null;
 
@@ -319,7 +316,10 @@ final class WasapiWindowsBackend implements WasapiBackend {
     }
   }
 
-  ({IAudioClient client, int rate})? _bindClient(IMMDevice device, Arena graph) {
+  ({IAudioClient client, int rate})? _bindClient(
+    IMMDevice device,
+    Arena graph,
+  ) {
     const rates = [_sampleRate, 48000, 16000];
     final flags = _autoConvertPcm | _srcDefaultQuality;
     for (final rate in rates) {
@@ -449,7 +449,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
     try {
       final idPtr = device.getId();
       final openedId = idPtr.toDartString();
-      free(idPtr);
+      CoTaskMemFree(idPtr);
       return openedId;
     } on Object {
       return null;
@@ -484,7 +484,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
         arena.adopt(device);
         final idPtr = device.getId();
         final id = idPtr.toDartString();
-        free(idPtr);
+        CoTaskMemFree(idPtr);
         var name = id;
         var enumeratorName = '';
         var containerId = '';

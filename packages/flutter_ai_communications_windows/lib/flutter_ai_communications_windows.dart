@@ -34,6 +34,7 @@ final class FlutterAiCommunicationsWindows
   PairingSnapshot _observed = const PairingSnapshot();
   NativeFormatReport _lastNativeFormats = const NativeFormatReport();
   Timer? _catalogWatch;
+  var _catalogListeners = 0;
   var _running = false;
   var _generation = 0;
 
@@ -57,9 +58,15 @@ final class FlutterAiCommunicationsWindows
 
   @override
   Stream<List<Endpoint>> get endpointCatalog async* {
+    _catalogListeners++;
     _ensureCatalogWatch();
-    yield _backend.enumerate();
-    yield* _catalog.stream;
+    try {
+      yield _backend.enumerate();
+      yield* _catalog.stream;
+    } finally {
+      _catalogListeners--;
+      _maybeStopCatalogWatch();
+    }
   }
 
   @override
@@ -84,7 +91,6 @@ final class FlutterAiCommunicationsWindows
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
       _publishCatalog();
-      _ensureCatalogWatch();
     } else {
       _running = false;
       _lastNativeFormats = const NativeFormatReport();
@@ -99,6 +105,7 @@ final class FlutterAiCommunicationsWindows
     _backend.stop();
     _lastNativeFormats = const NativeFormatReport();
     _observed = const PairingSnapshot();
+    _maybeStopCatalogWatch();
   }
 
   @override
@@ -126,6 +133,14 @@ final class FlutterAiCommunicationsWindows
     _catalogWatch ??= Timer.periodic(const Duration(seconds: 2), (_) {
       _publishCatalog();
     });
+  }
+
+  void _maybeStopCatalogWatch() {
+    if (_running || _catalogListeners > 0) {
+      return;
+    }
+    _catalogWatch?.cancel();
+    _catalogWatch = null;
   }
 
   void _publishCatalog() {
