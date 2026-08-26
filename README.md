@@ -37,6 +37,7 @@ The federated iOS / Android / Web / macOS / Windows / Linux implementations are 
 - **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement
 - **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
 - **Linux:** PulseAudio or PipeWire's Pulse compatibility (`libpulse.so.0`, `libpulse-simple.so.0`). No Isolation, no handset.
+- **Windows:** Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
 - **Web:** served over HTTPS / localhost so `getUserMedia` can run
 
 ## Quick start

@@ -32,7 +32,9 @@ final class FlutterAiCommunicationsWindows
     IsolationState.unavailable,
   );
   PairingSnapshot _observed = const PairingSnapshot();
-  Timer? _catalogPoll;
+  NativeFormatReport _lastNativeFormats = const NativeFormatReport();
+  Timer? _catalogWatch;
+  var _catalogListeners = 0;
   var _running = false;
   var _generation = 0;
 
@@ -46,13 +48,26 @@ final class FlutterAiCommunicationsWindows
   PairingSnapshot get lastObservedRoute => _observed;
 
   @override
+  NativeFormatReport get lastNativeFormats => _lastNativeFormats;
+
+  @override
   Stream<OsRouteChange> get osRouteChanges => _routes.stream;
 
   @override
   Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
 
   @override
-  Stream<List<Endpoint>> get endpointCatalog => _catalog.stream;
+  Stream<List<Endpoint>> get endpointCatalog async* {
+    _catalogListeners++;
+    _ensureCatalogWatch();
+    try {
+      yield _backend.enumerate();
+      yield* _catalog.stream;
+    } finally {
+      _catalogListeners--;
+      _maybeStopCatalogWatch();
+    }
+  }
 
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async =>
@@ -72,23 +87,27 @@ final class FlutterAiCommunicationsWindows
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
-      _catalog.add(_backend.enumerate());
+      _lastNativeFormats = _backend.nativeFormats;
       _path.add(const CoverageHint.ok());
-      _emitObserved();
-      _catalogPoll?.cancel();
-      _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
-        _catalog.add(_backend.enumerate());
-      });
+      _emitObserved(force: true);
+      _ensureCatalogWatch();
+      _publishCatalog();
+    } else {
+      _running = false;
+      _lastNativeFormats = const NativeFormatReport();
+      _emitObserved(force: true);
+      _maybeStopCatalogWatch();
     }
     return started;
   }
 
   @override
   Future<void> stopNative() async {
-    _catalogPoll?.cancel();
-    _catalogPoll = null;
     _running = false;
     _backend.stop();
+    _lastNativeFormats = const NativeFormatReport();
+    _observed = const PairingSnapshot();
+    _maybeStopCatalogWatch();
   }
 
   @override
@@ -107,12 +126,38 @@ final class FlutterAiCommunicationsWindows
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
+      _lastNativeFormats = _backend.nativeFormats;
+      _emitObserved(force: true);
+    }
+  }
+
+  void _ensureCatalogWatch() {
+    _catalogWatch ??= Timer.periodic(const Duration(seconds: 2), (_) {
+      _publishCatalog();
+    });
+  }
+
+  void _maybeStopCatalogWatch() {
+    if (_running || _catalogListeners > 0) {
+      return;
+    }
+    _catalogWatch?.cancel();
+    _catalogWatch = null;
+  }
+
+  void _publishCatalog() {
+    _catalog.add(_backend.enumerate());
+    if (_running) {
       _emitObserved();
     }
   }
 
-  void _emitObserved() {
-    _observed = _backend.observed;
+  void _emitObserved({bool force = false}) {
+    final next = _backend.observed;
+    if (!force && next == _observed) {
+      return;
+    }
+    _observed = next;
     _routes.add(
       OsRouteChange(
         captureId: _observed.captureId,

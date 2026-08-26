@@ -34,6 +34,9 @@ abstract class WasapiBackend {
   /// Bound capture/render after the last successful start or select.
   PairingSnapshot get observed;
 
+  /// Native Formats from the last successful start or select.
+  NativeFormatReport get nativeFormats;
+
   /// Drops queued playback.
   void flush();
 

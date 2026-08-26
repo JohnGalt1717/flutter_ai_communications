@@ -20,8 +20,11 @@ These are documented limits, not bugs:
   `speakerphone`. Bluetooth / USB are `bluetooth` / `wired`.
 - **No OS microphone prompt from this package.** Permission is
   “can we open a capture client?” — granted if WASAPI allows it.
+  The host must keep Windows Settings → Privacy → Microphone →
+  “Let desktop apps access your microphone” allowed.
 - **AEC / NS / AGC** are whatever the communications Endpoint
-  already applies. This adapter does not configure an APO.
+  already applies. The graph asks WASAPI for the communications
+  stream category; it does not configure a vendor APO.
 - **Quality is best-effort.** Endpoint switches restart the graph
   and emit a silence frame so the Session capture subscription
   survives (ADR-0004).

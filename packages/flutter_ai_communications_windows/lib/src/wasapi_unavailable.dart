@@ -39,6 +39,9 @@ final class UnavailableWasapiBackend implements WasapiBackend {
   PairingSnapshot get observed => const PairingSnapshot();
 
   @override
+  NativeFormatReport get nativeFormats => const NativeFormatReport();
+
+  @override
   void flush() {}
 
   @override

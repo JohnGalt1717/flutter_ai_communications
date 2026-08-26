@@ -52,6 +52,34 @@ void main() {
     );
   });
 
+  test('webcam capture is wired, not speakerphone', () {
+    expect(
+      windowsRouteClass(name: 'Logitech BRIO', enumerator: 'USBVIDEO'),
+      RouteClass.wired,
+    );
+    expect(
+      windowsRouteClass(name: 'HD Pro Webcam C920', enumerator: ''),
+      RouteClass.wired,
+    );
+  });
+
+  test('USB capture and render share container Pair identity', () {
+    expect(
+      windowsPairId(
+        routeClass: RouteClass.wired,
+        id: 'in',
+        name: 'Microphone (USB Audio Device)',
+        containerId: '{a0b1c2d3-e4f5-6789-abcd-ef0123456789}',
+      ),
+      windowsPairId(
+        routeClass: RouteClass.wired,
+        id: 'out',
+        name: 'Speakers (USB Audio Device)',
+        containerId: '{a0b1c2d3-e4f5-6789-abcd-ef0123456789}',
+      ),
+    );
+  });
+
   test('start and select report Observed from bound native devices', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -77,6 +105,9 @@ void main() {
     expect(seen.last.renderId, 'usb-out');
     expect(seen.last.generation, isNotNull);
 
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
+
     await adapter.selectEndpoints(
       captureId: 'built-in-in',
       renderId: 'built-in-out',
@@ -85,11 +116,134 @@ void main() {
     expect(adapter.lastObservedRoute.renderId, 'built-in-out');
     expect(seen.last.captureId, 'built-in-in');
     expect(seen.last.renderId, 'built-in-out');
+
+    await adapter.selectEndpoints(captureId: 'usb-in', renderId: 'usb-out');
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+    expect(seen.last.captureId, 'usb-in');
+    expect(seen.last.renderId, 'usb-out');
   });
+
+  test('bind failure does not report the requested UID', () async {
+    final backend = _RecordingBackend()..failBind = true;
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(
+      captureId: 'usb-in',
+      renderId: 'usb-out',
+    );
+    expect(started, NativeGraphStart.failed);
+    expect(adapter.lastObservedRoute.captureId, isNot('usb-in'));
+    expect(adapter.lastObservedRoute.renderId, isNot('usb-out'));
+  });
+
+  test('capture-only start does not bind render', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(captureId: 'usb-in');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastObservedRoute.renderId, isNull);
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, isNull);
+  });
+
+  test('playback-only start does not bind capture', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(renderId: 'usb-out');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+    expect(adapter.lastNativeFormats.capture, isNull);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
+  });
+
+  test('empty capture id is treated as playback-only', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(
+      captureId: '',
+      renderId: 'usb-out',
+    );
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+  });
+
+  test('stop and failed start clear Observed and Native Formats', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out');
+    expect(adapter.lastNativeFormats.capture, isNotNull);
+    await adapter.stopNative();
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastNativeFormats.capture, isNull);
+
+    await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out');
+    backend.failBind = true;
+    final failed = await adapter.startNative(
+      captureId: 'usb-in',
+      renderId: 'usb-out',
+    );
+    expect(failed, NativeGraphStart.failed);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastNativeFormats.capture, isNull);
+
+    backend.failBind = false;
+    final restarted = await adapter.startNative(
+      captureId: 'usb-in',
+      renderId: 'usb-out',
+    );
+    expect(restarted, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastNativeFormats.capture, isNotNull);
+  });
+
+  test('endpoint catalog emits before startNative', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+    final seen = <List<Endpoint>>[];
+    final sub = adapter.endpointCatalog.listen(seen.add);
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isNotEmpty);
+    expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
+  test(
+    'startNative keeps catalog available without a prior subscriber',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsWindows(backend: backend);
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out'),
+        NativeGraphStart.started,
+      );
+      final seen = <List<Endpoint>>[];
+      final sub = adapter.endpointCatalog.listen(seen.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isNotEmpty);
+      expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
+    },
+  );
 }
 
 final class _RecordingBackend implements WasapiBackend {
   PairingSnapshot bound = const PairingSnapshot();
+  var failBind = false;
 
   @override
   List<Endpoint> enumerate() => const [
@@ -128,12 +282,24 @@ final class _RecordingBackend implements WasapiBackend {
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {
-    bound = PairingSnapshot(
-      captureId: captureId ?? 'built-in-in',
-      renderId: renderId ?? 'built-in-out',
-    );
+    if (failBind) {
+      bound = const PairingSnapshot();
+      return NativeGraphStart.failed;
+    }
+    final capture = _presentId(captureId);
+    final render = _presentId(renderId);
+    if (capture == null && render == null) {
+      bound = const PairingSnapshot(
+        captureId: 'built-in-in',
+        renderId: 'built-in-out',
+      );
+    } else {
+      bound = PairingSnapshot(captureId: capture, renderId: render);
+    }
     return NativeGraphStart.started;
   }
+
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
 
   @override
   void stop() {}
@@ -157,6 +323,12 @@ final class _RecordingBackend implements WasapiBackend {
 
   @override
   PairingSnapshot get observed => bound;
+
+  @override
+  NativeFormatReport get nativeFormats => NativeFormatReport(
+    capture: bound.captureId == null ? null : AudioFormat.pcm16le24k,
+    playback: bound.renderId == null ? null : AudioFormat.pcm16le24k,
+  );
 
   @override
   void flush() {}
