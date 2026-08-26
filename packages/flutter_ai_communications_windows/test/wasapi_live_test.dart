@@ -223,6 +223,22 @@ void main() {
       expect(frames.length, greaterThan(1));
     });
 
+    test(
+      'permission probe is capture-only and leaves the graph stopped',
+      () async {
+        final backend = WasapiWindowsBackend();
+        addTearDown(backend.dispose);
+        final capture = backend
+            .enumerate()
+            .where((e) => e.isCapture)
+            .firstOrNull;
+        expect(capture, isNotNull, reason: 'catalog has no capture Endpoint');
+        expect(backend.probePermission(), MicrophonePermission.granted);
+        expect(backend.observed.captureId, isNull);
+        expect(backend.observed.renderId, isNull);
+      },
+    );
+
     test('playback-only does not bind capture', () async {
       final backend = WasapiWindowsBackend();
       addTearDown(backend.dispose);

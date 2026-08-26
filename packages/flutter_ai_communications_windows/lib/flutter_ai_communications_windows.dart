@@ -90,11 +90,13 @@ final class FlutterAiCommunicationsWindows
       _lastNativeFormats = _backend.nativeFormats;
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
+      _ensureCatalogWatch();
       _publishCatalog();
     } else {
       _running = false;
       _lastNativeFormats = const NativeFormatReport();
       _emitObserved(force: true);
+      _maybeStopCatalogWatch();
     }
     return started;
   }

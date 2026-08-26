@@ -220,6 +220,25 @@ void main() {
     expect(seen, isNotEmpty);
     expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
   });
+
+  test(
+    'startNative keeps catalog available without a prior subscriber',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsWindows(backend: backend);
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out'),
+        NativeGraphStart.started,
+      );
+      final seen = <List<Endpoint>>[];
+      final sub = adapter.endpointCatalog.listen(seen.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isNotEmpty);
+      expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
+    },
+  );
 }
 
 final class _RecordingBackend implements WasapiBackend {

@@ -82,7 +82,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
   @override
   MicrophonePermission probePermission() {
     try {
-      final started = start();
+      final capture = enumerate()
+          .where((endpoint) => endpoint.isCapture)
+          .firstOrNull;
+      if (capture == null) {
+        return MicrophonePermission.denied;
+      }
+      // Capture-only: a render bind failure must not look like mic denial.
+      final started = start(captureId: capture.id);
       stop();
       return started == NativeGraphStart.started
           ? MicrophonePermission.granted
