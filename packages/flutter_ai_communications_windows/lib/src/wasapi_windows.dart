@@ -419,7 +419,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
         );
         if (found != null) {
           final adopted = arena.adopt(found);
-          return (device: adopted, id: _openedId(adopted));
+          return (device: adopted, id: _openedId(adopted, requested: id));
         }
       } on Object {
         if (!fallback) {
@@ -445,15 +445,18 @@ final class WasapiWindowsBackend implements WasapiBackend {
     }
   }
 
-  String? _openedId(IMMDevice device) {
+  String? _openedId(IMMDevice device, {String? requested}) {
     try {
       final idPtr = device.getId();
       final openedId = idPtr.toDartString();
       CoTaskMemFree(idPtr);
-      return openedId;
+      if (openedId.isNotEmpty) {
+        return openedId;
+      }
     } on Object {
-      return null;
+      // Fall back to the requested id only when the Endpoint actually opened.
     }
+    return requested;
   }
 
   List<Endpoint> _collect(

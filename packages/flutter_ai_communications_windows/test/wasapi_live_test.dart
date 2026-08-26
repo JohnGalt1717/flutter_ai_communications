@@ -11,8 +11,14 @@ void main() {
 
   group('live WASAPI', () {
     test('catalog starts and emits non-zero capture', () async {
+      final previousHierarchical = hierarchicalLoggingEnabled;
+      final previousLevel = Logger.root.level;
       hierarchicalLoggingEnabled = true;
       Logger.root.level = Level.ALL;
+      addTearDown(() {
+        hierarchicalLoggingEnabled = previousHierarchical;
+        Logger.root.level = previousLevel;
+      });
       final logs = <String>[];
       final sub = Logger.root.onRecord.listen((record) {
         logs.add(
