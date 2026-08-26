@@ -198,6 +198,15 @@ void main() {
     expect(failed, NativeGraphStart.failed);
     expect(adapter.lastObservedRoute.captureId, isNull);
     expect(adapter.lastNativeFormats.capture, isNull);
+
+    backend.failBind = false;
+    final restarted = await adapter.startNative(
+      captureId: 'usb-in',
+      renderId: 'usb-out',
+    );
+    expect(restarted, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastNativeFormats.capture, isNotNull);
   });
 
   test('endpoint catalog emits before startNative', () async {

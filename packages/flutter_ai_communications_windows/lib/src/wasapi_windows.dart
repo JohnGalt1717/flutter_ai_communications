@@ -265,10 +265,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
         boundRender = opened.id;
         renderFormat = AudioFormat.pcm16le(sampleRate: bound.rate);
       }
-      _graph = graph;
       final keepPaused = _paused;
-      _running = true;
-      _paused = keepPaused;
       if (!keepPaused) {
         _captureClient?.start();
         _renderClient?.start();
@@ -278,6 +275,9 @@ final class WasapiWindowsBackend implements WasapiBackend {
           _pumpCapture();
         });
       }
+      _graph = graph;
+      _running = true;
+      _paused = keepPaused;
       _boundCaptureId = boundCapture;
       _boundRenderId = boundRender;
       _nativeFormats = NativeFormatReport(
@@ -287,10 +287,10 @@ final class WasapiWindowsBackend implements WasapiBackend {
       return true;
     } on Object catch (error, stack) {
       _log.warning('WASAPI graph start failed', error, stack);
-      _boundCaptureId = null;
-      _boundRenderId = null;
-      _nativeFormats = const NativeFormatReport();
-      graph.releaseAll();
+      // Own the Arena so _stopGraph releases it once and clears _running
+      // plus any client fields assigned before the throw.
+      _graph = graph;
+      _stopGraph();
       return false;
     }
   }
