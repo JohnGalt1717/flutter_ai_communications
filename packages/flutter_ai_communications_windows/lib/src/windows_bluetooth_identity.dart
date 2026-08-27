@@ -71,7 +71,7 @@ final class Win32BluetoothIdentitySource implements BluetoothIdentitySource {
     _prepared = true;
     if (_isPackaged()) {
       final access = await _requestCapability('bluetooth');
-      if (access != null && access != MicrophonePermission.granted) {
+      if (access != MicrophonePermission.granted) {
         _cache = const [];
         return;
       }

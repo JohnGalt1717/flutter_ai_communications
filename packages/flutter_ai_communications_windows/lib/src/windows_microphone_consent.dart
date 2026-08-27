@@ -102,8 +102,8 @@ final class WinrtWindowsMicrophoneConsent implements WindowsMicrophoneConsent {
     if (capability != null) {
       return capability;
     }
-    // Capability missing from the host manifest: WASAPI then fails closed.
-    return MicrophonePermission.granted;
+    // WinRT missing or the host did not declare microphone: fail closed.
+    return MicrophonePermission.denied;
   }
 }
 

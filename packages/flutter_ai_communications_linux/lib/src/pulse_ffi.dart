@@ -70,14 +70,27 @@ const pulseProplistOffset = 344;
 const pulseCardOffset = 372;
 
 /// Reads `proplist` from a `pa_source_info` / `pa_sink_info` pointer.
+///
+/// Offsets are Pulse 16 on 64-bit. A null or unaligned pointer is skipped
+/// so a layout mismatch does not dereference garbage.
 Pointer<PaProplist> pulseProplist(Pointer<PaNamedDevice> info) {
-  return Pointer<Pointer<PaProplist>>.fromAddress(
+  if (info == nullptr) {
+    return nullptr;
+  }
+  final value = Pointer<Pointer<PaProplist>>.fromAddress(
     info.address + pulseProplistOffset,
   ).value;
+  if (value == nullptr || value.address & 7 != 0) {
+    return nullptr;
+  }
+  return value;
 }
 
 /// Reads `card` from a `pa_source_info` / `pa_sink_info` pointer.
 int pulseCard(Pointer<PaNamedDevice> info) {
+  if (info == nullptr) {
+    return 0xffffffff;
+  }
   return Pointer<Uint32>.fromAddress(info.address + pulseCardOffset).value;
 }
 

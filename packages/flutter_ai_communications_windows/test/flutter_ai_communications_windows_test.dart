@@ -315,6 +315,26 @@ void main() {
     expect(adapter.lastNativeFormats.capture, isNotNull);
   });
 
+  test(
+    'packaged Bluetooth identity stays empty when capability lookup fails',
+    () async {
+      var enumerated = false;
+      final source = Win32BluetoothIdentitySource(
+        isPackaged: () => true,
+        requestCapability: (_) async => null,
+        enumerate: () {
+          enumerated = true;
+          return const [
+            BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+          ];
+        },
+      );
+      await source.prepare();
+      expect(enumerated, isFalse);
+      expect(source.current(), isEmpty);
+    },
+  );
+
   test('denied Bluetooth identity leaves WASAPI names', () async {
     final source = Win32BluetoothIdentitySource(
       isPackaged: () => true,
