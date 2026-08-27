@@ -1,4 +1,4 @@
-/// Web/stub host helpers for the native Marionette suite.
+/// Web/stub host helpers for the native Orchestration suite.
 String hostOperatingSystem() => 'web';
 
 String hostOperatingSystemVersion() => 'web';

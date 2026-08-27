@@ -5,6 +5,8 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:flutter_ai_communications_windows/flutter_ai_communications_windows.dart';
 import 'package:flutter_ai_communications_windows/src/route_class.dart';
 import 'package:flutter_ai_communications_windows/src/wasapi_backend.dart';
+import 'package:flutter_ai_communications_windows/src/windows_bluetooth_identity.dart';
+import 'package:flutter_ai_communications_windows/src/windows_microphone_consent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -24,6 +26,110 @@ void main() {
   test('Windows Isolation is unavailable', () {
     final adapter = FlutterAiCommunicationsWindows();
     expect(adapter.lastIsolation.state, IsolationState.unavailable);
+  });
+
+  test('denied Store consent is denied without opening WASAPI', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: _FixedConsent(MicrophonePermission.denied),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.denied,
+    );
+    expect(backend.probeCalls, 0);
+  });
+
+  test(
+    'restricted Store consent is restricted without opening WASAPI',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsWindows(
+        backend: backend,
+        consent: _FixedConsent(MicrophonePermission.restricted),
+      );
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.requestMicrophonePermission(),
+        MicrophonePermission.restricted,
+      );
+      expect(backend.probeCalls, 0);
+    },
+  );
+
+  test('DeviceAccessStatus maps to MicrophonePermission', () {
+    expect(permissionFromDeviceAccessStatus(1), MicrophonePermission.granted);
+    expect(permissionFromDeviceAccessStatus(2), MicrophonePermission.denied);
+    expect(
+      permissionFromDeviceAccessStatus(3),
+      MicrophonePermission.restricted,
+    );
+    expect(permissionFromDeviceAccessStatus(0), isNull);
+  });
+
+  test('AppCapabilityAccessStatus maps to MicrophonePermission', () {
+    expect(permissionFromAppCapabilityStatus(4), MicrophonePermission.granted);
+    expect(permissionFromAppCapabilityStatus(2), MicrophonePermission.denied);
+    expect(permissionFromAppCapabilityStatus(1), MicrophonePermission.denied);
+    expect(
+      permissionFromAppCapabilityStatus(0),
+      MicrophonePermission.restricted,
+    );
+    expect(permissionFromAppCapabilityStatus(3), isNull);
+  });
+
+  test('unpackaged Win32 skips Store consent and probes WASAPI', () async {
+    final backend = _RecordingBackend();
+    final packaged = _RecordingConsent();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: GatedWindowsMicrophoneConsent(
+        isPackaged: () => false,
+        packaged: packaged,
+      ),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.granted,
+    );
+    expect(packaged.calls, 0);
+    expect(backend.probeCalls, 1);
+  });
+
+  test('packaged Store host requests consent before WASAPI probe', () async {
+    final backend = _RecordingBackend();
+    final packaged = _RecordingConsent()..result = MicrophonePermission.denied;
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: GatedWindowsMicrophoneConsent(
+        isPackaged: () => true,
+        packaged: packaged,
+      ),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.denied,
+    );
+    expect(packaged.calls, 1);
+    expect(backend.probeCalls, 0);
+  });
+
+  test('granted Store consent still probes WASAPI capture', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      consent: _FixedConsent(MicrophonePermission.granted),
+    );
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.requestMicrophonePermission(),
+      MicrophonePermission.granted,
+    );
+    expect(backend.probeCalls, 1);
   });
 
   test('built-in speakers pair as speakerphone', () {
@@ -209,6 +315,86 @@ void main() {
     expect(adapter.lastNativeFormats.capture, isNotNull);
   });
 
+  test(
+    'packaged Bluetooth identity stays empty when capability lookup fails',
+    () async {
+      var enumerated = false;
+      final source = Win32BluetoothIdentitySource(
+        isPackaged: () => true,
+        requestCapability: (_) async => null,
+        enumerate: () {
+          enumerated = true;
+          return const [
+            BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+          ];
+        },
+      );
+      await source.prepare();
+      expect(enumerated, isFalse);
+      expect(source.current(), isEmpty);
+    },
+  );
+
+  test('denied Bluetooth identity leaves WASAPI names', () async {
+    final source = Win32BluetoothIdentitySource(
+      isPackaged: () => true,
+      requestCapability: (_) async => MicrophonePermission.denied,
+      enumerate: () => throw StateError('denied Bluetooth must not enumerate'),
+    );
+    await source.prepare();
+    expect(source.current(), isEmpty);
+  });
+
+  test(
+    'unpackaged Bluetooth identity enumerates without a Store prompt',
+    () async {
+      var capabilityCalls = 0;
+      final source = Win32BluetoothIdentitySource(
+        isPackaged: () => false,
+        requestCapability: (_) async {
+          capabilityCalls++;
+          return MicrophonePermission.denied;
+        },
+        enumerate: () => const [
+          BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+        ],
+      );
+      await source.prepare();
+      expect(capabilityCalls, 0);
+      expect(source.current().single.name, 'Tesla Model Y');
+    },
+  );
+
+  test('Bluetooth identity enriches matching Endpoints', () async {
+    final backend = _BluetoothBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      bluetooth: _FixedBluetoothSource(const [
+        BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+      ]),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    final tesla = catalog.firstWhere((endpoint) => endpoint.id == 'bt-in');
+    expect(tesla.identityHints, ['Tesla Model Y']);
+    expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+  });
+
+  test('car Class of Device is a car form factor', () {
+    expect(windowsFormFactorFromClassOfDevice(0x420), EndpointFormFactor.car);
+  });
+
+  test('Bluetooth prepare failure leaves WASAPI catalog', () async {
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: _RecordingBackend(),
+      bluetooth: _ThrowingBluetoothSource(),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    await Future<void>.delayed(Duration.zero);
+    expect(catalog.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
   test('endpoint catalog emits before startNative', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -241,9 +427,111 @@ void main() {
   );
 }
 
+final class _FixedConsent implements WindowsMicrophoneConsent {
+  _FixedConsent(this.result);
+
+  final MicrophonePermission result;
+
+  @override
+  Future<MicrophonePermission> request() async => result;
+}
+
+final class _RecordingConsent implements WindowsMicrophoneConsent {
+  var calls = 0;
+  MicrophonePermission result = MicrophonePermission.granted;
+
+  @override
+  Future<MicrophonePermission> request() async {
+    calls++;
+    return result;
+  }
+}
+
+final class _ThrowingBluetoothSource implements BluetoothIdentitySource {
+  @override
+  List<BluetoothIdentity> current() => const [];
+
+  @override
+  Future<void> prepare() async => throw StateError('bluetooth unavailable');
+}
+
+final class _FixedBluetoothSource implements BluetoothIdentitySource {
+  _FixedBluetoothSource(this._devices);
+
+  final List<BluetoothIdentity> _devices;
+
+  @override
+  List<BluetoothIdentity> current() => _devices;
+
+  @override
+  Future<void> prepare() async {}
+}
+
+final class _BluetoothBackend implements WasapiBackend {
+  final _RecordingBackend _inner = _RecordingBackend();
+
+  @override
+  List<Endpoint> enumerate() => [
+    ..._inner.enumerate(),
+    const Endpoint(
+      id: 'bt-in',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: true,
+      pairId: 'bt',
+    ),
+    const Endpoint(
+      id: 'bt-out',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: false,
+      pairId: 'bt',
+    ),
+  ];
+
+  @override
+  MicrophonePermission probePermission() => _inner.probePermission();
+
+  @override
+  NativeGraphStart start({String? captureId, String? renderId}) =>
+      _inner.start(captureId: captureId, renderId: renderId);
+
+  @override
+  void stop() => _inner.stop();
+
+  @override
+  void pause() => _inner.pause();
+
+  @override
+  void resume() => _inner.resume();
+
+  @override
+  void play(Uint8List bytes) => _inner.play(bytes);
+
+  @override
+  void select({String? captureId, String? renderId}) =>
+      _inner.select(captureId: captureId, renderId: renderId);
+
+  @override
+  PairingSnapshot get observed => _inner.observed;
+
+  @override
+  NativeFormatReport get nativeFormats => _inner.nativeFormats;
+
+  @override
+  void flush() => _inner.flush();
+
+  @override
+  Stream<Uint8List> get capture => _inner.capture;
+
+  @override
+  void dispose() => _inner.dispose();
+}
+
 final class _RecordingBackend implements WasapiBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var failBind = false;
+  var probeCalls = 0;
 
   @override
   List<Endpoint> enumerate() => const [
@@ -278,7 +566,10 @@ final class _RecordingBackend implements WasapiBackend {
   ];
 
   @override
-  MicrophonePermission probePermission() => MicrophonePermission.granted;
+  MicrophonePermission probePermission() {
+    probeCalls++;
+    return MicrophonePermission.granted;
+  }
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {

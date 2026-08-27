@@ -343,6 +343,13 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "routeClass": route,
       "isCapture": capture,
       "pairId": pairId,
+      "capabilities": [
+        "formFactor": "unknown",
+        "aec": false,
+        "ns": false,
+        "agc": false,
+        "carConnected": false,
+      ],
     ]
   }
 

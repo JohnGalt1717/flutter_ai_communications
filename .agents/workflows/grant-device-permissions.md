@@ -1,6 +1,6 @@
 # Grant device permissions
 
-Pre-grant or first-tap the OS microphone sheet so `AudioManager.start()` can return `StartReady`. Companion to [real-device-marionette.md](real-device-marionette.md). Process lives in the `device-permission-prompts` skill.
+Pre-grant or first-tap the OS microphone sheet so `AudioManager.start()` can return `StartReady`. Companion to [real-device-orchestration.md](real-device-orchestration.md). Process lives in the `device-permission-prompts` skill.
 
 ## Load first
 

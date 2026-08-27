@@ -1,7 +1,12 @@
+import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter_ai_communications_linux/flutter_ai_communications_linux.dart';
 import 'package:flutter_ai_communications_linux/src/audio_backend.dart';
+import 'package:flutter_ai_communications_linux/src/linux_bluetooth_identity.dart';
+import 'package:flutter_ai_communications_linux/src/pulse_ffi.dart';
 import 'package:flutter_ai_communications_linux/src/route_class.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -52,6 +57,15 @@ void main() {
     );
   });
 
+  test('Pulse car form_factor is a car RouteClass', () {
+    expect(
+      linuxRouteClass(name: 'bluez_sink', bus: 'bluetooth', formFactor: 'car'),
+      RouteClass.car,
+    );
+    expect(linuxEndpointFormFactor('car'), EndpointFormFactor.car);
+    expect(linuxEndpointFormFactor('headset'), EndpointFormFactor.headset);
+  });
+
   test('start and select report Observed from bound native devices', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsLinux(backend: backend);
@@ -86,10 +100,202 @@ void main() {
     expect(seen.last.captureId, 'built-in-in');
     expect(seen.last.renderId, 'built-in-out');
   });
+
+  test('WSLg RDP devices pair as speakerphone', () {
+    expect(
+      linuxRouteClass(name: 'RDP Source', bus: ''),
+      RouteClass.speakerphone,
+    );
+    expect(linuxRouteClass(name: 'RDP Sink', bus: ''), RouteClass.speakerphone);
+  });
+
+  test('Pulse named device ABI matches Pulse 16 LP64 source/sink info', () {
+    expect(sizeOf<Pointer<Void>>(), 8);
+    expect(sizeOf<PaSampleSpec>(), 12);
+    expect(sizeOf<PaChannelMap>(), 132);
+    expect(sizeOf<PaCvolume>(), 132);
+    final info = calloc<PaNamedDevice>();
+    addTearDown(() => calloc.free(info));
+    final sentinel = Pointer<PaProplist>.fromAddress(0x1000);
+    info.ref.proplist = sentinel;
+    info.ref.card = 12;
+    expect(
+      Pointer<Pointer<PaProplist>>.fromAddress(info.address + 344).value,
+      sentinel,
+    );
+    expect(Pointer<Uint32>.fromAddress(info.address + 372).value, 12);
+    expect(pulseProplist(info), sentinel);
+    expect(pulseCard(info), 12);
+    info.ref.proplist = Pointer<PaProplist>.fromAddress(1);
+    expect(pulseProplist(info), nullptr);
+    expect(pulseProplist(nullptr), nullptr);
+    expect(pulseCard(nullptr), 0xffffffff);
+  });
+
+  test('Pulse form_factor and bus fill RouteClass and form factor', () {
+    final tesla = linuxEndpointFromPulse(
+      id: 'bluez_sink.aa_bb_cc_dd_ee_ff.a2dp_sink',
+      name: 'bluez_sink',
+      isCapture: false,
+      bus: 'bluetooth',
+      formFactor: 'car',
+      card: 12,
+    );
+    expect(tesla.routeClass, RouteClass.car);
+    expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+    expect(tesla.capabilities.carConnected, isTrue);
+    expect(tesla.pairId, 'card-12');
+  });
+
+  test(
+    'permission probe uses the backend and does not start a Session',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsLinux(backend: backend);
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.requestMicrophonePermission(),
+        MicrophonePermission.granted,
+      );
+      expect(backend.started, isFalse);
+    },
+  );
+
+  test('failed BlueZ identity leaves Pulse names', () async {
+    final source = BlueZBluetoothIdentitySource(
+      enumerate: () async => throw StateError('no bluetoothd'),
+    );
+    await source.prepare();
+    expect(source.current(), isEmpty);
+  });
+
+  test('Bluetooth identity enriches matching Endpoints', () async {
+    final backend = _BluetoothBackend();
+    final adapter = FlutterAiCommunicationsLinux(
+      backend: backend,
+      bluetooth: _FixedBluetoothSource(const [
+        BluetoothIdentity(
+          name: 'Tesla Model Y',
+          classOfDevice: 0x420,
+          hints: ['Tesla'],
+        ),
+      ]),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    final tesla = catalog.firstWhere((endpoint) => endpoint.id == 'bt-in');
+    expect(tesla.identityHints, ['Tesla Model Y', 'Tesla']);
+    expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+  });
+
+  test('car Class of Device is a car form factor', () {
+    expect(linuxFormFactorFromClassOfDevice(0x420), EndpointFormFactor.car);
+  });
+
+  test('Bluetooth prepare failure leaves Pulse catalog', () async {
+    final adapter = FlutterAiCommunicationsLinux(
+      backend: _RecordingBackend(),
+      bluetooth: _ThrowingBluetoothSource(),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    await Future<void>.delayed(Duration.zero);
+    expect(catalog.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
+  test(
+    'BlueZ busctl snapshot maps Class of Device and manufacturer data',
+    () async {
+      Future<ProcessResult> run(List<String> args) async {
+        if (args.contains('tree')) {
+          return ProcessResult(
+            0,
+            0,
+            '/org/bluez/hci0/dev_A1_B2_C3_D4_E5_F6\n',
+            '',
+          );
+        }
+        return ProcessResult(
+          0,
+          0,
+          's "Tesla Model Y"\n'
+              's "Tesla Model Y"\n'
+              's "A1:B2:C3:D4:E5:F6"\n'
+              'u 1056\n'
+              'a{qv} { 301 <[ay 2 0x2d 0x01]> }\n',
+          '',
+        );
+      }
+
+      final devices = await enumerateBluezDevices(runBusctl: run);
+      expect(devices, hasLength(1));
+      expect(devices.single.name, 'Tesla Model Y');
+      expect(devices.single.classOfDevice, 0x420);
+      expect(devices.single.address, 'A1:B2:C3:D4:E5:F6');
+      expect(devices.single.hints, ['Sony']);
+    },
+  );
+
+  test('ManufacturerData company ids map to brand hints', () {
+    expect(manufacturerHintFromCompanyId(0x012D), 'Sony');
+    expect(manufacturerHintFromCompanyId(0x004C), 'Apple');
+    expect(manufacturerHintFromCompanyId(0x00E0), 'Google');
+    expect(manufacturerHintFromCompanyId(0x1), isNull);
+    expect(
+      parseBluezManufacturerCompanyIds(
+        'a{qv} { 301 <[ay 4 0x2d 0x01 0x01 0x00]> 76 <[ay 2 0x4c 0x00]> }',
+      ),
+      [301, 76],
+    );
+    expect(parseBusctlString('s "Tesla Model Y"'), 'Tesla Model Y');
+    expect(parseBusctlUint('u 1056'), 1056);
+    expect(parseBusctlUint('u 0x420'), 0x420);
+  });
+
+  test('enumerate retries when Pulse catalog is briefly empty', () async {
+    final backend = _FlakyCatalogBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    expect(catalog.map((endpoint) => endpoint.id), contains('usb-in'));
+    expect(backend.enumerateCalls, greaterThan(1));
+  });
+
+  test('endpoint catalog emits before startNative', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    final seen = <List<Endpoint>>[];
+    final sub = adapter.endpointCatalog.listen(seen.add);
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isNotEmpty);
+    expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
+  test(
+    'startNative keeps catalog available without a prior subscriber',
+    () async {
+      final backend = _RecordingBackend();
+      final adapter = FlutterAiCommunicationsLinux(backend: backend);
+      addTearDown(adapter.stopNative);
+      expect(
+        await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out'),
+        NativeGraphStart.started,
+      );
+      final seen = <List<Endpoint>>[];
+      final sub = adapter.endpointCatalog.listen(seen.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isNotEmpty);
+      expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
+    },
+  );
 }
 
 final class _RecordingBackend implements AudioBackend {
   PairingSnapshot bound = const PairingSnapshot();
+  var started = false;
 
   @override
   List<Endpoint> enumerate() => const [
@@ -128,6 +334,7 @@ final class _RecordingBackend implements AudioBackend {
 
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {
+    started = true;
     bound = PairingSnapshot(
       captureId: captureId ?? 'built-in-in',
       renderId: renderId ?? 'built-in-out',
@@ -166,4 +373,131 @@ final class _RecordingBackend implements AudioBackend {
 
   @override
   void dispose() {}
+}
+
+final class _FlakyCatalogBackend implements AudioBackend {
+  final _RecordingBackend _inner = _RecordingBackend();
+  var enumerateCalls = 0;
+
+  @override
+  List<Endpoint> enumerate() {
+    enumerateCalls++;
+    if (enumerateCalls < 3) {
+      return const [];
+    }
+    return _inner.enumerate();
+  }
+
+  @override
+  MicrophonePermission probePermission() => _inner.probePermission();
+
+  @override
+  NativeGraphStart start({String? captureId, String? renderId}) =>
+      _inner.start(captureId: captureId, renderId: renderId);
+
+  @override
+  void stop() => _inner.stop();
+
+  @override
+  void pause() => _inner.pause();
+
+  @override
+  void resume() => _inner.resume();
+
+  @override
+  void play(Uint8List bytes) => _inner.play(bytes);
+
+  @override
+  void select({String? captureId, String? renderId}) =>
+      _inner.select(captureId: captureId, renderId: renderId);
+
+  @override
+  PairingSnapshot get observed => _inner.observed;
+
+  @override
+  void flush() => _inner.flush();
+
+  @override
+  Stream<Uint8List> get capture => _inner.capture;
+
+  @override
+  void dispose() => _inner.dispose();
+}
+
+final class _ThrowingBluetoothSource implements BluetoothIdentitySource {
+  @override
+  List<BluetoothIdentity> current() => const [];
+
+  @override
+  Future<void> prepare() async => throw StateError('bluetooth unavailable');
+}
+
+final class _FixedBluetoothSource implements BluetoothIdentitySource {
+  _FixedBluetoothSource(this._devices);
+
+  final List<BluetoothIdentity> _devices;
+
+  @override
+  List<BluetoothIdentity> current() => _devices;
+
+  @override
+  Future<void> prepare() async {}
+}
+
+final class _BluetoothBackend implements AudioBackend {
+  final _RecordingBackend _inner = _RecordingBackend();
+
+  @override
+  List<Endpoint> enumerate() => [
+    ..._inner.enumerate(),
+    const Endpoint(
+      id: 'bt-in',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: true,
+      pairId: 'bt',
+    ),
+    const Endpoint(
+      id: 'bt-out',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: false,
+      pairId: 'bt',
+    ),
+  ];
+
+  @override
+  MicrophonePermission probePermission() => _inner.probePermission();
+
+  @override
+  NativeGraphStart start({String? captureId, String? renderId}) =>
+      _inner.start(captureId: captureId, renderId: renderId);
+
+  @override
+  void stop() => _inner.stop();
+
+  @override
+  void pause() => _inner.pause();
+
+  @override
+  void resume() => _inner.resume();
+
+  @override
+  void play(Uint8List bytes) => _inner.play(bytes);
+
+  @override
+  void select({String? captureId, String? renderId}) =>
+      _inner.select(captureId: captureId, renderId: renderId);
+
+  @override
+  PairingSnapshot get observed => _inner.observed;
+
+  @override
+  void flush() => _inner.flush();
+
+  @override
+  Stream<Uint8List> get capture => _inner.capture;
+
+  @override
+  void dispose() => _inner.dispose();
 }

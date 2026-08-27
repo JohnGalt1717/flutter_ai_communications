@@ -5,7 +5,7 @@ import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
 /// Host Transport that echoes Session capture back through [Session.play].
 ///
-/// The library does not own Transport. This is the Marionette / e2e
+/// The library does not own Transport. This is the Orchestration / e2e
 /// stand-in: fixture or live capture in, the same bytes out on play.
 final class EchoTransport {
   /// Creates an echo Transport on [session].

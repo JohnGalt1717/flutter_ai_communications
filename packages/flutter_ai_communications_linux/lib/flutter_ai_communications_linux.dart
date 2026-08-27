@@ -3,23 +3,31 @@ import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+import 'package:logging/logging.dart';
 
 import 'src/audio_backend.dart';
 import 'src/audio_factory.dart';
+import 'src/linux_bluetooth_identity.dart';
 
 /// Linux adapter. Isolation is unavailable. Pulse / PipeWire via Dart FFI.
 final class FlutterAiCommunicationsLinux
     extends FlutterAiCommunicationsPlatform {
   /// Creates the Linux adapter.
-  FlutterAiCommunicationsLinux({AudioBackend? backend})
-    : _backend = backend ?? createAudioBackend();
+  FlutterAiCommunicationsLinux({
+    AudioBackend? backend,
+    BluetoothIdentitySource? bluetooth,
+  }) : _backend = backend ?? createAudioBackend(),
+       _bluetooth = bluetooth ?? createBluetoothIdentitySource();
 
   /// Registers this class as the default instance.
   static void registerWith() {
     FlutterAiCommunicationsPlatform.instance = FlutterAiCommunicationsLinux();
   }
 
+  static final _log = Logger('FlutterAiCommunicationsLinux');
+
   final AudioBackend _backend;
+  final BluetoothIdentitySource _bluetooth;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -32,7 +40,8 @@ final class FlutterAiCommunicationsLinux
     IsolationState.unavailable,
   );
   PairingSnapshot _observed = const PairingSnapshot();
-  Timer? _catalogPoll;
+  Timer? _catalogWatch;
+  var _catalogListeners = 0;
   var _running = false;
   var _generation = 0;
 
@@ -49,10 +58,24 @@ final class FlutterAiCommunicationsLinux
   Stream<OsRouteChange> get osRouteChanges => _routes.stream;
 
   @override
-  Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
+  Future<List<Endpoint>> enumerateEndpoints() async {
+    unawaited(_prepareBluetoothCatalog());
+    return _catalogUntilReady();
+  }
 
   @override
-  Stream<List<Endpoint>> get endpointCatalog => _catalog.stream;
+  Stream<List<Endpoint>> get endpointCatalog async* {
+    _catalogListeners++;
+    _ensureCatalogWatch();
+    try {
+      yield _enrichedCatalog();
+      unawaited(_prepareBluetoothCatalog());
+      yield* _catalog.stream;
+    } finally {
+      _catalogListeners--;
+      _maybeStopCatalogWatch();
+    }
+  }
 
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async =>
@@ -72,23 +95,25 @@ final class FlutterAiCommunicationsLinux
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
-      _catalog.add(_backend.enumerate());
       _path.add(const CoverageHint.ok());
-      _emitObserved();
-      _catalogPoll?.cancel();
-      _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
-        _catalog.add(_backend.enumerate());
-      });
+      _emitObserved(force: true);
+      _ensureCatalogWatch();
+      _publishCatalog();
+      unawaited(_prepareBluetoothCatalog());
+    } else {
+      _running = false;
+      _emitObserved(force: true);
+      _maybeStopCatalogWatch();
     }
     return started;
   }
 
   @override
   Future<void> stopNative() async {
-    _catalogPoll?.cancel();
-    _catalogPoll = null;
     _running = false;
     _backend.stop();
+    _observed = const PairingSnapshot();
+    _maybeStopCatalogWatch();
   }
 
   @override
@@ -107,12 +132,59 @@ final class FlutterAiCommunicationsLinux
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
+      _emitObserved(force: true);
+    }
+  }
+
+  void _ensureCatalogWatch() {
+    _catalogWatch ??= Timer.periodic(const Duration(seconds: 2), (_) {
+      _publishCatalog();
+    });
+  }
+
+  void _maybeStopCatalogWatch() {
+    if (_running || _catalogListeners > 0) {
+      return;
+    }
+    _catalogWatch?.cancel();
+    _catalogWatch = null;
+  }
+
+  Future<void> _prepareBluetoothCatalog() async {
+    try {
+      await _bluetooth.prepare();
+      _publishCatalog();
+    } on Object catch (error, stack) {
+      _log.fine('Bluetooth identity prepare failed', error, stack);
+    }
+  }
+
+  List<Endpoint> _enrichedCatalog() {
+    return mergeBluetoothIdentity(_backend.enumerate(), _bluetooth.current());
+  }
+
+  Future<List<Endpoint>> _catalogUntilReady() async {
+    var catalog = _enrichedCatalog();
+    for (var i = 0; i < 20 && catalog.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      catalog = _enrichedCatalog();
+    }
+    return catalog;
+  }
+
+  void _publishCatalog() {
+    _catalog.add(_enrichedCatalog());
+    if (_running) {
       _emitObserved();
     }
   }
 
-  void _emitObserved() {
-    _observed = _backend.observed;
+  void _emitObserved({bool force = false}) {
+    final next = _backend.observed;
+    if (!force && next == _observed) {
+      return;
+    }
+    _observed = next;
     _routes.add(
       OsRouteChange(
         captureId: _observed.captureId,

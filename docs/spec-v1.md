@@ -44,7 +44,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 32. As a user who gets a phone call, I want the Session to pause and be resumable, so that the agent does not fight the OS.
 33. As a logger, I want `package:logging`, so that I can attach ISpect the way Scribe already does.
 34. As a tester, I want fixture WAV/PCM in and bytes/events out, so that floor, barge-in, and mute are real tests.
-35. As a developer, I want a Marionette example that looks like AI voice, so that I can drive the UI to success.
+35. As a developer, I want an Orchestration example that looks like AI voice, so that I can drive the UI to success.
 36. As a future desktop host, I want tickets for macOS, Windows, and Linux, so that the plan is complete before v1 ships.
 
 ## Implementation Decisions
@@ -63,14 +63,14 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 - Phone-call audio focus emits interrupted and auto-pauses; host or OS-end resumes.
 - Logging is `package:logging` only. No ISpect, no `record` / `soloud` / `flutter_recorder`.
 - Permissions: first-party OS APIs; `permission_handler` only if a platform cannot request the mic.
-- No user-facing library strings. Example is the AI-looking Marionette harness, not a SignalR demo.
+- No user-facing library strings. Example is the AI-looking Orchestration harness, not a SignalR demo.
 
 ## Testing Decisions
 
 - Test external behaviour at `AudioManager`, `Session`, `CoverageSource`, and the platform interface. Do not assert private native steps.
 - Shared DSP (floor, barge-in, pairing, transcode) is tested with fixture PCM and a fake platform adapter.
 - Platform tickets add integration coverage: permission, enum, route class, Isolation detect, reset that does not end capture subscriptions.
-- Example + Marionette is the UI-to-success path on iOS, Android, web, macOS, Windows, and Linux.
+- Example + Orchestration is the UI-to-success path on iOS, Android, web, macOS, Windows, and Linux.
 - A good test names a capability (“muted Session still emits silence frames at 24 kHz”) and uses fixture or OS-observable outcomes, not mocks of the implementation.
 
 ## Out of Scope

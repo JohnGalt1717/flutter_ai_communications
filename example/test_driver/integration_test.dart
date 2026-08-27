@@ -38,7 +38,7 @@ Future<void> main() async {
           final hardware = _safe('${receipt['hardware'] ?? 'device'}');
           final name = '$commit-$platform-$hardware.json';
           await File('${dir.path}/$name').writeAsString('$encoded\n');
-          stdout.writeln('NATIVE_MARIONETTE_RECEIPT $encoded');
+          stdout.writeln('NATIVE_ORCHESTRATION_RECEIPT $encoded');
         }
       }
     },

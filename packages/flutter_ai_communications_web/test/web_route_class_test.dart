@@ -3,28 +3,42 @@ import 'package:flutter_ai_communications_web/src/web_route_class.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('AirPods are bluetooth even though the browser lists them as audioinput', () {
-    expect(
-      webRouteClass(name: "James's AirPods Pro", isCapture: true),
-      RouteClass.bluetooth,
-    );
-    expect(
-      webRouteClass(name: "James's AirPods Pro", isCapture: false),
-      RouteClass.bluetooth,
-    );
-  });
+  test(
+    'AirPods are bluetooth even though the browser lists them as audioinput',
+    () {
+      expect(
+        webRouteClass(name: "James's AirPods Pro", isCapture: true),
+        RouteClass.bluetooth,
+      );
+      expect(
+        webRouteClass(name: "James's AirPods Pro", isCapture: false),
+        RouteClass.bluetooth,
+      );
+    },
+  );
 
   test('Chrome Default- prefix does not hide AirPods or BRIO', () {
     expect(
-      webRouteClass(
-        name: 'Default - James’s AirPods Pro',
-        isCapture: true,
-      ),
+      webRouteClass(name: 'Default - James’s AirPods Pro', isCapture: true),
       RouteClass.bluetooth,
     );
     expect(
-      webRouteClass(name: 'Default - Logitech BRIO (046d:085e)', isCapture: true),
+      webRouteClass(
+        name: 'Default - Logitech BRIO (046d:085e)',
+        isCapture: true,
+      ),
       RouteClass.wired,
+    );
+  });
+
+  test('Tesla and CarPlay labels are bluetooth for name matching', () {
+    expect(
+      webRouteClass(name: 'Tesla Model Y', isCapture: false),
+      RouteClass.bluetooth,
+    );
+    expect(
+      webRouteClass(name: "James's CarPlay", isCapture: true),
+      RouteClass.bluetooth,
     );
   });
 

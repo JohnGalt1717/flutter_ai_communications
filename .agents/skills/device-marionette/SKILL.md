@@ -17,7 +17,7 @@ Load and follow [device-agent-lens](../device-agent-lens/SKILL.md).
 
 Receipt workflows (native suite, permission grants) remain under:
 
-- [real-device-marionette.md](../../workflows/real-device-marionette.md)
+- [real-device-orchestration.md](../../workflows/real-device-orchestration.md)
 - [device-permission-prompts](../device-permission-prompts/SKILL.md)
 
 Do **not** re-add `marionette_flutter` or `marionette_logging` to `example/`.

@@ -40,7 +40,7 @@ void main() {
         session.diagnostics.acousticProfile?.family,
         AcousticFamily.communicationsHeadset,
       );
-      expect(session.diagnostics.baselineStep, 3);
+      expect(session.diagnostics.baselineStep, 4);
       expect(session.diagnostics.profileConfidence, ProfileConfidence.known);
       expect(
         session.diagnostics.captureProcessor,
@@ -102,8 +102,8 @@ void main() {
         processor: CaptureProcessor.profileScaled(5),
       ),
     );
-    expect(session.diagnostics.baselineStep, 3);
-    expect(session.diagnostics.activeFloor, BaselinePolicy.rmsForStep(3));
+    expect(session.diagnostics.baselineStep, 4);
+    expect(session.diagnostics.activeFloor, BaselinePolicy.rmsForStep(4));
   });
 
   test('Isolation missing raises adaptive floor only', () async {

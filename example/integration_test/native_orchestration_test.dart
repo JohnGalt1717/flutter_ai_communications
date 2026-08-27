@@ -2,13 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'native_marionette_support.dart';
+import 'native_orchestration_support.dart';
 
 /// Native Session proof. Never wraps the platform in loopback.
 void main() {
-  installNativeMarionetteLogging();
+  installNativeOrchestrationLogging();
 
-  testWidgets('native Marionette: start, route, twenty cycles', (tester) async {
+  testWidgets('native Orchestration: start, route, twenty cycles', (
+    tester,
+  ) async {
     final platform = FlutterAiCommunicationsPlatform.instance;
     expect(
       platform.runtimeType.toString(),
@@ -30,8 +32,8 @@ void main() {
     expect(catalog, isNotEmpty, reason: 'native catalog must be non-empty');
     first ??= await requireReady(manager, purpose: 'native-first');
     final firstCapture = first.capture;
-    nativeMarionetteLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
-    nativeMarionetteLog.info(
+    nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
+    nativeOrchestrationLog.info(
       'NATIVE_ROUTE desired=${first.diagnostics.desired.captureId}/${first.diagnostics.desired.renderId} '
       'observed=${first.diagnostics.observed.captureId}/${first.diagnostics.observed.renderId}',
     );
@@ -144,7 +146,7 @@ void main() {
     });
   });
 
-  testWidgets('native Marionette: web combinations and devicechange', (
+  testWidgets('native Orchestration: web combinations and devicechange', (
     tester,
   ) async {
     if (!runningOnWeb) {
@@ -212,7 +214,7 @@ void main() {
     });
   });
 
-  testWidgets('native Marionette: desktop capture x render combinations', (
+  testWidgets('native Orchestration: desktop capture x render combinations', (
     tester,
   ) async {
     if (runningOnWeb) {

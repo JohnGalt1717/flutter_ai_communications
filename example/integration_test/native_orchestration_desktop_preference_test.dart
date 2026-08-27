@@ -2,14 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'native_marionette_support.dart';
+import 'native_orchestration_support.dart';
 
 /// Desktop host preference: webcam capture + USB render first, AirPods below.
 void main() {
-  installNativeMarionetteLogging();
+  installNativeOrchestrationLogging();
 
   testWidgets(
-    'native Marionette: BRIO capture and USB render outrank AirPods',
+    'native Orchestration: BRIO capture and USB render outrank AirPods',
     (tester) async {
       final platform = FlutterAiCommunicationsPlatform.instance;
       expect(
@@ -44,7 +44,9 @@ void main() {
       );
       final usbRender =
           usbRenders
-              .where((endpoint) => endpoint.name.toLowerCase().startsWith('usb'))
+              .where(
+                (endpoint) => endpoint.name.toLowerCase().startsWith('usb'),
+              )
               .firstOrNull ??
           usbRenders.firstOrNull;
       final airpods = completePair(catalog, RouteClass.bluetooth);
@@ -60,8 +62,8 @@ void main() {
         reason: 'AirPods must stay connected so the OS can try to force them',
       );
 
-      nativeMarionetteLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
-      nativeMarionetteLog.info(
+      nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
+      nativeOrchestrationLog.info(
         'DESKTOP_PREFERENCE capture=${brio!.id} render=${usbRender!.id} '
         'airpodsBelow=${airpods!.capture!.id}',
       );

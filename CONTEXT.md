@@ -32,6 +32,10 @@ _Avoid_: noise floor, threshold, gate (the gate is the action; the floor is the 
 The Audio manager's evidence-backed description of an Endpoint's microphone placement and available echo/noise processing, derived from native capabilities and, when necessary, a known-Endpoint registry.
 _Avoid_: known device, brand rule, ANC device
 
+**Hardware noise processing**:
+Whether an Endpoint's own hardware already suppresses noise on capture, recorded per known-profile row from manufacturer evidence. It lowers a headset Baseline; it is not Isolation and not Session noise cancelling.
+_Avoid_: ANC (as the type name), noise cancellation (as Isolation or OS AEC/NS)
+
 **Baseline sound floor**:
 The library-owned starting Sound floor policy selected from an Endpoint's Acoustic profile before adaptive measurement or an explicit user override is applied.
 _Avoid_: default noise floor, device matrix
@@ -45,7 +49,7 @@ How strongly an Acoustic profile is supported, from verified native capabilities
 _Avoid_: score, certainty
 
 **Known-profile registry**:
-The shared table of narrowly matched Endpoint family and model aliases used only when native capabilities are insufficient.
+The shared, file-loaded table of researched advertised-name aliases, Acoustic family, and Hardware noise processing, used when native capabilities are insufficient.
 _Avoid_: device matrix, brand list, ANC list
 
 **Barge-in**:
@@ -143,6 +147,10 @@ _Avoid_: listen (as a distinct stream), visualizer stream (as a distinct stream)
 **Start result**:
 The outcome of starting a Session — success with a Session, or a typed failure such as missing permission.
 _Avoid_: exception (for expected start failures)
+
+**Orchestration**:
+The native Session proof suite that drives start, route, capture, playback, and receipts on a real head.
+_Avoid_: marionette
 
 **Barge-in policy**:
 Whether barge-in is detected locally (flush playback, keep preroll) or left to the remote VAD.
