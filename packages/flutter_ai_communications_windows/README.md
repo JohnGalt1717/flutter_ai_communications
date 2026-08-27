@@ -44,7 +44,7 @@ Store consent prompt; unpackaged Win32 enumerates remembered devices
 with no extra UI. Denial must not block audio — the catalog keeps
 WASAPI names and the known-profile registry falls back to those names.
 Approve → Bluetooth alias + Class of Device (car audio, headset,
-speaker) for Acoustic-profile matching, including Fieldist car head
+speaker) for Acoustic-profile matching, including fielded car head
 units such as Tesla:
 
 ```xml

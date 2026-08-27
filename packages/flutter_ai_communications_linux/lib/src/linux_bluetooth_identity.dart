@@ -67,7 +67,10 @@ int parseBusctlUint(String raw) {
   if (match == null) {
     return 0;
   }
-  return int.parse(match.group(1)!);
+  final token = match.group(1)!;
+  return token.startsWith('0x') || token.startsWith('0X')
+      ? int.parse(token.substring(2), radix: 16)
+      : int.parse(token);
 }
 
 /// Company identifiers from BlueZ `ManufacturerData` GVariant text.

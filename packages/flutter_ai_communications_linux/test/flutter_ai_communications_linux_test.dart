@@ -212,6 +212,7 @@ void main() {
     );
     expect(parseBusctlString('s "Tesla Model Y"'), 'Tesla Model Y');
     expect(parseBusctlUint('u 1056'), 1056);
+    expect(parseBusctlUint('u 0x420'), 0x420);
   });
 
   test('enumerate retries when Pulse catalog is briefly empty', () async {
