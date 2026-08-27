@@ -192,6 +192,17 @@ void main() {
     expect(linuxFormFactorFromClassOfDevice(0x420), EndpointFormFactor.car);
   });
 
+  test('Bluetooth prepare failure leaves Pulse catalog', () async {
+    final adapter = FlutterAiCommunicationsLinux(
+      backend: _RecordingBackend(),
+      bluetooth: _ThrowingBluetoothSource(),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    await Future<void>.delayed(Duration.zero);
+    expect(catalog.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
   test(
     'BlueZ busctl snapshot maps Class of Device and manufacturer data',
     () async {
@@ -411,6 +422,14 @@ final class _FlakyCatalogBackend implements AudioBackend {
 
   @override
   void dispose() => _inner.dispose();
+}
+
+final class _ThrowingBluetoothSource implements BluetoothIdentitySource {
+  @override
+  List<BluetoothIdentity> current() => const [];
+
+  @override
+  Future<void> prepare() async => throw StateError('bluetooth unavailable');
 }
 
 final class _FixedBluetoothSource implements BluetoothIdentitySource {

@@ -182,6 +182,7 @@ void main() {
       expect(profile.provenance, ProfileProvenance.nativeCapabilities);
       expect(profile.hardwareNoiseProcessing, isFalse);
       expect(profile.baselineStep, 4);
+      expect(profile.matchId, isNull);
     });
 
     test('Bluetooth alias applies researched hardware noise processing', () {
@@ -217,6 +218,7 @@ void main() {
       expect(profile.family, AcousticFamily.car);
       expect(profile.confidence, ProfileConfidence.verified);
       expect(profile.provenance, ProfileProvenance.nativeCapabilities);
+      expect(profile.matchId, isNull);
     });
 
     test('native speaker Class of Device beats a Tesla display name', () {
@@ -230,6 +232,7 @@ void main() {
       );
       expect(profile.family, AcousticFamily.bluetoothSpeaker);
       expect(profile.confidence, ProfileConfidence.verified);
+      expect(profile.matchId, isNull);
     });
 
     test('unknown bluetooth uses conservative speaker fallback', () {

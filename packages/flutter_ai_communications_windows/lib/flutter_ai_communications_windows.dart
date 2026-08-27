@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+import 'package:logging/logging.dart';
 
 import 'src/wasapi_backend.dart';
 import 'src/wasapi_factory.dart';
@@ -25,6 +26,8 @@ final class FlutterAiCommunicationsWindows
   static void registerWith() {
     FlutterAiCommunicationsPlatform.instance = FlutterAiCommunicationsWindows();
   }
+
+  static final _log = Logger('FlutterAiCommunicationsWindows');
 
   final WasapiBackend _backend;
   final WindowsMicrophoneConsent _consent;
@@ -165,8 +168,12 @@ final class FlutterAiCommunicationsWindows
   }
 
   Future<void> _prepareBluetoothCatalog() async {
-    await _bluetooth.prepare();
-    _publishCatalog();
+    try {
+      await _bluetooth.prepare();
+      _publishCatalog();
+    } on Object catch (error, stack) {
+      _log.fine('Bluetooth identity prepare failed', error, stack);
+    }
   }
 
   List<Endpoint> _enrichedCatalog() {

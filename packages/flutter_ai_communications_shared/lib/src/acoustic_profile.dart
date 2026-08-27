@@ -119,12 +119,12 @@ final class AcousticClassifier {
         nativeFamily ??
         registry?.family ??
         _familyFromRoute(endpoint.routeClass);
-    var hardwareNoiseProcessing = false;
-    final matched = registry;
-    if (matched != null &&
-        (nativeFamily == null || matched.family == family)) {
-      hardwareNoiseProcessing = matched.hardwareNoiseProcessing;
-    }
+    final applied = switch (registry) {
+      null => null,
+      final row when nativeFamily == null || row.family == family => row,
+      _ => null,
+    };
+    final hardwareNoiseProcessing = applied?.hardwareNoiseProcessing ?? false;
     final provenance = nativeFamily != null
         ? ProfileProvenance.nativeCapabilities
         : registry != null
@@ -144,7 +144,7 @@ final class AcousticClassifier {
       hardwareNoiseProcessing: hardwareNoiseProcessing,
       confidence: confidence,
       provenance: provenance,
-      matchId: registry?.id,
+      matchId: applied?.id,
     );
   }
 

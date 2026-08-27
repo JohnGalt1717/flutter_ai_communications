@@ -384,6 +384,17 @@ void main() {
     expect(windowsFormFactorFromClassOfDevice(0x420), EndpointFormFactor.car);
   });
 
+  test('Bluetooth prepare failure leaves WASAPI catalog', () async {
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: _RecordingBackend(),
+      bluetooth: _ThrowingBluetoothSource(),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    await Future<void>.delayed(Duration.zero);
+    expect(catalog.map((endpoint) => endpoint.id), contains('usb-in'));
+  });
+
   test('endpoint catalog emits before startNative', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -434,6 +445,14 @@ final class _RecordingConsent implements WindowsMicrophoneConsent {
     calls++;
     return result;
   }
+}
+
+final class _ThrowingBluetoothSource implements BluetoothIdentitySource {
+  @override
+  List<BluetoothIdentity> current() => const [];
+
+  @override
+  Future<void> prepare() async => throw StateError('bluetooth unavailable');
 }
 
 final class _FixedBluetoothSource implements BluetoothIdentitySource {
