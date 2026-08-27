@@ -1,9 +1,12 @@
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter_ai_communications_linux/flutter_ai_communications_linux.dart';
 import 'package:flutter_ai_communications_linux/src/audio_backend.dart';
 import 'package:flutter_ai_communications_linux/src/linux_bluetooth_identity.dart';
+import 'package:flutter_ai_communications_linux/src/pulse_ffi.dart';
 import 'package:flutter_ai_communications_linux/src/route_class.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -104,6 +107,29 @@ void main() {
       RouteClass.speakerphone,
     );
     expect(linuxRouteClass(name: 'RDP Sink', bus: ''), RouteClass.speakerphone);
+  });
+
+  test('Pulse named device ABI matches Pulse 16 LP64 source/sink info', () {
+    expect(sizeOf<Pointer<Void>>(), 8);
+    expect(sizeOf<PaSampleSpec>(), 12);
+    expect(sizeOf<PaChannelMap>(), 132);
+    expect(sizeOf<PaCvolume>(), 132);
+    final info = calloc<PaNamedDevice>();
+    addTearDown(() => calloc.free(info));
+    final sentinel = Pointer<PaProplist>.fromAddress(0x1000);
+    info.ref.proplist = sentinel;
+    info.ref.card = 12;
+    expect(
+      Pointer<Pointer<PaProplist>>.fromAddress(info.address + 344).value,
+      sentinel,
+    );
+    expect(Pointer<Uint32>.fromAddress(info.address + 372).value, 12);
+    expect(pulseProplist(info), sentinel);
+    expect(pulseCard(info), 12);
+    info.ref.proplist = Pointer<PaProplist>.fromAddress(1);
+    expect(pulseProplist(info), nullptr);
+    expect(pulseProplist(nullptr), nullptr);
+    expect(pulseCard(nullptr), 0xffffffff);
   });
 
   test('Pulse form_factor and bus fill RouteClass and form factor', () {

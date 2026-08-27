@@ -132,7 +132,9 @@ int? _deviceAccessStatus() {
     }
     return using((arena) {
       final status = arena<Int32>();
-      final hr = HRESULT(_callOutInt32(info!, 8, status));
+      final hr = HRESULT(
+        _callOutInt32(info!, _deviceAccessCurrentStatusSlot, status),
+      );
       if (hr.isError) {
         return null;
       }
@@ -172,7 +174,9 @@ Future<MicrophonePermission?> requestPackagedAppCapability(String name) async {
     }
     final checked = using((arena) {
       final status = arena<Int32>();
-      final hr = HRESULT(_callOutInt32(capability!, 9, status));
+      final hr = HRESULT(
+        _callOutInt32(capability!, _appCapabilityCheckAccessSlot, status),
+      );
       if (hr.isError) {
         return null;
       }
@@ -196,7 +200,9 @@ Future<MicrophonePermission?> requestPackagedAppCapability(String name) async {
     }
     final result = using((arena) {
       final status = arena<Int32>();
-      final hr = HRESULT(_callOutInt32(operation!, 8, status));
+      final hr = HRESULT(
+        _callOutInt32(operation!, _asyncOperationGetResultsSlot, status),
+      );
       if (hr.isError) {
         return null;
       }
@@ -220,7 +226,7 @@ Future<bool> _waitAsync(IUnknown asyncInfo) async {
   while (DateTime.now().isBefore(deadline)) {
     final status = using((arena) {
       final value = arena<Int32>();
-      final hr = HRESULT(_callOutInt32(asyncInfo, 7, value));
+      final hr = HRESULT(_callOutInt32(asyncInfo, _asyncInfoStatusSlot, value));
       if (hr.isError) {
         return -1;
       }
@@ -298,7 +304,7 @@ IUnknown? _createFromDeviceClass(IUnknown factory, int deviceClass) {
               NativeFunction<
                 Int32 Function(VTablePointer, Int32, Pointer<Pointer>)
               >
-            >.fromAddress((factory.ptr.value + 8).value)
+            >.fromAddress((factory.ptr.value + _createFromDeviceClassSlot).value)
             .asFunction<int Function(VTablePointer, int, Pointer<Pointer>)>();
     final hr = HRESULT(fn(factory.ptr, deviceClass, out));
     if (hr.isError || out.value == nullptr) {
@@ -318,7 +324,9 @@ IUnknown? _createAppCapability(IUnknown factory, HSTRING name) {
               NativeFunction<
                 Int32 Function(VTablePointer, IntPtr, Pointer<Pointer>)
               >
-            >.fromAddress((factory.ptr.value + 8).value)
+            >.fromAddress(
+              (factory.ptr.value + _appCapabilityStaticsCreateSlot).value,
+            )
             .asFunction<int Function(VTablePointer, int, Pointer<Pointer>)>();
     final hr = HRESULT(fn(factory.ptr, name.address, out));
     if (hr.isError || out.value == nullptr) {
@@ -336,7 +344,10 @@ IUnknown? _requestAccessAsync(IUnknown capability) {
     final fn =
         Pointer<
               NativeFunction<Int32 Function(VTablePointer, Pointer<Pointer>)>
-            >.fromAddress((capability.ptr.value + 8).value)
+            >.fromAddress(
+              (capability.ptr.value + _appCapabilityRequestAccessAsyncSlot)
+                  .value,
+            )
             .asFunction<int Function(VTablePointer, Pointer<Pointer>)>();
     final hr = HRESULT(fn(capability.ptr, out));
     if (hr.isError || out.value == nullptr) {
@@ -356,7 +367,33 @@ void _logIfNeeded(Object error, StackTrace stack) {
   );
 }
 
-final _roGetActivationFactory =
+/// IInspectable occupies slots 0–5. Remaining indices are ABI order from
+/// the Windows / Wine IDLs, not the order Microsoft docs list methods.
+///
+/// IDeviceAccessInformation: add_AccessChanged, remove_AccessChanged,
+/// get_CurrentStatus.
+const _deviceAccessCurrentStatusSlot = 8;
+
+/// IDeviceAccessInformationStatics: CreateFromId, CreateFromDeviceClassId,
+/// CreateFromDeviceClass.
+const _createFromDeviceClassSlot = 8;
+
+/// IAppCapability: get_CapabilityName, get_User, RequestAccessAsync,
+/// CheckAccess.
+const _appCapabilityRequestAccessAsyncSlot = 8;
+const _appCapabilityCheckAccessSlot = 9;
+
+/// IAppCapabilityStatics: RequestAccessForCapabilitiesAsync,
+/// RequestAccessForCapabilitiesForUserAsync, Create.
+const _appCapabilityStaticsCreateSlot = 8;
+
+/// IAsyncInfo: get_Id, get_Status.
+const _asyncInfoStatusSlot = 7;
+
+/// IAsyncOperation<T>: put_Completed, get_Completed, GetResults.
+const _asyncOperationGetResultsSlot = 8;
+
+late final _roGetActivationFactory =
     DynamicLibrary.open('api-ms-win-core-winrt-l1-1-0.dll').lookupFunction<
       Int32 Function(Pointer, Pointer<GUID>, Pointer<Pointer>),
       int Function(Pointer, Pointer<GUID>, Pointer<Pointer>)

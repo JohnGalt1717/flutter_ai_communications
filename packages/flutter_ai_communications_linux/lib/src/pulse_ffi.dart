@@ -35,7 +35,29 @@ final class PaSampleSpec extends Struct {
   external int channels;
 }
 
-/// Prefix of `pa_source_info` / `pa_sink_info` — name, index, description.
+/// Pulse `pa_channel_map` (`PA_CHANNELS_MAX` is 32).
+final class PaChannelMap extends Struct {
+  @Uint8()
+  external int channels;
+
+  @Array(32)
+  external Array<Int32> map;
+}
+
+/// Pulse `pa_cvolume`.
+final class PaCvolume extends Struct {
+  @Uint8()
+  external int channels;
+
+  @Array(32)
+  external Array<Uint32> values;
+}
+
+/// Prefix of `pa_source_info` / `pa_sink_info` through `card`.
+///
+/// Sink and source share this layout: `monitor_source` vs `monitor_of_sink`
+/// is the same width. Dart FFI supplies LP64 padding so callers do not
+/// hard-code Pulse struct offsets.
 final class PaNamedDevice extends Struct {
   external Pointer<Char> name;
 
@@ -43,6 +65,48 @@ final class PaNamedDevice extends Struct {
   external int index;
 
   external Pointer<Char> description;
+
+  external PaSampleSpec sampleSpec;
+
+  external PaChannelMap channelMap;
+
+  @Uint32()
+  external int ownerModule;
+
+  external PaCvolume volume;
+
+  @Int()
+  external int mute;
+
+  @Uint32()
+  external int monitorIndex;
+
+  external Pointer<Char> monitorName;
+
+  @Uint64()
+  external int latency;
+
+  external Pointer<Char> driver;
+
+  @Uint32()
+  external int flags;
+
+  external Pointer<PaProplist> proplist;
+
+  @Uint64()
+  external int configuredLatency;
+
+  @Uint32()
+  external int baseVolume;
+
+  @Int()
+  external int state;
+
+  @Uint32()
+  external int nVolumeSteps;
+
+  @Uint32()
+  external int card;
 }
 
 /// Opaque Pulse objects.
@@ -63,23 +127,15 @@ final class PaOperation extends Opaque {}
 /// Opaque Pulse property list.
 final class PaProplist extends Opaque {}
 
-/// `offsetof(pa_source_info, proplist)` / `pa_sink_info`. Same layout.
-const pulseProplistOffset = 344;
-
-/// `offsetof(pa_source_info, card)` / `pa_sink_info`.
-const pulseCardOffset = 372;
-
 /// Reads `proplist` from a `pa_source_info` / `pa_sink_info` pointer.
 ///
-/// Offsets are Pulse 16 on 64-bit. A null or unaligned pointer is skipped
-/// so a layout mismatch does not dereference garbage.
+/// A null or unaligned pointer is skipped so a layout mismatch does not
+/// dereference garbage.
 Pointer<PaProplist> pulseProplist(Pointer<PaNamedDevice> info) {
   if (info == nullptr) {
     return nullptr;
   }
-  final value = Pointer<Pointer<PaProplist>>.fromAddress(
-    info.address + pulseProplistOffset,
-  ).value;
+  final value = info.ref.proplist;
   if (value == nullptr || value.address & 7 != 0) {
     return nullptr;
   }
@@ -91,7 +147,7 @@ int pulseCard(Pointer<PaNamedDevice> info) {
   if (info == nullptr) {
     return 0xffffffff;
   }
-  return Pointer<Uint32>.fromAddress(info.address + pulseCardOffset).value;
+  return info.ref.card;
 }
 
 /// libpulse-simple bindings.
