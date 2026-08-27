@@ -4,10 +4,9 @@
             "command": "flutter-agent-lens"
         },
         "flutter-skill": {
-            "command": "bash",
+            "command": "flutter_skill",
             "args": [
-                "-lc",
-                "cd \"$HOME/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36\" && dart run bin/server.dart"
+                "server"
             ]
         },
         "chrome-devtools": {

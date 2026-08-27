@@ -115,6 +115,11 @@ Default when omitted: PCM16 LE mono 24 kHz on both edges.
 
 Working in this repo with an agent? Start at [`AGENTS.md`](./AGENTS.md). Claude Code should start at [`CLAUDE.md`](./CLAUDE.md), which loads the same guide.
 
+## Development Prerequisites
+
+1. dart pub global activate flutter-skill
+2. Make sure that your dart pub cache is on your path: Mac/Linux: $HOME/.pub-cache/bin, Windows: %LOCALAPPDATA%\Pub\Cache\bin
+
 ## License
 
 See `LICENSE`.
