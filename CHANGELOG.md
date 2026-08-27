@@ -10,7 +10,7 @@
 * iOS speakerphone and handset enable VoiceProcessingIO, stay Session-mono, and do not pin a built-in data source. Isolation follows the active Mic Mode so Automatic on speakerphone is required, not on.
 * iOS playback buffers match the player connection (Session mono), not the stereo mixer.
 * iOS capture EventChannel payloads hop to the platform thread.
-* Exclusive native Marionette suite passed on physical iOS, physical Android, and macOS. Chrome exclusive also passed. Windows and Linux exclusive drives are still outstanding.
+* Exclusive native Orchestration suite passed on physical iOS, physical Android, macOS, Windows, and Linux (WSLg). Chrome exclusive also passed.
 * macOS production duplex uses one native AVAudioEngine. Isolation is unavailable, so the Session raises the Sound floor.
 * Isolation refuse / missing / unavailable raises the adaptive Sound floor after the host prompt.
 * Host Endpoint preference fills capture and render independently so a webcam plus USB render can outrank AirPods.

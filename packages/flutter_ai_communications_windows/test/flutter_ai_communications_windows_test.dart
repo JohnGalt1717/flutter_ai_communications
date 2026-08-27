@@ -5,6 +5,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:flutter_ai_communications_windows/flutter_ai_communications_windows.dart';
 import 'package:flutter_ai_communications_windows/src/route_class.dart';
 import 'package:flutter_ai_communications_windows/src/wasapi_backend.dart';
+import 'package:flutter_ai_communications_windows/src/windows_bluetooth_identity.dart';
 import 'package:flutter_ai_communications_windows/src/windows_microphone_consent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -314,6 +315,55 @@ void main() {
     expect(adapter.lastNativeFormats.capture, isNotNull);
   });
 
+  test('denied Bluetooth identity leaves WASAPI names', () async {
+    final source = Win32BluetoothIdentitySource(
+      isPackaged: () => true,
+      requestCapability: (_) async => MicrophonePermission.denied,
+      enumerate: () => throw StateError('denied Bluetooth must not enumerate'),
+    );
+    await source.prepare();
+    expect(source.current(), isEmpty);
+  });
+
+  test(
+    'unpackaged Bluetooth identity enumerates without a Store prompt',
+    () async {
+      var capabilityCalls = 0;
+      final source = Win32BluetoothIdentitySource(
+        isPackaged: () => false,
+        requestCapability: (_) async {
+          capabilityCalls++;
+          return MicrophonePermission.denied;
+        },
+        enumerate: () => const [
+          BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+        ],
+      );
+      await source.prepare();
+      expect(capabilityCalls, 0);
+      expect(source.current().single.name, 'Tesla Model Y');
+    },
+  );
+
+  test('Bluetooth identity enriches matching Endpoints', () async {
+    final backend = _BluetoothBackend();
+    final adapter = FlutterAiCommunicationsWindows(
+      backend: backend,
+      bluetooth: _FixedBluetoothSource(const [
+        BluetoothIdentity(name: 'Tesla Model Y', classOfDevice: 0x420),
+      ]),
+    );
+    addTearDown(adapter.stopNative);
+    final catalog = await adapter.enumerateEndpoints();
+    final tesla = catalog.firstWhere((endpoint) => endpoint.id == 'bt-in');
+    expect(tesla.identityHints, ['Tesla Model Y']);
+    expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+  });
+
+  test('car Class of Device is a car form factor', () {
+    expect(windowsFormFactorFromClassOfDevice(0x420), EndpointFormFactor.car);
+  });
+
   test('endpoint catalog emits before startNative', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -364,6 +414,79 @@ final class _RecordingConsent implements WindowsMicrophoneConsent {
     calls++;
     return result;
   }
+}
+
+final class _FixedBluetoothSource implements BluetoothIdentitySource {
+  _FixedBluetoothSource(this._devices);
+
+  final List<BluetoothIdentity> _devices;
+
+  @override
+  List<BluetoothIdentity> current() => _devices;
+
+  @override
+  Future<void> prepare() async {}
+}
+
+final class _BluetoothBackend implements WasapiBackend {
+  final _RecordingBackend _inner = _RecordingBackend();
+
+  @override
+  List<Endpoint> enumerate() => [
+    ..._inner.enumerate(),
+    const Endpoint(
+      id: 'bt-in',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: true,
+      pairId: 'bt',
+    ),
+    const Endpoint(
+      id: 'bt-out',
+      name: 'Headphones (Tesla Model Y)',
+      routeClass: RouteClass.bluetooth,
+      isCapture: false,
+      pairId: 'bt',
+    ),
+  ];
+
+  @override
+  MicrophonePermission probePermission() => _inner.probePermission();
+
+  @override
+  NativeGraphStart start({String? captureId, String? renderId}) =>
+      _inner.start(captureId: captureId, renderId: renderId);
+
+  @override
+  void stop() => _inner.stop();
+
+  @override
+  void pause() => _inner.pause();
+
+  @override
+  void resume() => _inner.resume();
+
+  @override
+  void play(Uint8List bytes) => _inner.play(bytes);
+
+  @override
+  void select({String? captureId, String? renderId}) =>
+      _inner.select(captureId: captureId, renderId: renderId);
+
+  @override
+  PairingSnapshot get observed => _inner.observed;
+
+  @override
+  NativeFormatReport get nativeFormats => _inner.nativeFormats;
+
+  @override
+  void flush() => _inner.flush();
+
+  @override
+  Stream<Uint8List> get capture => _inner.capture;
+
+  @override
+  void dispose() => _inner.dispose();
 }
 
 final class _RecordingBackend implements WasapiBackend {

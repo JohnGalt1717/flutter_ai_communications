@@ -478,7 +478,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       idiomIsPhone: UIDevice.current.userInterfaceIdiom == .phone
     )
     var items = IosRoutePolicy.builtinEndpoints(hasReceiver: hasReceiver).map {
-      endpoint($0.id, $0.name, $0.routeClass, $0.isCapture, $0.pairId)
+      endpoint(
+        $0.id,
+        $0.name,
+        $0.routeClass,
+        $0.isCapture,
+        $0.pairId,
+        IosRoutePolicy.formFactor(routeClass: $0.routeClass)
+      )
     }
     var seenPairs = Set(items.compactMap { $0["pairId"] as? String })
     for input in session.availableInputs ?? [] {
@@ -502,8 +509,9 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     let pair = applePairId(route, name, uid)
     if seenPairs.contains(pair) { return }
     seenPairs.insert(pair)
-    items.append(endpoint("\(pair)-in", name, route, true, pair))
-    items.append(endpoint("\(pair)-out", name, route, false, pair))
+    let form = IosRoutePolicy.formFactor(portType: portType.rawValue)
+    items.append(endpoint("\(pair)-in", name, route, true, pair, form))
+    items.append(endpoint("\(pair)-out", name, route, false, pair, form))
   }
 
   private func endpoint(
@@ -511,7 +519,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     _ name: String,
     _ route: String,
     _ capture: Bool,
-    _ pairId: String
+    _ pairId: String,
+    _ formFactor: String = "unknown"
   ) -> [String: Any] {
     [
       "id": id,
@@ -519,6 +528,13 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "routeClass": route,
       "isCapture": capture,
       "pairId": pairId,
+      "capabilities": [
+        "formFactor": formFactor,
+        "aec": false,
+        "ns": false,
+        "agc": false,
+        "carConnected": false,
+      ],
     ]
   }
 

@@ -142,9 +142,11 @@ class MethodChannelCommunicationsPlatform
       return NativeGraphStart.failed;
     }
     _lastNativeFormats = NativeFormatReport(
-      capture: _formatFrom(map['captureFormat']) ??
+      capture:
+          _formatFrom(map['captureFormat']) ??
           _formatFrom(map['nativeCaptureFormat']),
-      playback: _formatFrom(map['playbackFormat']) ??
+      playback:
+          _formatFrom(map['playbackFormat']) ??
           _formatFrom(map['nativePlaybackFormat']),
     );
     return NativeGraphStart.started;
@@ -318,19 +320,51 @@ class MethodChannelCommunicationsPlatform
     if (raw == null) {
       return const [];
     }
-    return raw
-        .whereType<Map>()
-        .map(
-          (map) => Endpoint(
-            id: map['id'] as String,
-            name: map['name'] as String,
-            routeClass: _routeClass(map['routeClass'] as String?),
-            isCapture: map['isCapture'] == true,
-            pairId: map['pairId'] as String?,
-          ),
-        )
-        .toList();
+    return raw.whereType<Map>().map(_endpointFromMap).toList();
   }
+
+  Endpoint _endpointFromMap(Map map) {
+    return Endpoint(
+      id: map['id'] as String,
+      name: map['name'] as String,
+      routeClass: _routeClass(map['routeClass'] as String?),
+      isCapture: map['isCapture'] == true,
+      pairId: map['pairId'] as String?,
+      identityHints: _strings(map['identityHints']),
+      capabilities: _capabilities(map['capabilities']),
+    );
+  }
+
+  List<String> _strings(Object? raw) {
+    if (raw is! List) {
+      return const [];
+    }
+    return [
+      for (final value in raw)
+        if (value is String && value.isNotEmpty) value,
+    ];
+  }
+
+  EndpointCapabilities _capabilities(Object? raw) {
+    if (raw is! Map) {
+      return const EndpointCapabilities();
+    }
+    return EndpointCapabilities(
+      aec: raw['aec'] == true,
+      ns: raw['ns'] == true,
+      agc: raw['agc'] == true,
+      formFactor: _formFactor(raw['formFactor'] as String?),
+      carConnected: raw['carConnected'] == true,
+    );
+  }
+
+  EndpointFormFactor _formFactor(String? name) => switch (name) {
+    'headset' => EndpointFormFactor.headset,
+    'speaker' => EndpointFormFactor.speaker,
+    'handset' => EndpointFormFactor.handset,
+    'car' => EndpointFormFactor.car,
+    _ => EndpointFormFactor.unknown,
+  };
 
   RouteClass _routeClass(String? name) => switch (name) {
     'handset' => RouteClass.handset,

@@ -77,3 +77,20 @@ import Testing
     #expect(ids.capture == "airpods-in")
     #expect(ids.render == "airpods-out")
 }
+
+@Test func hfpPortIsHeadsetFormFactor() {
+    #expect(IosRoutePolicy.formFactor(portType: "BluetoothHFP") == "headset")
+}
+
+@Test func carAudioPortIsCarFormFactor() {
+    #expect(IosRoutePolicy.formFactor(portType: "CarAudio") == "car")
+}
+
+@Test func a2dpPortStaysUnknownUntilANameOrClassMatch() {
+    #expect(IosRoutePolicy.formFactor(portType: "BluetoothA2DP") == "unknown")
+}
+
+@Test func builtinHandsetRouteIsHandsetFormFactor() {
+    #expect(IosRoutePolicy.formFactor(routeClass: "handset") == "handset")
+    #expect(IosRoutePolicy.formFactor(routeClass: "speakerphone") == "unknown")
+}

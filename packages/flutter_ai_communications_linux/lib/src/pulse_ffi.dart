@@ -60,6 +60,27 @@ final class PaContext extends Opaque {}
 /// Opaque Pulse operation.
 final class PaOperation extends Opaque {}
 
+/// Opaque Pulse property list.
+final class PaProplist extends Opaque {}
+
+/// `offsetof(pa_source_info, proplist)` / `pa_sink_info`. Same layout.
+const pulseProplistOffset = 344;
+
+/// `offsetof(pa_source_info, card)` / `pa_sink_info`.
+const pulseCardOffset = 372;
+
+/// Reads `proplist` from a `pa_source_info` / `pa_sink_info` pointer.
+Pointer<PaProplist> pulseProplist(Pointer<PaNamedDevice> info) {
+  return Pointer<Pointer<PaProplist>>.fromAddress(
+    info.address + pulseProplistOffset,
+  ).value;
+}
+
+/// Reads `card` from a `pa_source_info` / `pa_sink_info` pointer.
+int pulseCard(Pointer<PaNamedDevice> info) {
+  return Pointer<Uint32>.fromAddress(info.address + pulseCardOffset).value;
+}
+
 /// libpulse-simple bindings.
 final class PulseSimple {
   /// Opens `libpulse-simple.so.0`.
@@ -321,7 +342,12 @@ final class PulseAsync {
           .lookupFunction<
             Void Function(Pointer<PaOperation>),
             void Function(Pointer<PaOperation>)
-          >('pa_operation_unref');
+          >('pa_operation_unref'),
+      _proplistGets = lib
+          .lookupFunction<
+            Pointer<Char> Function(Pointer<PaProplist>, Pointer<Char>),
+            Pointer<Char> Function(Pointer<PaProplist>, Pointer<Char>)
+          >('pa_proplist_gets');
 
   /// Creates a mainloop.
   final Pointer<PaMainloop> Function() mainloopNew;
@@ -391,6 +417,22 @@ final class PulseAsync {
 
   /// Releases an operation.
   final void Function(Pointer<PaOperation>) operationUnref;
+
+  final Pointer<Char> Function(Pointer<PaProplist>, Pointer<Char>)
+  _proplistGets;
+
+  /// Reads a string property, or null when missing.
+  String? proplistGets(Pointer<PaProplist> list, String key) {
+    if (list == nullptr) {
+      return null;
+    }
+    final keyPtr = key.toNativeUtf8();
+    try {
+      return pulseString(_proplistGets(list, keyPtr.cast()));
+    } finally {
+      malloc.free(keyPtr);
+    }
+  }
 }
 
 /// UTF-8 helper for Pulse `char*`.

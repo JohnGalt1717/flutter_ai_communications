@@ -6,6 +6,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 import 'src/wasapi_backend.dart';
 import 'src/wasapi_factory.dart';
+import 'src/windows_bluetooth_identity.dart';
 import 'src/windows_microphone_consent.dart';
 
 /// Windows adapter. Isolation is unavailable. WASAPI is called via Dart FFI.
@@ -15,8 +16,10 @@ final class FlutterAiCommunicationsWindows
   FlutterAiCommunicationsWindows({
     WasapiBackend? backend,
     WindowsMicrophoneConsent? consent,
+    BluetoothIdentitySource? bluetooth,
   }) : _backend = backend ?? createWasapiBackend(),
-       _consent = consent ?? createWindowsMicrophoneConsent();
+       _consent = consent ?? createWindowsMicrophoneConsent(),
+       _bluetooth = bluetooth ?? createBluetoothIdentitySource();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -25,6 +28,7 @@ final class FlutterAiCommunicationsWindows
 
   final WasapiBackend _backend;
   final WindowsMicrophoneConsent _consent;
+  final BluetoothIdentitySource _bluetooth;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -59,14 +63,18 @@ final class FlutterAiCommunicationsWindows
   Stream<OsRouteChange> get osRouteChanges => _routes.stream;
 
   @override
-  Future<List<Endpoint>> enumerateEndpoints() async => _backend.enumerate();
+  Future<List<Endpoint>> enumerateEndpoints() async {
+    unawaited(_prepareBluetoothCatalog());
+    return _enrichedCatalog();
+  }
 
   @override
   Stream<List<Endpoint>> get endpointCatalog async* {
     _catalogListeners++;
     _ensureCatalogWatch();
     try {
-      yield _backend.enumerate();
+      yield _enrichedCatalog();
+      unawaited(_prepareBluetoothCatalog());
       yield* _catalog.stream;
     } finally {
       _catalogListeners--;
@@ -102,6 +110,7 @@ final class FlutterAiCommunicationsWindows
       _emitObserved(force: true);
       _ensureCatalogWatch();
       _publishCatalog();
+      unawaited(_prepareBluetoothCatalog());
     } else {
       _running = false;
       _lastNativeFormats = const NativeFormatReport();
@@ -155,8 +164,17 @@ final class FlutterAiCommunicationsWindows
     _catalogWatch = null;
   }
 
+  Future<void> _prepareBluetoothCatalog() async {
+    await _bluetooth.prepare();
+    _publishCatalog();
+  }
+
+  List<Endpoint> _enrichedCatalog() {
+    return mergeBluetoothIdentity(_backend.enumerate(), _bluetooth.current());
+  }
+
   void _publishCatalog() {
-    _catalog.add(_backend.enumerate());
+    _catalog.add(_enrichedCatalog());
     if (_running) {
       _emitObserved();
     }

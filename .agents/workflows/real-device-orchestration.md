@@ -1,8 +1,8 @@
-# Real-device Marionette
+# Real-device Orchestration
 
 Execute native Session proof on physical iOS and Android. Loopback identity is a different path.
 
-Interactive MCP (debug session → VM service URI → tap harness keys / `get_logs`) is the `device-marionette` skill. This file is the receipt job. Do not mix them.
+Interactive MCP (debug session → VM service URI → tap harness keys / `get_logs`) is the `device-agent-lens` skill. This file is the receipt job. Do not mix them.
 
 ## Load first
 
@@ -37,15 +37,15 @@ From `example/`. Never `flutter test` at the workspace root.
 
 ```text
 cd example
-flutter test integration_test/native_marionette_test.dart -d 00008110-000E24912E63A01E
-flutter test integration_test/native_marionette_test.dart -d R5GL63B3GWV
+flutter test integration_test/native_orchestration_test.dart -d 00008110-000E24912E63A01E
+flutter test integration_test/native_orchestration_test.dart -d R5GL63B3GWV
 ```
 
 Drive form (same assertions):
 
 ```text
 flutter drive --driver=test_driver/integration_test.dart \
-  --target=integration_test/native_marionette_test.dart \
+  --target=integration_test/native_orchestration_test.dart \
   -d <device-id>
 ```
 
@@ -77,7 +77,7 @@ Machine-readable, out of source control. File name:
 
 Must include commit, platform, OS, hardware, permission, catalog, Desired/Applied/Observed, Formats, cycle count, statuses, Isolation state, and whether native failures were skipped (must be false).
 
-The suite prints `NATIVE_MARIONETTE_RECEIPT {json}` on the host log and writes the same JSON under the device `Directory.systemTemp`. Copy the printed JSON to the host artifact location.
+The suite prints `NATIVE_ORCHESTRATION_RECEIPT {json}` on the host log and writes the same JSON under the device `Directory.systemTemp`. Copy the printed JSON to the host artifact location.
 
 ## Close hardware issues only with receipts
 

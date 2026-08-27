@@ -39,10 +39,13 @@ msix_config:
   capabilities: microphone
 ```
 
-Optional, only if the host wants extra Bluetooth headset identity (alias,
-class of device) beyond the WASAPI catalog. The adapter does not call
-Bluetooth APIs yet; WASAPI already lists Bluetooth Endpoints as audio
-devices. Do not block start if the user denies Bluetooth:
+Optional Bluetooth identity. Packaged hosts that declare this get a
+Store consent prompt; unpackaged Win32 enumerates remembered devices
+with no extra UI. Denial must not block audio — the catalog keeps
+WASAPI names and the known-profile registry falls back to those names.
+Approve → Bluetooth alias + Class of Device (car audio, headset,
+speaker) for Acoustic-profile matching, including Fieldist car head
+units such as Tesla:
 
 ```xml
 <DeviceCapability Name="bluetooth"/>

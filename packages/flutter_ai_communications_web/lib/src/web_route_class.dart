@@ -15,7 +15,10 @@ RouteClass webRouteClass({required String name, required bool isCapture}) {
   if (lower.contains('bluetooth') ||
       lower.contains('airpods') ||
       lower.contains('a2dp') ||
-      lower.contains('hfp')) {
+      lower.contains('hfp') ||
+      lower.contains('tesla') ||
+      lower.contains('carplay') ||
+      lower.contains('android auto')) {
     return RouteClass.bluetooth;
   }
   if (lower.contains('headset') ||

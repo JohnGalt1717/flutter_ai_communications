@@ -33,14 +33,14 @@ dependencies:
 
 The federated iOS / Android / Web / macOS / Windows / Linux implementations are pulled in by the app package. `start()` requests microphone permission with first-party OS APIs (not `permission_handler`) and waits for the OS. The host still has to declare usage where the OS reads it from the app package — plugins cannot inject a Windows `Package.appxmanifest`.
 
-- **iOS:** `NSMicrophoneUsageDescription` (and Bluetooth usage strings if you route to headsets)
-- **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement
-- **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`
-- **Linux:** PulseAudio or PipeWire's Pulse compatibility (`libpulse.so.0`, `libpulse-simple.so.0`). No Isolation, no handset.
-- **Windows (unpackaged Win32):** no Store prompt. `start()` probes WASAPI. Settings → Privacy → Microphone → allow desktop apps. No Isolation, no handset.
+- **iOS:** `NSMicrophoneUsageDescription`. Add `NSBluetoothAlwaysUsageDescription` if you route to headsets. HFP and `carAudio` ports are native identity; CoreBluetooth is not used. Denial or a generic A2DP name falls back to display-name matching.
+- **macOS:** `NSMicrophoneUsageDescription` and the `com.apple.security.device.audio-input` entitlement. Bluetooth transport is a Route class; names match the known-profile registry.
+- **Android:** `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`. The plugin also declares `BLUETOOTH_CONNECT` (and legacy `BLUETOOTH`). After mic is granted, `start()` requests Bluetooth identity; denial does not block audio. Approve → alias + Class of Device (car head units, headsets). Deny → display-name matching.
+- **Linux:** PulseAudio or PipeWire's Pulse compatibility (`libpulse.so.0`, `libpulse-simple.so.0`). No Isolation, no handset, no extra Bluetooth prompt. Pulse `form_factor=car` is a car Route class; otherwise names match the registry.
+- **Windows (unpackaged Win32):** no Store prompt. `start()` probes WASAPI. Settings → Privacy → Microphone → allow desktop apps. Bluetooth remembered/connected devices are enumerated without a Store consent UI. No Isolation, no handset.
 - **Windows (Microsoft Store / MSIX):** process has package identity, so `start()` requests WinRT microphone consent and waits. Declare in the host `Package.appxmanifest` (or `msix_config.capabilities` if you use the `msix` tool):
   - required: `microphone` (`<DeviceCapability Name="microphone"/>`)
-  - optional: `bluetooth` if you later want extra headset identity beyond the WASAPI catalog. Denial must not block audio. The library does not call Bluetooth APIs yet.
+  - optional: `bluetooth` (`<DeviceCapability Name="bluetooth"/>`) for Class of Device / alias enrichment (Tesla and other car head units, headsets). Denial must not block audio; the catalog keeps WASAPI names.
 - **Web:** served over HTTPS / localhost so `getUserMedia` can run
 
 ## Quick start

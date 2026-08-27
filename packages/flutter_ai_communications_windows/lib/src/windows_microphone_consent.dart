@@ -98,7 +98,7 @@ final class WinrtWindowsMicrophoneConsent implements WindowsMicrophoneConsent {
         fromDevice == MicrophonePermission.restricted) {
       return fromDevice!;
     }
-    final capability = await _requestAppCapability();
+    final capability = await requestPackagedAppCapability('microphone');
     if (capability != null) {
       return capability;
     }
@@ -147,7 +147,8 @@ int? _deviceAccessStatus() {
   }
 }
 
-Future<MicrophonePermission?> _requestAppCapability() async {
+/// Packaged-only AppCapability request. Returns null when WinRT is absent.
+Future<MicrophonePermission?> requestPackagedAppCapability(String name) async {
   IUnknown? factory;
   IUnknown? capability;
   IUnknown? operation;
@@ -160,11 +161,11 @@ Future<MicrophonePermission?> _requestAppCapability() async {
     if (factory == null) {
       return null;
     }
-    final name = 'microphone'.toHstring();
+    final hName = name.toHstring();
     try {
-      capability = _createAppCapability(factory, name);
+      capability = _createAppCapability(factory, hName);
     } finally {
-      WindowsDeleteString(name);
+      WindowsDeleteString(hName);
     }
     if (capability == null) {
       return null;
@@ -265,7 +266,7 @@ IUnknown? _query(IUnknown object, GUID iid) {
               NativeFunction<
                 Int32 Function(VTablePointer, Pointer<GUID>, Pointer<Pointer>)
               >
-            >.fromAddress(vtbl.elementAt(0).value)
+            >.fromAddress(vtbl.value)
             .asFunction<
               int Function(VTablePointer, Pointer<GUID>, Pointer<Pointer>)
             >();
@@ -284,7 +285,7 @@ int _callOutInt32(IUnknown object, int slot, Pointer<Int32> out) {
   final fn =
       Pointer<
             NativeFunction<Int32 Function(VTablePointer, Pointer<Int32>)>
-          >.fromAddress(object.ptr.value.elementAt(slot).value)
+          >.fromAddress((object.ptr.value + slot).value)
           .asFunction<int Function(VTablePointer, Pointer<Int32>)>();
   return fn(object.ptr, out);
 }
@@ -297,7 +298,7 @@ IUnknown? _createFromDeviceClass(IUnknown factory, int deviceClass) {
               NativeFunction<
                 Int32 Function(VTablePointer, Int32, Pointer<Pointer>)
               >
-            >.fromAddress(factory.ptr.value.elementAt(8).value)
+            >.fromAddress((factory.ptr.value + 8).value)
             .asFunction<int Function(VTablePointer, int, Pointer<Pointer>)>();
     final hr = HRESULT(fn(factory.ptr, deviceClass, out));
     if (hr.isError || out.value == nullptr) {
@@ -317,7 +318,7 @@ IUnknown? _createAppCapability(IUnknown factory, HSTRING name) {
               NativeFunction<
                 Int32 Function(VTablePointer, IntPtr, Pointer<Pointer>)
               >
-            >.fromAddress(factory.ptr.value.elementAt(8).value)
+            >.fromAddress((factory.ptr.value + 8).value)
             .asFunction<int Function(VTablePointer, int, Pointer<Pointer>)>();
     final hr = HRESULT(fn(factory.ptr, name.address, out));
     if (hr.isError || out.value == nullptr) {
@@ -335,7 +336,7 @@ IUnknown? _requestAccessAsync(IUnknown capability) {
     final fn =
         Pointer<
               NativeFunction<Int32 Function(VTablePointer, Pointer<Pointer>)>
-            >.fromAddress(capability.ptr.value.elementAt(8).value)
+            >.fromAddress((capability.ptr.value + 8).value)
             .asFunction<int Function(VTablePointer, Pointer<Pointer>)>();
     final hr = HRESULT(fn(capability.ptr, out));
     if (hr.isError || out.value == nullptr) {

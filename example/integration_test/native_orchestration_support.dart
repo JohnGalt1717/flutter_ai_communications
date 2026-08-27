@@ -7,27 +7,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:logging/logging.dart';
 
-import 'native_marionette_host.dart'
-    if (dart.library.io) 'native_marionette_host_io.dart'
+import 'native_orchestration_host.dart'
+    if (dart.library.io) 'native_orchestration_host_io.dart'
     as host;
 
-final nativeMarionetteLog = Logger('nativeMarionette');
-final nativeMarionetteLogs = <String>[];
+final nativeOrchestrationLog = Logger('nativeOrchestration');
+final nativeOrchestrationLogs = <String>[];
 
-void installNativeMarionetteLogging() {
+void installNativeOrchestrationLogging() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   hierarchicalLoggingEnabled = true;
   Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((record) {
     final line =
         '${record.level.name} [${record.loggerName}] ${record.message}';
-    nativeMarionetteLogs.add(line);
+    nativeOrchestrationLogs.add(line);
     // ignore: avoid_print
     print(line);
   });
   binding.reportData = <String, dynamic>{
     'receipts': <Map<String, Object?>>[],
-    'logs': nativeMarionetteLogs,
+    'logs': nativeOrchestrationLogs,
   };
 }
 
@@ -174,7 +174,7 @@ Map<String, Object?> snapshot(Session session, {required String caseName}) {
 
 Future<void> writeReceipt(Map<String, Object?> body) async {
   final encoded = const JsonEncoder.withIndent('  ').convert(body);
-  nativeMarionetteLog.info('NATIVE_MARIONETTE_RECEIPT $encoded');
+  nativeOrchestrationLog.info('NATIVE_ORCHESTRATION_RECEIPT $encoded');
   final binding = IntegrationTestWidgetsFlutterBinding.instance;
   final data = binding.reportData ??= <String, dynamic>{};
   final receipts = data['receipts'];
@@ -185,7 +185,7 @@ Future<void> writeReceipt(Map<String, Object?> body) async {
   } else {
     data['receipts'] = <Map<String, Object?>>[body];
   }
-  data['logs'] = List<String>.of(nativeMarionetteLogs);
+  data['logs'] = List<String>.of(nativeOrchestrationLogs);
   final name =
       '${body['commit']}-${body['platform']}-${_safe(host.hostHardwareLabel())}.json';
   await host.hostWriteReceiptFile(name, encoded);

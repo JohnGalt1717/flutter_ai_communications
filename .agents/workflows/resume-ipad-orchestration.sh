@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Agent-runnable. No prompts. Exit 0 only when flutter run is up and a
-# Marionette ws:// URI is printed. Exit 2 if Developer Mode is still off.
+# Orchestration ws:// URI is printed. Exit 2 if Developer Mode is still off.
 set -euo pipefail
 
 IPAD_UDID="${IPAD_UDID:-00008110-000E24912E63A01E}"

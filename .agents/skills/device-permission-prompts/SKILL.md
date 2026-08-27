@@ -7,7 +7,7 @@ description: Grant OS permission prompts during Flutter debug and Agent Lens / f
 
 `start()` requests permission and **blocks until the OS answers**. The dialog is a system sheet (SpringBoard / package installer / TCC), not Flutter UI. flutter-skill, Agent Lens, `integration_test`, and `widget_inspector` cannot tap it.
 
-Receipts stay in [real-device-marionette.md](../../workflows/real-device-marionette.md). The grant job is [grant-device-permissions.md](../../workflows/grant-device-permissions.md).
+Receipts stay in [real-device-orchestration.md](../../workflows/real-device-orchestration.md). The grant job is [grant-device-permissions.md](../../workflows/grant-device-permissions.md).
 
 ## Pick a lane
 
