@@ -1,7 +1,9 @@
 package com.johngalt.flutter_ai_communications
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -41,6 +43,8 @@ class FlutterAiCommunicationsPlugin :
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingPermission: Result? = null
     private val permissionCode = 0xFAC1
+    private val bluetoothCode = 0xFAC2
+    private var bluetoothAsked = false
     private var captureSink: EventChannel.EventSink? = null
     private var eventSink: EventChannel.EventSink? = null
     private var audioManager: AudioManager? = null
@@ -207,12 +211,19 @@ class FlutterAiCommunicationsPlugin :
         permissions: Array<out String>,
         grantResults: IntArray,
     ): Boolean {
+        if (requestCode == bluetoothCode) {
+            emitCatalog()
+            return true
+        }
         if (requestCode != permissionCode) {
             return false
         }
         val pending = pendingPermission ?: return false
         pendingPermission = null
         pending.success(permission())
+        if (permission() == "granted") {
+            requestBluetoothIdentity()
+        }
         return true
     }
 
@@ -226,6 +237,7 @@ class FlutterAiCommunicationsPlugin :
 
     private fun requestPermission(result: Result) {
         if (permission() == "granted") {
+            requestBluetoothIdentity()
             result.success("granted")
             return
         }
@@ -265,6 +277,7 @@ class FlutterAiCommunicationsPlugin :
             emitCatalog()
             emitRoute()
             emit("isolation", "unavailable")
+            requestBluetoothIdentity()
             mapOf(
                 "status" to "started",
                 "captureFormat" to AndroidCapturePolicy.formatMap(nativeCaptureRate),
@@ -470,16 +483,78 @@ class FlutterAiCommunicationsPlugin :
         }
     }
 
+    private fun requestBluetoothIdentity() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
+        }
+        val context = appContext ?: return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val activity = activityBinding?.activity ?: return
+        if (bluetoothAsked) {
+            return
+        }
+        bluetoothAsked = true
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
+            bluetoothCode,
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun bluetoothIdentities(): List<BluetoothIdentityRecord> {
+        val context = appContext ?: return emptyList()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return emptyList()
+        }
+        val adapter =
+            (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+                ?: return emptyList()
+        return try {
+            adapter.bondedDevices.orEmpty().mapNotNull { device ->
+                val name =
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            device.alias ?: device.name
+                        } else {
+                            @Suppress("DEPRECATION")
+                            device.name
+                        }
+                    } catch (_: SecurityException) {
+                        null
+                    }
+                if (name.isNullOrEmpty()) {
+                    return@mapNotNull null
+                }
+                BluetoothIdentityRecord(
+                    name = name,
+                    classOfDevice = device.bluetoothClass?.deviceClass ?: 0,
+                    address = device.address.orEmpty(),
+                )
+            }
+        } catch (_: SecurityException) {
+            emptyList()
+        }
+    }
+
     private fun enumerate(): List<Map<String, Any>> {
         val manager = audioManager ?: return emptyList()
         val items = mutableListOf<Map<String, Any>>()
+        val bluetooth = bluetoothIdentities()
         val hasEarpiece =
             manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
                 it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
             }
         if (AndroidCapturePolicy.shouldAdvertiseHandset(hasEarpiece)) {
-            items += endpoint("handset-in", "Handset", "handset", true, "handset")
-            items += endpoint("handset-out", "Handset", "handset", false, "handset")
+            items += endpoint("handset-in", "Handset", "handset", true, "handset", "handset")
+            items += endpoint("handset-out", "Handset", "handset", false, "handset", "handset")
         }
         items += endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone")
         items += endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone")
@@ -488,13 +563,20 @@ class FlutterAiCommunicationsPlugin :
             if (route == "handset" || route == "speakerphone") {
                 continue
             }
+            val name = device.productName?.toString() ?: "Endpoint"
+            val address = device.address?.ifEmpty { device.id.toString() } ?: device.id.toString()
+            val typeForm = AndroidBluetoothIdentity.formFactorForAudioType(device.type)
+            val (hints, btForm) = AndroidBluetoothIdentity.merge(name, route, address, bluetooth)
+            val form = if (btForm != "unknown") btForm else typeForm
             items +=
                 endpoint(
                     device.id.toString(),
-                    device.productName?.toString() ?: "Endpoint",
+                    name,
                     route,
                     device.isSource,
-                    device.address?.ifEmpty { device.id.toString() } ?: device.id.toString(),
+                    address,
+                    form,
+                    hints,
                 )
         }
         return items
@@ -506,14 +588,30 @@ class FlutterAiCommunicationsPlugin :
         route: String,
         capture: Boolean,
         pairId: String,
-    ): Map<String, Any> =
-        mapOf(
-            "id" to id,
-            "name" to name,
-            "routeClass" to route,
-            "isCapture" to capture,
-            "pairId" to pairId,
-        )
+        formFactor: String = "unknown",
+        identityHints: List<String> = emptyList(),
+    ): Map<String, Any> {
+        val map =
+            mutableMapOf<String, Any>(
+                "id" to id,
+                "name" to name,
+                "routeClass" to route,
+                "isCapture" to capture,
+                "pairId" to pairId,
+                "capabilities" to
+                    mapOf(
+                        "formFactor" to formFactor,
+                        "aec" to false,
+                        "ns" to false,
+                        "agc" to false,
+                        "carConnected" to false,
+                    ),
+            )
+        if (identityHints.isNotEmpty()) {
+            map["identityHints"] = identityHints
+        }
+        return map
+    }
 
     private fun routeClass(type: Int): String =
         when (type) {

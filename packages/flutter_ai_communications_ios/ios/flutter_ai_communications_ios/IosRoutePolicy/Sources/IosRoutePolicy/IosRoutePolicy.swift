@@ -97,4 +97,24 @@ public enum IosRoutePolicy {
             return ("\(accessoryPairId)-in", "\(accessoryPairId)-out")
         }
     }
+
+    /// Native form factor from AVAudioSession port type. Unknown A2DP stays
+    /// name-based; HFP is a headset and carAudio is a car head unit.
+    public static func formFactor(portType: String) -> String {
+        switch portType {
+        case "BluetoothHFP", "BluetoothLE":
+            return "headset"
+        case "CarAudio":
+            return "car"
+        case "Receiver":
+            return "handset"
+        default:
+            return "unknown"
+        }
+    }
+
+    /// Built-in handset is the earpiece. Speakerphone is not a Bluetooth speaker.
+    public static func formFactor(routeClass: String) -> String {
+        routeClass == "handset" ? "handset" : "unknown"
+    }
 }

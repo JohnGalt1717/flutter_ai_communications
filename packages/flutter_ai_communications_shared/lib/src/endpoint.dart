@@ -94,6 +94,7 @@ final class Endpoint {
     required this.isCapture,
     String? pairId,
     this.capabilities = const EndpointCapabilities(),
+    this.identityHints = const [],
   }) : name = name,
        pairId = pairId ?? name;
 
@@ -115,6 +116,10 @@ final class Endpoint {
   /// Native capability evidence used for Acoustic-profile classification.
   final EndpointCapabilities capabilities;
 
+  /// Extra names from the OS (Bluetooth alias, manufacturer) used only for
+  /// Acoustic-profile matching. Empty when the user denied Bluetooth access.
+  final List<String> identityHints;
+
   @override
   bool operator ==(Object other) =>
       other is Endpoint &&
@@ -123,15 +128,35 @@ final class Endpoint {
       other.routeClass == routeClass &&
       other.isCapture == isCapture &&
       other.pairId == pairId &&
-      other.capabilities == capabilities;
+      other.capabilities == capabilities &&
+      _sameHints(other.identityHints, identityHints);
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, routeClass, isCapture, pairId, capabilities);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    routeClass,
+    isCapture,
+    pairId,
+    capabilities,
+    Object.hashAll(identityHints),
+  );
 
   @override
   String toString() =>
       'Endpoint($id, $name, ${routeClass.name}, capture: $isCapture)';
+}
+
+bool _sameHints(List<String> left, List<String> right) {
+  if (left.length != right.length) {
+    return false;
+  }
+  for (var i = 0; i < left.length; i++) {
+    if (left[i] != right[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /// A linked capture Endpoint and render Endpoint.

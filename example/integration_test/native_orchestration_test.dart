@@ -2,13 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'native_marionette_support.dart';
+import 'native_orchestration_support.dart';
 
 /// Native Session proof. Never wraps the platform in loopback.
 void main() {
-  installNativeMarionetteLogging();
+  installNativeOrchestrationLogging();
 
-  testWidgets('native Marionette: start, route, twenty cycles', (tester) async {
+  testWidgets('native Orchestration: start, route, twenty cycles', (
+    tester,
+  ) async {
     final platform = FlutterAiCommunicationsPlatform.instance;
     expect(
       platform.runtimeType.toString(),
@@ -30,8 +32,8 @@ void main() {
     expect(catalog, isNotEmpty, reason: 'native catalog must be non-empty');
     first ??= await requireReady(manager, purpose: 'native-first');
     final firstCapture = first.capture;
-    nativeMarionetteLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
-    nativeMarionetteLog.info(
+    nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
+    nativeOrchestrationLog.info(
       'NATIVE_ROUTE desired=${first.diagnostics.desired.captureId}/${first.diagnostics.desired.renderId} '
       'observed=${first.diagnostics.observed.captureId}/${first.diagnostics.observed.renderId}',
     );
@@ -144,7 +146,7 @@ void main() {
     });
   });
 
-  testWidgets('native Marionette: web combinations and devicechange', (
+  testWidgets('native Orchestration: web combinations and devicechange', (
     tester,
   ) async {
     if (!runningOnWeb) {
@@ -208,6 +210,66 @@ void main() {
       'combinations': combos,
       'combinationCount': combos.length,
       'devicechange': devicechange,
+      'nativeFailuresSkipped': false,
+    });
+  });
+
+  testWidgets('native Orchestration: desktop capture x render combinations', (
+    tester,
+  ) async {
+    if (runningOnWeb) {
+      return;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.windows:
+      case TargetPlatform.macOS:
+      case TargetPlatform.linux:
+        break;
+      default:
+        return;
+    }
+
+    final manager = AudioManager();
+    addTearDown(() async {
+      await manager.session?.stop();
+    });
+
+    var catalog = await manager.endpoints();
+    if (catalog.isEmpty) {
+      final primed = await requireReady(manager, purpose: 'desktop-catalog');
+      catalog = await manager.endpoints();
+      await primed.stop();
+    }
+    expect(catalog, isNotEmpty);
+    final captures = catalog.where((e) => e.isCapture).toList();
+    final renders = catalog.where((e) => !e.isCapture).toList();
+    expect(captures, isNotEmpty, reason: 'desktop catalog must list capture');
+    expect(renders, isNotEmpty, reason: 'desktop catalog must list render');
+
+    final combos = <Map<String, Object?>>[];
+    for (final capture in captures) {
+      for (final render in renders) {
+        final session = await requireReady(
+          manager,
+          purpose: 'desktop-combo-${capture.id}-${render.id}',
+        );
+        final captureStream = session.capture;
+        await session.select(captureId: capture.id, renderId: render.id);
+        await assertObserved(session);
+        expect(identical(session.capture, captureStream), isTrue);
+        combos.add(snapshot(session, caseName: 'combo'));
+        await session.stop();
+      }
+    }
+
+    await writeReceipt({
+      'commit': hostCommit(),
+      'platform': defaultTargetPlatform.name,
+      'os': hostOs(),
+      'hardware': hostHardware(),
+      'permission': 'granted',
+      'combinations': combos,
+      'combinationCount': combos.length,
       'nativeFailuresSkipped': false,
     });
   });

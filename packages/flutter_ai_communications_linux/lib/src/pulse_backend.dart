@@ -32,6 +32,7 @@ final class PulseAudioBackend implements AudioBackend {
   SendPort? _captureControl;
   var _running = false;
   var _paused = false;
+  var _captureGeneration = 0;
   String? _captureId;
   String? _renderId;
 
@@ -161,13 +162,17 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   void _stopGraph() {
+    _captureGeneration++;
     _running = false;
-    _captureControl?.send(const _StopCommand());
-    _captureIsolate?.kill(priority: Isolate.immediate);
-    _capturePort?.close();
+    final isolate = _captureIsolate;
+    final port = _capturePort;
+    final control = _captureControl;
     _captureIsolate = null;
     _capturePort = null;
     _captureControl = null;
+    control?.send(const _StopCommand());
+    isolate?.kill(priority: Isolate.immediate);
+    port?.close();
     if (_render != nullptr) {
       _simple.freeStream(_render);
       _render = nullptr;
@@ -175,9 +180,13 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   void _startCaptureIsolate() {
+    final generation = ++_captureGeneration;
     final port = ReceivePort();
     _capturePort = port;
     port.listen((message) {
+      if (generation != _captureGeneration) {
+        return;
+      }
       if (message is SendPort) {
         _captureControl = message;
         if (_paused) {
@@ -193,6 +202,10 @@ final class PulseAudioBackend implements AudioBackend {
       _captureMain,
       _CaptureStart(sendPort: port.sendPort, device: _captureId),
     ).then((isolate) {
+      if (generation != _captureGeneration || !_running) {
+        isolate.kill(priority: Isolate.immediate);
+        return;
+      }
       _captureIsolate = isolate;
     });
   }
@@ -237,7 +250,7 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   bool _waitReady(Pointer<PaMainloop> loop, Pointer<PaContext> context) {
-    for (var i = 0; i < 200; i++) {
+    for (var i = 0; i < 2000; i++) {
       final state = _async.contextGetState(context);
       if (state == paContextReady) {
         return true;
@@ -291,14 +304,28 @@ final class PulseAudioBackend implements AudioBackend {
             return;
           }
           final name = pulseString(info.ref.description) ?? id;
-          final route = linuxRouteClass(name: name);
+          var bus = '';
+          var formFactor = '';
+          var card = 0xffffffff;
+          try {
+            final props = pulseProplist(info);
+            bus =
+                _async.proplistGets(props, 'device.bus') ??
+                _async.proplistGets(props, 'device.api') ??
+                '';
+            formFactor = _async.proplistGets(props, 'device.form_factor') ?? '';
+            card = pulseCard(info);
+          } on Object {
+            // Pulse layout drift must not drop the Endpoint.
+          }
           collected.add(
-            Endpoint(
+            linuxEndpointFromPulse(
               id: id,
               name: name,
-              routeClass: route,
               isCapture: sources,
-              pairId: linuxPairId(routeClass: route, id: id, name: name),
+              bus: bus,
+              formFactor: formFactor,
+              card: card,
             ),
           );
         });

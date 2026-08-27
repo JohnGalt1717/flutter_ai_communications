@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'endpoint.dart';
+import 'known_profile_registry.dart';
 
 /// Acoustic family used to pick a Baseline sound floor.
 enum AcousticFamily {
@@ -58,6 +59,7 @@ final class AcousticProfile {
     required this.baselineStep,
     required this.confidence,
     required this.provenance,
+    this.hardwareNoiseProcessing = false,
     this.matchId,
   });
 
@@ -66,6 +68,9 @@ final class AcousticProfile {
 
   /// Seed Baseline step (1–10) before user scale or adaptation.
   final int baselineStep;
+
+  /// Whether Endpoint hardware already suppresses noise on capture.
+  final bool hardwareNoiseProcessing;
 
   /// How strongly this profile is supported.
   final ProfileConfidence confidence;
@@ -81,13 +86,20 @@ final class AcousticProfile {
       other is AcousticProfile &&
       other.family == family &&
       other.baselineStep == baselineStep &&
+      other.hardwareNoiseProcessing == hardwareNoiseProcessing &&
       other.confidence == confidence &&
       other.provenance == provenance &&
       other.matchId == matchId;
 
   @override
-  int get hashCode =>
-      Object.hash(family, baselineStep, confidence, provenance, matchId);
+  int get hashCode => Object.hash(
+    family,
+    baselineStep,
+    hardwareNoiseProcessing,
+    confidence,
+    provenance,
+    matchId,
+  );
 }
 
 /// Shared known-profile table and classification precedence.
@@ -95,190 +107,77 @@ final class AcousticClassifier {
   /// Creates a classifier.
   const AcousticClassifier();
 
-  static const List<_RegistryEntry> _registry = [
-    _RegistryEntry(
-      id: 'airpods',
-      aliases: ['airpods'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'jabra-evolve',
-      aliases: ['jabra evolve', 'jabra evolve2'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'plantronics',
-      aliases: ['plantronics', 'poly voyager', 'poly blackwire'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'bose-qc',
-      aliases: ['bose qc', 'bose quietcomfort'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'sony-wh-wf',
-      aliases: ['sony wh', 'sony wf'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'beats',
-      aliases: ['beats'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'sennheiser',
-      aliases: ['sennheiser'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'soundcore',
-      aliases: ['soundcore'],
-      family: AcousticFamily.communicationsHeadset,
-      baselineStep: 3,
-    ),
-    _RegistryEntry(
-      id: 'jbl-flip',
-      aliases: ['jbl flip'],
-      family: AcousticFamily.bluetoothSpeaker,
-      baselineStep: 4,
-    ),
-  ];
-
-  /// Classifies [endpoint] using native capabilities, then the registry, then
-  /// Route class. Vehicle tokens require independent car evidence.
+  /// Classifies [endpoint] using native family, then the registry, then Route
+  /// class. Registry hardware noise processing lowers a headset Baseline only
+  /// when the matched product is that family.
   AcousticProfile classify(Endpoint endpoint) {
-    final native = _fromCapabilities(endpoint);
-    if (native != null) {
-      return native;
-    }
-    final known = _fromRegistry(endpoint);
-    if (known != null) {
-      return known;
-    }
-    return _fromRoute(endpoint.routeClass);
+    final nativeFamily = _nativeFamily(endpoint);
+    final registry =
+        KnownProfileRegistry.match(endpoint.identityHints) ??
+        KnownProfileRegistry.match([endpoint.name]);
+    final family =
+        nativeFamily ??
+        registry?.family ??
+        _familyFromRoute(endpoint.routeClass);
+    final applied = switch (registry) {
+      null => null,
+      final row when nativeFamily == null || row.family == family => row,
+      _ => null,
+    };
+    final hardwareNoiseProcessing = applied?.hardwareNoiseProcessing ?? false;
+    final provenance = nativeFamily != null
+        ? ProfileProvenance.nativeCapabilities
+        : registry != null
+        ? ProfileProvenance.knownRegistry
+        : ProfileProvenance.routeClass;
+    final confidence = nativeFamily != null
+        ? ProfileConfidence.verified
+        : registry != null
+        ? ProfileConfidence.known
+        : ProfileConfidence.fallback;
+    return AcousticProfile(
+      family: family,
+      baselineStep: BaselinePolicy.stepFor(
+        family: family,
+        hardwareNoiseProcessing: hardwareNoiseProcessing,
+      ),
+      hardwareNoiseProcessing: hardwareNoiseProcessing,
+      confidence: confidence,
+      provenance: provenance,
+      matchId: applied?.id,
+    );
   }
 
-  AcousticProfile? _fromCapabilities(Endpoint endpoint) {
+  AcousticFamily? _nativeFamily(Endpoint endpoint) {
     final caps = endpoint.capabilities;
     if (caps.formFactor == EndpointFormFactor.headset) {
-      return const AcousticProfile(
-        family: AcousticFamily.communicationsHeadset,
-        baselineStep: 3,
-        confidence: ProfileConfidence.verified,
-        provenance: ProfileProvenance.nativeCapabilities,
-      );
+      return AcousticFamily.communicationsHeadset;
     }
     if (caps.formFactor == EndpointFormFactor.speaker) {
-      return const AcousticProfile(
-        family: AcousticFamily.bluetoothSpeaker,
-        baselineStep: 4,
-        confidence: ProfileConfidence.verified,
-        provenance: ProfileProvenance.nativeCapabilities,
-      );
+      return AcousticFamily.bluetoothSpeaker;
     }
     if (caps.formFactor == EndpointFormFactor.handset) {
-      return const AcousticProfile(
-        family: AcousticFamily.handset,
-        baselineStep: 8,
-        confidence: ProfileConfidence.verified,
-        provenance: ProfileProvenance.nativeCapabilities,
-      );
+      return AcousticFamily.handset;
     }
     if (caps.formFactor == EndpointFormFactor.car ||
         caps.carConnected ||
         (endpoint.routeClass == RouteClass.car && caps.hasVerifiedNative)) {
-      return const AcousticProfile(
-        family: AcousticFamily.car,
-        baselineStep: 5,
-        confidence: ProfileConfidence.verified,
-        provenance: ProfileProvenance.nativeCapabilities,
-      );
+      return AcousticFamily.car;
     }
     if (caps.aec && caps.ns && endpoint.routeClass == RouteClass.bluetooth) {
-      return const AcousticProfile(
-        family: AcousticFamily.communicationsHeadset,
-        baselineStep: 3,
-        confidence: ProfileConfidence.verified,
-        provenance: ProfileProvenance.nativeCapabilities,
-      );
+      return AcousticFamily.communicationsHeadset;
     }
     return null;
   }
 
-  AcousticProfile? _fromRegistry(Endpoint endpoint) {
-    if (endpoint.routeClass == RouteClass.car &&
-        !endpoint.capabilities.carConnected) {
-      return null;
-    }
-    final name = _normalize(endpoint.name);
-    for (final entry in _registry) {
-      if (entry.aliases.any((alias) => _containsAlias(name, alias))) {
-        return AcousticProfile(
-          family: entry.family,
-          baselineStep: entry.baselineStep,
-          confidence: ProfileConfidence.known,
-          provenance: ProfileProvenance.knownRegistry,
-          matchId: entry.id,
-        );
-      }
-    }
-    return null;
-  }
-
-  AcousticProfile _fromRoute(RouteClass routeClass) {
+  AcousticFamily _familyFromRoute(RouteClass routeClass) {
     return switch (routeClass) {
-      RouteClass.handset => const AcousticProfile(
-        family: AcousticFamily.handset,
-        baselineStep: 8,
-        confidence: ProfileConfidence.fallback,
-        provenance: ProfileProvenance.routeClass,
-      ),
-      RouteClass.speakerphone => const AcousticProfile(
-        family: AcousticFamily.speakerphone,
-        baselineStep: 6,
-        confidence: ProfileConfidence.fallback,
-        provenance: ProfileProvenance.routeClass,
-      ),
-      RouteClass.car => const AcousticProfile(
-        family: AcousticFamily.car,
-        baselineStep: 5,
-        confidence: ProfileConfidence.fallback,
-        provenance: ProfileProvenance.routeClass,
-      ),
-      RouteClass.wired => const AcousticProfile(
-        family: AcousticFamily.communicationsHeadset,
-        baselineStep: 3,
-        confidence: ProfileConfidence.fallback,
-        provenance: ProfileProvenance.routeClass,
-      ),
-      RouteClass.bluetooth => const AcousticProfile(
-        family: AcousticFamily.bluetoothSpeaker,
-        baselineStep: 4,
-        confidence: ProfileConfidence.fallback,
-        provenance: ProfileProvenance.routeClass,
-      ),
+      RouteClass.handset => AcousticFamily.handset,
+      RouteClass.speakerphone => AcousticFamily.speakerphone,
+      RouteClass.car => AcousticFamily.car,
+      RouteClass.wired => AcousticFamily.communicationsHeadset,
+      RouteClass.bluetooth => AcousticFamily.bluetoothSpeaker,
     };
-  }
-
-  String _normalize(String name) {
-    return name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
-  }
-
-  bool _containsAlias(String name, String alias) {
-    if (name == alias) {
-      return true;
-    }
-    return name.startsWith('$alias ') ||
-        name.endsWith(' $alias') ||
-        name.contains(' $alias ');
   }
 }
 
@@ -287,6 +186,21 @@ abstract final class BaselinePolicy {
   static const double _stepOneRms = 0.012;
   static const double _stepRatio = 1.28;
   static const double _scaleRatio = 1.25;
+
+  /// Seed Baseline step from family, lowered when hardware already
+  /// suppresses capture noise.
+  static int stepFor({
+    required AcousticFamily family,
+    required bool hardwareNoiseProcessing,
+  }) {
+    return switch (family) {
+      AcousticFamily.communicationsHeadset => hardwareNoiseProcessing ? 3 : 4,
+      AcousticFamily.bluetoothSpeaker => 4,
+      AcousticFamily.car || AcousticFamily.builtIn => 5,
+      AcousticFamily.speakerphone || AcousticFamily.unknown => 6,
+      AcousticFamily.handset => 8,
+    };
+  }
 
   /// Seed RMS for a Baseline step 1–10.
   static double rmsForStep(int step) {
@@ -303,18 +217,4 @@ abstract final class BaselinePolicy {
     final offset = scaledStep.clamp(1, 10) - 5;
     return baseline * math.pow(_scaleRatio, offset);
   }
-}
-
-final class _RegistryEntry {
-  const _RegistryEntry({
-    required this.id,
-    required this.aliases,
-    required this.family,
-    required this.baselineStep,
-  });
-
-  final String id;
-  final List<String> aliases;
-  final AcousticFamily family;
-  final int baselineStep;
 }

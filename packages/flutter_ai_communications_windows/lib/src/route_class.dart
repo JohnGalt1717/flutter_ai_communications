@@ -14,16 +14,21 @@ RouteClass windowsRouteClass({required String name, String enumerator = ''}) {
   if (lowerName.contains('headset') ||
       lowerName.contains('headphone') ||
       lowerName.contains('earphone') ||
+      lowerName.contains('webcam') ||
+      lowerName.contains('camera') ||
+      lowerName.contains('brio') ||
       lowerEnumerator.contains('usb') ||
       lowerEnumerator.contains('hdmaudbus')) {
     return RouteClass.wired;
   }
-  if (lowerName.contains('speaker') ||
-      lowerName.contains('microphone') ||
-      lowerName.contains('mic ') ||
+  if (lowerEnumerator.contains('hdaudio') ||
       lowerEnumerator.contains('root') ||
-      lowerEnumerator.contains('hdaudio') ||
-      lowerEnumerator.contains('mmdevapi')) {
+      lowerEnumerator.contains('mmdevapi') ||
+      lowerName.contains('realtek') ||
+      lowerName.contains('built-in') ||
+      lowerName.contains('speaker') ||
+      lowerName.contains('microphone') ||
+      lowerName.contains('mic ')) {
     return RouteClass.speakerphone;
   }
   return RouteClass.wired;

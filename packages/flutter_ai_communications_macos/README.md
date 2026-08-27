@@ -23,6 +23,9 @@ These are documented limits, not bugs:
 - **No handset Endpoint.** Built-in speakers and mics are
   `speakerphone`. Bluetooth / USB are `bluetooth` / `wired`.
 - **Permission** is requested on first `start()` via AVFoundation.
+  There is no extra Bluetooth prompt; transport type plus display
+  name feed Acoustic-profile matching (Tesla and other car names
+  included).
 - **Quality is best-effort.** Endpoint switches restart the graph
   and emit a silence frame so the Session capture subscription
   survives (ADR-0004).

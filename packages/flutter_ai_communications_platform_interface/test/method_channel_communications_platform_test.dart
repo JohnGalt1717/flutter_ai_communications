@@ -34,6 +34,21 @@ void main() {
             'isCapture': false,
             'pairId': 'speakerphone',
           },
+          {
+            'id': 'bt-in',
+            'name': 'BT-Audio',
+            'routeClass': 'bluetooth',
+            'isCapture': true,
+            'pairId': 'bt',
+            'identityHints': ['Tesla Model Y'],
+            'capabilities': {
+              'formFactor': 'car',
+              'aec': false,
+              'ns': false,
+              'agc': false,
+              'carConnected': false,
+            },
+          },
         ],
         'requestMicrophonePermission' => 'denied',
         'startNative' => 'started',
@@ -54,6 +69,16 @@ void main() {
     expect(catalog.any((e) => e.routeClass == RouteClass.handset), isTrue);
     expect(catalog.any((e) => e.routeClass == RouteClass.speakerphone), isTrue);
   });
+
+  test(
+    'catalog forwards Bluetooth identityHints and car form factor',
+    () async {
+      final catalog = await platform.enumerateEndpoints();
+      final tesla = catalog.firstWhere((e) => e.id == 'bt-in');
+      expect(tesla.identityHints, ['Tesla Model Y']);
+      expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+    },
+  );
 
   test('denied permission is a value, not an exception', () async {
     expect(

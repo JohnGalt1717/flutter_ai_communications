@@ -112,5 +112,5 @@ flutter drive --driver=test_driver/integration_test.dart \
 | Windows | CI | Parallels |
 | Linux | CI | Parallels |
 
-Marionette **Prove** plays the fixture on the Loopback Pair and
+Orchestration **Prove** plays the fixture on the Loopback Pair and
 shows whether capture was identical.

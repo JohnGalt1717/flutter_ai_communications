@@ -228,7 +228,7 @@ stage "Verify from this Mac"
 status=$(_ipad_dev_mode || true)
 say "status=$status"
 if [[ "$status" == "enabled" ]]; then
-  note "Next: .agents/workflows/resume-ipad-marionette.sh"
+  note "Next: .agents/workflows/resume-ipad-orchestration.sh"
 else
   warn "Still '$status'. Re-run this wizard after the passcode/on-device step."
 fi
