@@ -26,45 +26,26 @@ No VS Code debug session. No Marionette. No DebugMCP.
 Prefer Agent Lens / flutter-skill launch over `workbench.action.debug.*`.
 Do **not** use VS Code debug configurations.
 
-`.mcp.json` must start flutter-skill via the Dart package (the npm
-`flutter-skill` wrapper on this machine ships an empty native binary). Prefer
-`$HOME` so the path is portable:
+`.mcp.json` starts flutter-skill with the Dart executable, not a shell wrapper:
 
 ```json
 "flutter-skill": {
-  "command": "bash",
-  "args": [
-    "-lc",
-    "cd \"$HOME/.pub-cache/hosted/pub.dev/flutter_skill-0.9.36\" && dart run bin/server.dart"
-  ]
+  "command": "flutter_skill",
+  "args": ["server"]
 }
 ```
 
-Launch the app:
+Launch the app with the flutter-skill MCP `launch_app` tool (`project_path` = `example/`, `device_id` = chrome / ios / android id, `extra_args` include `--vm-service-port=50000`). Or:
 
 ```text
-bash -lc 'cd example && dart run flutter_skill launch . -d <device-id>'
-# Second concurrent device: pick a free host port (flutter_skill defaults to 50000).
-bash -lc 'cd example && dart run flutter_skill launch . -d <device-id> --vm-service-port=50001'
-# or
-bash -lc 'cd example && flutter run -d <device-id> --vm-service-port=50001'
+cd example && flutter run -d <device-id> --vm-service-port=50000
 ```
 
 Capture the printed `ws://127.0.0.1:<port>/<token>=/ws`. Then:
 
-1. `mcp_flutter_agent_discover_apps` with `workspace_root` = example path, `autoConnect: true`
-2. Or `mcp_flutter_agent_connection` `connect` with that `ws://…/ws` and `workspace_root`
-3. Drive UI with flutter-skill CLI, **URI first** (auto-discover often grabs the wrong port / iproxy):
-
-```text
-dart run flutter_skill inspect "ws://127.0.0.1:<port>/<token>=/ws"
-dart run flutter_skill act "ws://…" tap Start
-dart run flutter_skill act "ws://…" tap Mute
-dart run flutter_skill act "ws://…" tap Pause
-dart run flutter_skill act "ws://…" screenshot /tmp/device.png
-```
-
-`act tap` takes a single key-or-text arg (`tap Start`), not `--key`.
+1. flutter_agent_lens `discover_apps` with `workspace_root` = example path, `autoConnect: true`
+2. Or flutter_agent_lens `connection` `connect` with that `ws://…/ws` and `workspace_root`
+3. Drive UI with flutter-skill MCP `inspect`, `tap`, `screenshot` (keys: `lobby-enter`, `lobby-join`, `mute`, `pause`)
 
 If `inspect` is empty after taps, Agent Lens `hot_restart` usually restores the semantics tree. Binding order in `example/lib/main.dart` must be `WidgetsFlutterBinding.ensureInitialized()` then `FlutterSkillBinding.ensureInitialized()`.
 

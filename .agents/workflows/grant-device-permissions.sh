@@ -68,20 +68,23 @@ case "$KIND" in
     fi
     adb -s "$DEVICE" shell pm grant "$ANDROID_PACKAGE" "$ANDROID_PERMISSION"
     printf 'granted %s to %s on %s\n' "$ANDROID_PERMISSION" "$ANDROID_PACKAGE" "$DEVICE"
+    adb -s "$DEVICE" shell pm grant "$ANDROID_PACKAGE" android.permission.CAMERA || true
+    printf 'granted CAMERA to %s on %s\n' "$ANDROID_PACKAGE" "$DEVICE"
     exit 0
     ;;
   ios-sim)
     xcrun simctl privacy "$DEVICE" grant microphone "$IOS_BUNDLE"
-    printf 'simctl granted microphone to %s on %s\n' "$IOS_BUNDLE" "$DEVICE"
+    xcrun simctl privacy "$DEVICE" grant camera "$IOS_BUNDLE" || true
+    printf 'simctl granted microphone and camera to %s on %s\n' "$IOS_BUNDLE" "$DEVICE"
     exit 0
     ;;
   ios-device)
-    printf 'physical iOS %s: no host TCC grant. Tap Allow on the microphone sheet.\n' "$DEVICE" >&2
+    printf 'physical iOS %s: no host TCC grant. Tap Allow on the microphone and camera sheets.\n' "$DEVICE" >&2
     printf 'Isolation Open is not this prompt. Keep the exclusive flutter process.\n' >&2
     exit 2
     ;;
   macos)
-    printf 'macOS %s: grant Microphone in System Settings → Privacy & Security if prompted.\n' "$DEVICE" >&2
+    printf 'macOS %s: grant Microphone and Camera in System Settings → Privacy & Security if prompted.\n' "$DEVICE" >&2
     exit 2
     ;;
   *)

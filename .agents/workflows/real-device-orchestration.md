@@ -53,6 +53,10 @@ flutter drive --driver=test_driver/integration_test.dart \
 
 ## Pass
 
+Drive the example lobby when proving host chrome (`lobby-enter` → device pick
+→ `lobby-join`). The native suite also starts a lobby Session, stops it, then
+starts the meeting Session.
+
 Every case must:
 
 - return `StartReady` (not skip on permission)

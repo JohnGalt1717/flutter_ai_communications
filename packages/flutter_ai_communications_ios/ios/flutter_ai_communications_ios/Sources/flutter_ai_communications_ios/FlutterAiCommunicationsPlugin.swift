@@ -21,9 +21,13 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var voiceProcessingEnabled = false
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
+  private var textures: FlutterTextureRegistry?
+  private let camera = IosCameraGraph()
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
+    instance.textures = registrar.textures()
+    instance.camera.attach(textures: registrar.textures())
     let messenger = registrar.messenger()
     let methods = FlutterMethodChannel(name: instance.methods, binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methods)
@@ -73,6 +77,36 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       result(nil)
     case "flushPlayback":
       flushPlayback()
+      result(nil)
+    case "enumerateCameras":
+      result(camera.enumerate())
+    case "requestCameraPermission":
+      camera.requestPermission(result: result)
+    case "startCameraNative":
+      let args = call.arguments as? [String: Any]
+      result(
+        camera.start(
+          cameraId: args?["cameraId"] as? String,
+          width: args?["width"] as? Int ?? 1280,
+          height: args?["height"] as? Int ?? 720,
+          enabled: args?["enabled"] as? Bool ?? true,
+          muted: args?["muted"] as? Bool ?? false
+        )
+      )
+    case "stopCameraNative":
+      camera.stop()
+      result(nil)
+    case "selectCameraNative":
+      let args = call.arguments as? [String: Any]
+      if let id = args?["cameraId"] as? String {
+        camera.select(cameraId: id)
+      }
+      result(nil)
+    case "setCameraEnabledNative":
+      camera.setEnabled((call.arguments as? [String: Any])?["enabled"] as? Bool ?? true)
+      result(nil)
+    case "setMuteVideoNative":
+      camera.setMuted((call.arguments as? [String: Any])?["muted"] as? Bool ?? false)
       result(nil)
     default:
       result(FlutterMethodNotImplemented)

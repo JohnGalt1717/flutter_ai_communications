@@ -61,7 +61,7 @@ Use glossary terms. Do not say “device order”, “default device”, or “O
 ### Who owns what
 
 - Host persists and edits `EndpointPreference`. Persistence is out of scope here.
-- `AudioManager.bindPreference` stores the bound list and **ends** a live Session. Next `start()` uses that list.
+- `CommunicationsManager.bindPreference` stores the bound list and **ends** a live Session. Next `start()` uses that list.
 - `SessionPreference.endpoints` at `start()` overrides the bound list for that start only when non-empty.
 - `SessionPreference.captureId` / `renderId` are an **Explicit selection** for this Session only.
 - `Session.select` is ephemeral. It must not write the host list. A later `start()` must come back under preference control.

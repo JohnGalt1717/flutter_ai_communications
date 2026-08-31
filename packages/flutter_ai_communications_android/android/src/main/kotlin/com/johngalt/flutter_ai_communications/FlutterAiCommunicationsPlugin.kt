@@ -29,6 +29,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
+import io.flutter.view.TextureRegistry
 import java.util.concurrent.atomic.AtomicBoolean
 
 class FlutterAiCommunicationsPlugin :
@@ -42,7 +43,11 @@ class FlutterAiCommunicationsPlugin :
     private var appContext: Context? = null
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingPermission: Result? = null
+    private var pendingCameraPermission: Result? = null
     private val permissionCode = 0xFAC1
+    private val cameraPermissionCode = 0xFAC3
+    private var textures: TextureRegistry? = null
+    private var cameraGraph: AndroidCameraGraph? = null
     private val bluetoothCode = 0xFAC2
     private var bluetoothAsked = false
     private var captureSink: EventChannel.EventSink? = null
@@ -85,6 +90,8 @@ class FlutterAiCommunicationsPlugin :
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
+        textures = binding.textureRegistry
+        cameraGraph = AndroidCameraGraph(binding.applicationContext, binding.textureRegistry)
         audioManager =
             binding.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         methods = MethodChannel(binding.binaryMessenger, "flutter_ai_communications/methods")
@@ -174,11 +181,44 @@ class FlutterAiCommunicationsPlugin :
                 track?.play()
                 result.success(null)
             }
+            "enumerateCameras" -> result.success(cameraGraph?.enumerate() ?: emptyList<Any>())
+            "requestCameraPermission" -> requestCameraPermission(result)
+            "startCameraNative" -> {
+                val graph = cameraGraph
+                if (graph == null) {
+                    result.success(mapOf("status" to "failed"))
+                } else {
+                    graph.start(
+                        call.argument("cameraId"),
+                        call.argument<Int>("width") ?: 1280,
+                        call.argument<Int>("height") ?: 720,
+                        call.argument<Boolean>("enabled") ?: true,
+                        call.argument<Boolean>("muted") ?: false,
+                    ) { map -> result.success(map) }
+                }
+            }
+            "stopCameraNative" -> {
+                cameraGraph?.stop()
+                result.success(null)
+            }
+            "selectCameraNative" -> {
+                call.argument<String>("cameraId")?.let { cameraGraph?.select(it) }
+                result.success(null)
+            }
+            "setCameraEnabledNative" -> {
+                cameraGraph?.setEnabled(call.argument<Boolean>("enabled") ?: true)
+                result.success(null)
+            }
+            "setMuteVideoNative" -> {
+                cameraGraph?.setMuted(call.argument<Boolean>("muted") ?: false)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        cameraGraph?.stop()
         stopNative()
         audioManager?.unregisterAudioDeviceCallback(deviceCallback)
         stopListeningForCommunicationDevice()
@@ -215,6 +255,12 @@ class FlutterAiCommunicationsPlugin :
             emitCatalog()
             return true
         }
+        if (requestCode == cameraPermissionCode) {
+            val pending = pendingCameraPermission ?: return false
+            pendingCameraPermission = null
+            pending.success(cameraGraph?.permission() ?: "denied")
+            return true
+        }
         if (requestCode != permissionCode) {
             return false
         }
@@ -233,6 +279,24 @@ class FlutterAiCommunicationsPlugin :
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED
         return if (granted) "granted" else "denied"
+    }
+
+    private fun requestCameraPermission(result: Result) {
+        if (cameraGraph?.permission() == "granted") {
+            result.success("granted")
+            return
+        }
+        val activity: Activity? = activityBinding?.activity
+        if (activity == null) {
+            result.success(cameraGraph?.permission() ?: "denied")
+            return
+        }
+        pendingCameraPermission = result
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(Manifest.permission.CAMERA),
+            cameraPermissionCode,
+        )
     }
 
     private fun requestPermission(result: Result) {
@@ -292,7 +356,7 @@ class FlutterAiCommunicationsPlugin :
     private fun stopNative() {
         running.set(false)
         captureGeneration++
-        captureThread?.join(250)
+        captureThread?.join(1000)
         captureThread = null
         recorder?.stop()
         recorder?.release()
@@ -396,7 +460,7 @@ class FlutterAiCommunicationsPlugin :
             return
         }
         val next = ++captureGeneration
-        captureThread?.join(250)
+        captureThread?.join(1000)
         captureThread = null
         startCapture(next)
         emitRoute()

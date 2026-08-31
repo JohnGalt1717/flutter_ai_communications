@@ -18,7 +18,7 @@ void main() {
         reason: 'native suite must not wrap the registered adapter',
       );
 
-      final manager = AudioManager();
+      final manager = CommunicationsManager();
       addTearDown(() async {
         await manager.session?.stop();
       });

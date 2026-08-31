@@ -1,16 +1,17 @@
-# 05 — Example landing page
+# 05 — Example lobby subsection
 
-**What to build:** The example landing page follows
-`docs/host-prejoin-narrative.md`: mode, audio picks, camera pick, preview,
-processor, lobby mutes, join, leave-without-join.
+**What to build:** The example lobby follows `docs/host-prejoin-narrative.md`:
+mode, audio picks, camera pick when present, self-view, mute, Join,
+leave-without-join. Mimic the best of Zoom/Teams: large self-view, device
+picks on one row, permission on enter.
 
 Overlaps library ticket `13`. Do not build a second lobby.
 
-**Blocked by:** 03 — Preference persistence; 04 — Preview primitive
+**Blocked by:** 03 — Preference persistence (camera when it exists)
 
 **Status:** ready-for-agent
 
-- [ ] Page works before a Session exists
-- [ ] Join uses current picks
-- [ ] Leave-without-join only stops preview
-- [ ] Marionette keys exist for landing controls
+- [ ] Lobby is a Session (`purpose: lobby`), no Transport plugin
+- [ ] Join uses current picks via Session settings or copied start args
+- [ ] Leave-without-join only stops the lobby Session
+- [ ] Orchestration keys exist for lobby controls

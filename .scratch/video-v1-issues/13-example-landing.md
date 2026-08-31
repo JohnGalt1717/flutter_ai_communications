@@ -1,12 +1,13 @@
-# 13 — Example landing page and in-session AV harness
+# 13 — Example lobby and in-session AV harness
 
-**What to build:** The example looks like an AI-voice plus camera lobby: mode (audio / video / AV), device lists, Preview Texture, processor picks, join, then mute-audio, mute-video, Camera-off, switch camera, pause, stop. Marionette can drive the path to success without a SignalR client.
+**What to build:** The example has a Zoom/Teams-class **lobby subsection**: mode, mic and speaker picks, permission via `start()`, mute, Join, leave-without-join. Lobby is a Session with no Transport plugin. Join stops it and starts a meeting Session, then attaches Echo Transport (later the WebRTC plugin). In-session: mute, mute-video, Camera-off, live camera flip, pause, stop. Orchestration drives lobby → join → controls. Not a SignalR client.
 
-**Blocked by:** 03 — Pre-join preview; 05 — iOS camera graph (or first native graph available to the runner)
+**Blocked by:** 03 — Lobby Session; 05 — iOS camera graph (or first native graph available to the runner). Audio-only lobby Orchestration can land once 03 exists; the example audio lobby can land against today’s Session.
 
 **Status:** ready-for-agent
 
-- [ ] Landing page works before Session
-- [ ] Join promotes preview
+- [ ] Lobby subsection visible before Join
+- [ ] Enter lobby calls `start(purpose: lobby)` and does not attach Echo Transport
+- [ ] Join copies picks, stops lobby, starts meeting, attaches Echo Transport
 - [ ] In-session controls match the host narrative table
-- [ ] Marionette keys exist for catalog, preview, join, mutes, camera-off
+- [ ] Orchestration keys exist for lobby-enter, device picks, lobby-join, mutes, camera-off

@@ -1,12 +1,13 @@
-# 03 — Pre-join preview on the idle manager
+# 03 — Lobby Session
 
-**What to build:** A host can start and stop Pre-join preview without creating a Session, show a Preview Texture, apply a Video processor, switch cameras, and Camera-off in the lobby. `start()` can promote or override that camera and processor. Preview does not occupy the one-Session slot and does not emit Transport silence frames.
+**What to build:** A host can start a lobby Session with no Transport plugin, show a Video surface, pick devices, Mute, Camera-off, then Join by stopping that Session and starting a meeting Session with Session settings (or copied start args). Lobby does not occupy a second Session slot; alreadyActive still holds. Camera preview is not used in the lobby.
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
 **Status:** ready-for-agent
 
-- [ ] Preview works while no Session exists
-- [ ] Starting a Session stops or promotes preview; a second Session is still alreadyActive
-- [ ] Processor selected on preview is visible on the Preview Texture in the fake adapter
-- [ ] Leaving the lobby (`preview.stop`) does not require `session.stop`
+- [ ] `start(purpose: lobby)` works with no Transport plugin
+- [ ] Capture stream is the lobby meter; no second audio graph
+- [ ] Join is stop + start; objects are not shared
+- [ ] Leaving the lobby is `session.stop`
+- [ ] Example lobby subsection can be driven by Orchestration

@@ -1,15 +1,67 @@
 # Video Capture, Processors, and Sink Providers Plan
 
-**Status:** Planning landed. Implementation starts at tickets 01–02.
+**Status:** Shipped on iOS, Android, macOS, and web. Next native work is
+Windows (ticket 08) and Linux camera graphs, plus audio/lobby receipts on
+those machines. See `docs/windows-linux-video-setup.md`.
 **Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.
 
+## Current slice (2026-08-31)
+
+Ready for a second Windows machine and a Linux machine to **build, run the
+example, and collect audio Orchestration receipts**. Camera catalogs on those
+two platforms are empty until their native graphs land. Missing/denied camera
+must not fail `start()`.
+
+### Done
+
+- Domain: `CONTEXT.md` video terms, ADRs 0012–0021, `docs/spec-video-v1.md`
+- Shared types + fake platform + `CommunicationsManager` / Session video APIs
+- Lobby is a Session; Join is host `stop` + `start` with Session settings
+- Native camera graphs: iOS (AVFoundation), Android (Camera2), macOS
+  (AVFoundation), web (getUserMedia + HtmlElementView)
+- Example lobby (`lobby-enter` → pick → `lobby-join`) with self-view,
+  Camera-off, Mute-video
+- Orchestration e2e passed: iPhone 17 simulator, SM A176U1, macOS (audio),
+  example harness Enter → Join
+- v1 processor is `none` only
+- Windows/Linux audio backends already exist (WASAPI / Pulse). Camera methods
+  stay unimplemented and are treated as unavailable, not `StartFailed`
+
+### Not in this slice (do not block Win/Linux receipts)
+
+- Ticket 04 / 12: Transport plugin RTP seam and `flutter_webrtc` package
+- Tickets 10–11: blur / replace processors (see
+  `.agents/plans/video-processors-blur-replace.md`)
+- Screen source catalog (ADR-0019)
+- Physical iPhone Allow-dialog receipt
+- Web Join overlay: lobby works; Join must keep a 320×220 platform view, not
+  unmount a 100% HtmlElementView
+
+### Windows and Linux remaining work
+
+| Track | Windows | Linux |
+| --- | --- | --- |
+| Build / doctor | VS + C++ desktop workload | clang, cmake, ninja, GTK, Pulse/PipeWire |
+| Audio Orchestration | Run now (`-d windows`) | Run now (`-d linux`) |
+| Example lobby audio | Run now; camera list empty | Run now; camera list empty |
+| Camera graph | Ticket 08: Media Foundation / `Windows.Media.Capture` → Flutter Texture | New: V4L2 capture → Flutter Texture |
+| Camera permission | Windows privacy consent | PipeWire/portal or v4l device node |
+| Mute-video / Camera-off | Black frames vs stop device | Same contract as iOS/Android |
+| Receipt | Catalog, preview Texture, lobby → join, 20 cycles | Same |
+
+Windows and Linux camera graphs must match the existing Session APIs
+(`enumerateCameras`, `requestCameraPermission`, `startCameraNative`,
+`selectCameraNative`, `setCameraEnabledNative`, `setMuteVideoNative`). Do not
+add a second camera plugin. Empty catalog before those graphs land is
+expected, not a failed Session.
+
 ## Goal
 
-Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications` without turning Session into a WebRTC client. Cameras, Pre-join preview, Production video path, Mute-video, Camera-off, library-owned Video processors, and attachable Video sinks. First sink is flutter_webrtc. First platforms are iOS, Android, Web, macOS, and Windows.
+Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications` without turning Session into a WebRTC client. Cameras, lobby Session (no Transport plugin), Production video path, Mute-video, Camera-off, Camera preview, Video processor none in v1, Transport plugin (WebRTC). First platforms are iOS, Android, Web, macOS, and Windows.
 
-Parity bar: a host must be able to build both a Teams-like and a Zoom-like product on this API. Missing in-call or lobby capability is a spec bug.
+Parity bar: a host must be able to build both a Teams-like and a Zoom-like product on this API. Missing in-call or lobby capability is a spec bug. The example lobby is the Orchestration e2e path.
 
 Audio production work in `.agents/plans/production-audio-manager-and-real-device-conformance.md` stays on its own track. Video must not regress one-Session, one audio Capture stream, or ADR-0004 reset identity.
 
@@ -20,26 +72,29 @@ Host integration lives in this repository. The first host surface is `example/`.
 Do not treat video as done when a Texture shows a camera. Done means:
 
 - idle camera catalog and Camera preference
-- Pre-join preview with processor applied
+- lobby Session with local Video surface (processor none)
+- Join as stop + start with Session settings
 - Session AV lifecycle including enable-video-later
 - Mute-video vs Camera-off vs pause
 - native Production video path
-- at least one real sink provider (flutter_webrtc) plus a fake sink in tests
-- example landing page + in-session AV on the five platforms
+- Transport plugin (flutter_webrtc) plus a fake in tests
+- example lobby subsection + in-session AV on the five platforms, driven by Orchestration
 - host narrative can be followed without a second camera plugin
 
-Linux and screen share are later plans.
+Screen share stays a later plan (ADR-0019). Linux camera is now in the same remaining-native bucket as Windows ticket 08.
 
 ## Required architecture
 
-- One application-scoped Audio manager; at most one live Session.
+- One application-scoped Communications manager; at most one Session and one Camera preview.
 - Separate Camera Endpoint catalog and Camera preference. No unmatched audio/video Pair.
-- Pre-join preview is idle manager state, not a Session.
-- Production video path is native: camera → Video processor → Preview Texture + every Video sink.
+- Lobby is a Session with no Transport plugin. Join is host stop + start with Session settings.
+- Camera preview is video-only, in-call, after Camera-off. Audio continues. No in-call audio preview.
+- Production video path is native per send source: capture, Video processor, Video surface, Transport plugin.
 - Dart Video calibration tap is off by default.
 - Session direction is a capability mask. Video attaches and detaches without replacing audio streams.
-- Video sinks are providers. This repo does not own PeerConnection or signaling.
-- Video processors: none, blur(intensity), replace(bytes or asset). Fallback to none is a warning, not a start failure.
+- Transport plugin owns RTP. Host owns signaling and tile layout. Session has no PeerConnection types.
+- v1 Video processor is none. Blur/replace: `.agents/plans/video-processors-blur-replace.md`.
+- Missing camera does not fail the Session.
 
 ## Public API sketch (host-facing)
 
@@ -48,26 +103,18 @@ Names follow `CONTEXT.md`. Exact types land in ticket 01.
 ```text
 manager.cameras()
 manager.bindCameraPreference(orderedIds)
-preview = await manager.startPreview(videoFormat, cameraId?, processor)
-preview.textureId
-preview.selectCamera(id)
-preview.setProcessor(...)
-preview.setCameraEnabled(false)
-await preview.stop()
-
-result = await manager.start(
-  direction,
-  captureFormat, playbackFormat, videoFormat,
-  preference, cameraPreference,
-  videoProcessor,
-)
-session.enableVideo(...)
-session.selectCamera(id)
-session.muteVideo() / unmuteVideo()
-session.setCameraEnabled(false)
-session.setVideoProcessor(...)
-session.attachSink(sink) / detachSink(sink)
-session.pause() / stop()
+lobby = await manager.start(purpose: 'lobby', direction, formats, preferences)
+lobby.videoSurface
+lobby.selectCamera(id)            // live; no remotes in lobby
+lobby.setCameraEnabled(false)
+settings = lobby.settings
+await lobby.stop()
+meeting = await manager.start(purpose: 'meeting', settings: settings)
+attach Transport plugin
+meeting.selectCamera(id)          // live flip
+meeting.muteVideo() / setCameraEnabled(false)
+start Camera preview only after Camera-off
+meeting.pause() / stop()
 ```
 
 Default Video Format: 1280×720 at 30 fps.
@@ -79,26 +126,26 @@ Default Video Format: 1280×720 at 30 fps.
 Tickets 00–02.
 
 - Glossary terms in `CONTEXT.md`
-- ADRs 0012–017
+- ADRs 0012–0021
 - `docs/spec-video-v1.md` and this plan
-- Shared types: Camera Endpoint, Camera facing, Camera preference, Video Format, Native Video Format, Video processor, sink handle
+- Shared types: Camera Endpoint, Camera facing, Camera preference, Video Format, Native Video Format, Video processor, Session settings, Video surface
 - Platform interface methods defaulting to unimplemented
-- Fake adapter + AudioManager/Session tests for direction, preview, mute-video, Camera-off, enable-video-later, processor selection
+- Fake adapter + Communications manager/Session tests for direction, lobby Session, mute-video, Camera-off, enable-video-later, processor none
 
 Complete when fake-platform tests cover every new Start result and Session control without a physical camera.
 
-### 2. Pre-join preview
+### 2. Lobby Session
 
 Ticket 03.
 
-- `startPreview` / stop on the idle manager
-- Preview Texture id
-- Processor applies
-- Promote into Session without requiring flutter_webrtc
+- `start(purpose: lobby)` with no Transport plugin
+- Session Video surface
+- Processor none
+- Join is stop + start with Session settings
 
-Complete when the example can show a lobby self-view from the fake or a single native platform.
+Complete when the example lobby subsection can show a self-view from the fake or a single native platform and Orchestration can drive enter → pick → join.
 
-### 3. Video sink provider seam
+### 3. Transport plugin / video attach seam
 
 Ticket 04.
 
@@ -110,22 +157,27 @@ Complete when tests prove two sinks see one path and detach does not end the Ses
 
 ### 4. Native camera graphs
 
-Tickets 05–09, one platform each: iOS, Android, macOS, Windows, Web.
+Tickets 05–09 plus Linux: iOS, Android, macOS, Windows, Web, then Linux.
 
-Each ticket delivers catalog, permission, negotiated Video Format, Preview Texture, camera switch, Mute-video black frames, Camera-off hardware stop, and enable-video-later on that platform.
+| Platform | Graph | Receipt |
+| --- | --- | --- |
+| iOS | Done (`IosCameraGraph`) | iPhone 17 sim Orchestration passed |
+| Android | Done (`AndroidCameraGraph`) | SM A176U1 Orchestration passed |
+| macOS | Done (`MacCameraGraph`) | macOS audio Orchestration passed |
+| Web | Done (getUserMedia) | Lobby driven via flutter-skill + Agent Lens |
+| Windows | **Not started** — ticket 08 | Audio Orchestration can run now |
+| Linux | **Not started** — later in the original plan; do it with Windows receipts | Audio Orchestration can run now |
 
-Web uses getUserMedia plus a documented preview surface. Insertable streams or an equivalent processor hook is acceptable if it keeps preview and sinks on one path.
+Each remaining graph delivers catalog, permission, negotiated Video Format, Preview Texture, camera switch, Mute-video black frames, Camera-off hardware stop, and enable-video-later.
 
-Complete per platform only with public-seam tests plus a real-device or browser receipt. Registration-only tests are not enough.
+Complete per platform only with public-seam tests plus a real-device receipt. Registration-only tests are not enough.
 
 ### 5. Video processors
 
 Tickets 10–11.
 
-- none always works
-- blur(intensity) on iOS and Android first, then desktop and web
-- replace from bytes or asset path
-- unavailable processor → none + structured warning
+- none always works in v1
+- blur/replace: later plan, do not implement here
 
 Complete when lobby and in-session preview show the same effect and sinks receive the processed path.
 
@@ -144,9 +196,9 @@ Complete when the example can attach the sink and a loopback PeerConnection show
 
 Tickets 13–14, plus `.scratch/video-host-issues/`.
 
-- Landing page: mode, audio picks, camera pick, preview, processor, join
-- In-session: mute-audio, mute-video, Camera-off, switch camera, pause, stop
-- Marionette keys for the above
+- Example lobby subsection: mode, audio picks, camera pick, self-view, Join
+- In-session: mute-audio, mute-video, Camera-off, flip camera, pause, stop
+- Orchestration keys for the above; e2e drives lobby then meeting
 - `docs/host-prejoin-narrative.md` kept accurate
 
 ## Ticket map
@@ -156,13 +208,13 @@ Tickets 13–14, plus `.scratch/video-host-issues/`.
 | 00 | Spec, glossary, ADRs | — |
 | 01 | Shared video types | 00 |
 | 02 | Session and platform-interface contracts | 01 |
-| 03 | Pre-join preview | 02 |
-| 04 | Video sink provider seam | 02 |
+| 03 | Lobby Session | 02 |
+| 04 | Transport plugin video seam | 02 |
 | 05–09 | iOS / Android / macOS / Windows / Web graphs | 02 |
-| 10 | Processors on iOS and Android | 03, 05, 06 |
-| 11 | Processors on macOS, Windows, Web | 07, 08, 09, 10 |
-| 12 | flutter_webrtc sink package | 04 and one native graph |
-| 13 | Example landing + in-session harness | 03 and one native graph |
+| 10 | Processors on iOS and Android | deferred — later plan |
+| 11 | Processors on macOS, Windows, Web | deferred — later plan |
+| 12 | flutter_webrtc Transport plugin | 04 and one native graph |
+| 13 | Example lobby + in-session harness | 03 and one native graph |
 | 14 | Host guide accuracy pass | 13 |
 
 ## Physical-device matrix
@@ -170,42 +222,42 @@ Tickets 13–14, plus `.scratch/video-host-issues/`.
 Primary gate on relevant video changes:
 
 - physical iPhone, physical Android, Chrome, macOS, Windows
-- first preview after install permission
-- front/back or built-in/USB switch
-- preview then start promotion
+- first lobby `start()` after install permission
+- front/back or built-in/USB live flip
+- lobby Session then join (stop + start with settings)
 - audio-only start then enable video
 - Mute-video vs Camera-off (lens light where the OS exposes it)
-- processor none / blur / replace
-- twenty preview/start/stop cycles without leaking the camera
+- processor none
+- twenty lobby/start/stop cycles without leaking the camera
 
 Human confirmation of blur quality is allowed. Cadence and Texture liveness should be electronic first.
 
 ## Dependency graph
 
 1. Domain + shared types + fake Session contracts (00–02)
-2. Pre-join API (03) and sink seam (04) in parallel after 02
+2. Lobby Session (03) and Transport plugin seam (04) in parallel after 02
 3. Native graphs (05–09) in parallel after 02
-4. Processors (10–11) after at least one native graph
-5. WebRTC sink (12) after sink seam + one native graph
-6. Example + narrative (13–14) after preview + one native graph; full platform matrix after 05–09
+4. Processors (10–11) later plan after at least one native graph
+5. WebRTC plugin (12) after seam + one native graph
+6. Example lobby + narrative (13–14) after lobby Session + one native graph; audio lobby Orchestration can start once lobby Session exists
 7. User approval that Teams-like and Zoom-like hosts can be built
 
 ## Files likely touched
 
 - `packages/flutter_ai_communications_shared` — video types
 - `packages/flutter_ai_communications_platform_interface` — new methods default unimplemented
-- `packages/flutter_ai_communications` — AudioManager / Session
+- `packages/flutter_ai_communications` — Communications manager / Session
 - per-platform packages — camera graphs and processor hooks
 - new `flutter_ai_communications_webrtc` workspace package
-- `example/` — landing + in-session AV
-- `docs/spec-video-v1.md`, `docs/host-prejoin-narrative.md`, ADRs 0012–017
+- `example/` — lobby subsection + in-session AV + Orchestration keys
+- `docs/spec-video-v1.md`, `docs/host-prejoin-narrative.md`, ADRs 0012–0021
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
 | Dart production frame pump | ADR-0013. Calibration tap off by default |
-| Preview implemented as a Session | ADR-0014. alreadyActive still holds |
+| Lobby and meeting share a Session object | ADR-0020. stop + start with Session settings |
 | Mute-video == Camera-off | ADR-0016. Separate tests |
 | Host injects a processor object | ADR-0017. Selectable values only |
 | Session knows flutter_webrtc | Sink package only. Ticket 12 tests |
@@ -220,6 +272,6 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 - Five-platform receipts for catalog, preview, start, mute-video, Camera-off
 - Processors work on iOS and Android at minimum; other platforms documented if delayed
 - flutter_webrtc sink package attaches without Session knowing WebRTC types
-- Example landing page is Marionette-drivable
+- Example lobby subsection is Orchestration-drivable
 - Audio ADR-0003 and ADR-0004 still hold
 - No GitHub issues required for this slice unless a human asks

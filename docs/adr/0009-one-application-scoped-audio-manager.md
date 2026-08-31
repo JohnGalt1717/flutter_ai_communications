@@ -1,3 +1,3 @@
-# One application-scoped Audio manager
+# One application-scoped Communications manager
 
-Each host application constructs one Audio manager for its lifetime and permits at most one capture-only, playback-only, or duplex Session. Product features differ only by attached Transport, capture sink, or playback source; competing starts are explicit error states rather than a reason to create another native audio stack.
+Each host application constructs one Communications manager for its lifetime, at most one Session, and at most one Camera preview. Session direction is any combination of audio send, audio playback, camera send, screen send, and inbound video. Lobby is a Session with no Transport plugin; join stops it and starts a new Session with a Transport plugin. Camera preview is video-only and is not a Session; it may run beside a Session only when that Session is already Camera-off (audio continues). A second Session is still an explicit already-active error.

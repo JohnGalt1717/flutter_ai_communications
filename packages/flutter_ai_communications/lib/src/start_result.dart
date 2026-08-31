@@ -1,6 +1,6 @@
 part of '../flutter_ai_communications.dart';
 
-/// Outcome of [AudioManager.start]. Expected failures are values.
+/// Outcome of [CommunicationsManager.start]. Expected failures are values.
 sealed class StartResult {
   const StartResult();
 }
@@ -47,5 +47,35 @@ final class StartFailed extends StartResult {
   const StartFailed([this.cause]);
 
   /// Optional underlying cause.
+  final Object? cause;
+}
+
+/// Outcome of [CommunicationsManager.startCameraPreview].
+sealed class PreviewStartResult {
+  /// Creates a preview result.
+  const PreviewStartResult();
+}
+
+/// Camera preview is live.
+final class PreviewReady extends PreviewStartResult {
+  /// Creates a ready preview.
+  const PreviewReady(this.preview);
+
+  /// The live Camera preview.
+  final CameraPreview preview;
+}
+
+/// The Session is still sending video. Camera-off first.
+final class PreviewBlocked extends PreviewStartResult {
+  /// Creates a blocked result.
+  const PreviewBlocked();
+}
+
+/// Camera preview could not start.
+final class PreviewFailed extends PreviewStartResult {
+  /// Creates a failed result.
+  const PreviewFailed([this.cause]);
+
+  /// Optional cause.
   final Object? cause;
 }

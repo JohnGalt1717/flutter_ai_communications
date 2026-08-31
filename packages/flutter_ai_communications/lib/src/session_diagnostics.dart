@@ -158,13 +158,13 @@ final class SessionDiagnostics {
 /// Messages are codes and ids only. Hosts map them; the library never
 /// emits user-facing copy.
 abstract final class PipelineLog {
-  /// Logger name for Audio manager and Session pipeline records.
-  static const String loggerName = 'AudioManager';
+  /// Logger name for Communications manager and Session pipeline records.
+  static const String loggerName = 'CommunicationsManager';
 
-  /// [AudioManager.start] was requested.
+  /// [CommunicationsManager.start] was requested.
   static const String startRequested = 'pipeline.start.requested';
 
-  /// Competing [AudioManager.start] while a Session is live.
+  /// Competing [CommunicationsManager.start] while a Session is live.
   static const String startAlreadyActive = 'pipeline.start.alreadyActive';
 
   /// Microphone permission was requested or skipped.

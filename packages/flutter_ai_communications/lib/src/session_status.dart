@@ -86,6 +86,9 @@ enum SessionStatusCode {
 
   /// Native Format conversion is in use at a Session edge.
   formatConverted,
+
+  /// Video is not running (denied, restricted, none, or no mode).
+  videoNotRunning,
 }
 
 /// What the host or user must do, if anything. No user-facing copy.
@@ -139,6 +142,16 @@ final class SessionStatus {
     : severity = StatusSeverity.success,
       code = SessionStatusCode.ready,
       recoverability = StatusRecoverability.none,
+      usability = StatusUsability.usable,
+      action = SessionAction.none,
+      attempt = 0,
+      maxAttempts = 0;
+
+  /// Video is not running; the Session may still be usable for audio.
+  const SessionStatus.videoNotRunning({this.purpose, this.generation = 0})
+    : severity = StatusSeverity.warning,
+      code = SessionStatusCode.videoNotRunning,
+      recoverability = StatusRecoverability.hostAction,
       usability = StatusUsability.usable,
       action = SessionAction.none,
       attempt = 0,

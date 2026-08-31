@@ -10,13 +10,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   late FakeCommunicationsPlatform platform;
-  late AudioManager manager;
+  late CommunicationsManager manager;
 
   setUp(() {
     FlutterAiCommunicationsPlatform.debugReset();
     platform = FakeCommunicationsPlatform();
     FlutterAiCommunicationsPlatform.instance = platform;
-    manager = AudioManager(platform: platform);
+    manager = CommunicationsManager(platform: platform);
   });
 
   tearDown(() async {
@@ -107,7 +107,7 @@ void main() {
     FlutterAiCommunicationsPlatform.instance = LoopbackCommunicationsPlatform(
       platform,
     );
-    manager = AudioManager();
+    manager = CommunicationsManager();
     final session = await ready(
       preference: const SessionPreference(
         captureId: LoopbackCommunicationsPlatform.captureId,
@@ -133,7 +133,7 @@ void main() {
     FlutterAiCommunicationsPlatform.instance = LoopbackCommunicationsPlatform(
       platform,
     );
-    manager = AudioManager();
+    manager = CommunicationsManager();
     final session = await ready(
       preference: const SessionPreference(
         captureId: LoopbackCommunicationsPlatform.captureId,

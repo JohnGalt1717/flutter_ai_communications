@@ -1,6 +1,6 @@
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
-/// Host preference passed to [AudioManager.start].
+/// Host preference passed to [CommunicationsManager.start].
 ///
 /// [endpoints] is the ordered enabled Endpoint preference. [captureId] and
 /// [renderId] are an optional Explicit selection for this Session only.
@@ -45,7 +45,8 @@ final class SessionPreference {
 /// Whether barge-in is local or left to remote VAD.
 enum BargeInPolicy { local, remoteVad }
 
-/// Active edges of a Session.
+/// Active audio edges of a Session. Camera send is orthogonal ([CommunicationsManager.start]
+/// `cameraSend`).
 enum SessionDirection {
   /// Capture only. Does not acquire playback resources.
   captureOnly,
@@ -54,11 +55,75 @@ enum SessionDirection {
   playbackOnly,
 
   /// Capture and playback.
-  duplex;
+  duplex,
+
+  /// No audio edges (video-only or screen-only).
+  none;
 
   /// Whether this direction captures.
-  bool get hasCapture => this != SessionDirection.playbackOnly;
+  bool get hasCapture =>
+      this != SessionDirection.playbackOnly && this != SessionDirection.none;
 
   /// Whether this direction plays.
-  bool get hasPlayback => this != SessionDirection.captureOnly;
+  bool get hasPlayback =>
+      this != SessionDirection.captureOnly && this != SessionDirection.none;
+}
+
+/// Start-able description of a Session. Readable from a live Session.
+final class SessionSettings {
+  /// Creates Session settings.
+  const SessionSettings({
+    this.direction = SessionDirection.duplex,
+    this.cameraSend = false,
+    this.captureFormat,
+    this.playbackFormat,
+    this.videoFormat,
+    this.preference = const SessionPreference(),
+    this.cameraPreference = const CameraPreference(),
+    this.cameraId,
+    this.videoProcessor = const NoneVideoProcessor(),
+    this.muted = false,
+    this.cameraEnabled = true,
+    this.purpose,
+    this.bargeInPolicy = BargeInPolicy.local,
+  });
+
+  /// Audio edges.
+  final SessionDirection direction;
+
+  /// Whether the Session should send camera.
+  final bool cameraSend;
+
+  /// Capture Format.
+  final AudioFormat? captureFormat;
+
+  /// Playback Format.
+  final AudioFormat? playbackFormat;
+
+  /// Requested Video Format.
+  final VideoFormat? videoFormat;
+
+  /// Audio preference and explicit picks.
+  final SessionPreference preference;
+
+  /// Camera preference.
+  final CameraPreference cameraPreference;
+
+  /// Explicit camera id.
+  final String? cameraId;
+
+  /// Video processor. v1 is none.
+  final VideoProcessor videoProcessor;
+
+  /// Whether to start muted.
+  final bool muted;
+
+  /// Whether the camera is enabled (not Camera-off).
+  final bool cameraEnabled;
+
+  /// Session purpose.
+  final String? purpose;
+
+  /// Barge-in policy.
+  final BargeInPolicy bargeInPolicy;
 }

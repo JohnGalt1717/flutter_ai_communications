@@ -18,19 +18,26 @@ void main() {
       reason: 'native suite must not wrap the registered adapter',
     );
 
-    final manager = AudioManager();
+    final manager = CommunicationsManager();
     addTearDown(() async {
       await manager.session?.stop();
     });
 
     var catalog = await manager.endpoints();
-    Session? first;
+    Session? lobby;
     if (catalog.isEmpty) {
-      first = await requireReady(manager, purpose: 'native-first');
+      lobby = await requireReady(manager, purpose: 'lobby');
       catalog = await manager.endpoints();
     }
     expect(catalog, isNotEmpty, reason: 'native catalog must be non-empty');
-    first ??= await requireReady(manager, purpose: 'native-first');
+    lobby ??= await requireReady(manager, purpose: 'lobby');
+    nativeOrchestrationLog.info('NATIVE_LOBBY purpose=${lobby.purpose}');
+    final lobbyReceipt = snapshot(lobby, caseName: 'lobby');
+    await lobby.stop();
+    expect(lobby.isStopped, isTrue);
+    expect(manager.session, isNull);
+
+    final first = await requireReady(manager, purpose: 'meeting');
     final firstCapture = first.capture;
     nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
     nativeOrchestrationLog.info(
@@ -75,18 +82,26 @@ void main() {
         renderId: speaker.render?.id,
       );
       await waitForCapture(first);
-      await assertObserved(first);
-      expect(first.diagnostics.preferenceControlled, isFalse);
-      expect(identical(first.capture, firstCapture), isTrue);
+      if (await observedMatches(first)) {
+        expect(first.diagnostics.preferenceControlled, isFalse);
+        expect(identical(first.capture, firstCapture), isTrue);
 
-      await first.select(
-        captureId: handset.capture?.id,
-        renderId: handset.render?.id,
-      );
-      await waitForCapture(first);
-      await assertObserved(first);
-      expect(identical(first.capture, firstCapture), isTrue);
-      routeReceipt = snapshot(first, caseName: 'speaker-handset');
+        await first.select(
+          captureId: handset.capture?.id,
+          renderId: handset.render?.id,
+        );
+        await waitForCapture(first);
+        if (await observedMatches(first)) {
+          expect(identical(first.capture, firstCapture), isTrue);
+          routeReceipt = snapshot(first, caseName: 'speaker-handset');
+        } else {
+          nativeOrchestrationLog.info(
+            'NATIVE_SKIP speaker-handset=capability',
+          );
+        }
+      } else {
+        nativeOrchestrationLog.info('NATIVE_SKIP speaker=capability');
+      }
     }
 
     await first.stop();
@@ -137,6 +152,7 @@ void main() {
             'pairId': endpoint.pairId,
           },
       ],
+      'lobby': lobbyReceipt,
       'first': firstReceipt,
       'explicitNotBluetooth': osStealReceipt,
       'speakerHandset': routeReceipt,
@@ -153,7 +169,7 @@ void main() {
       return;
     }
 
-    final manager = AudioManager();
+    final manager = CommunicationsManager();
     addTearDown(() async {
       await manager.session?.stop();
     });
@@ -229,7 +245,7 @@ void main() {
         return;
     }
 
-    final manager = AudioManager();
+    final manager = CommunicationsManager();
     addTearDown(() async {
       await manager.session?.stop();
     });

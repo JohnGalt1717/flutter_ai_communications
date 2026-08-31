@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late FakeCommunicationsPlatform platform;
   late DefaultCoverageSource coverage;
-  late AudioManager manager;
+  late CommunicationsManager manager;
 
   setUp(() {
     FlutterAiCommunicationsPlatform.debugReset();
@@ -18,7 +18,7 @@ void main() {
     platform = FakeCommunicationsPlatform();
     coverage = DefaultCoverageSource();
     FlutterAiCommunicationsPlatform.instance = platform;
-    manager = AudioManager(platform: platform, coverageSource: coverage);
+    manager = CommunicationsManager(platform: platform, coverageSource: coverage);
   });
 
   tearDown(() async {
@@ -210,7 +210,7 @@ void main() {
     test('stop completes on a fake clock with AlwaysOk Coverage', () {
       fakeAsync((async) {
         late Session session;
-        final okManager = AudioManager(
+        final okManager = CommunicationsManager(
           platform: platform,
           coverageSource: const AlwaysOkCoverageSource(),
         );

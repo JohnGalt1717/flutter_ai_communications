@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
+import 'dart:ui_web' as ui_web;
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -129,12 +130,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _processor?.disconnect();
     _source?.disconnect();
     _player?.stop();
-    await _context?.close().toDart;
     _processor = null;
     _source = null;
     _player = null;
-    _context = null;
-    _nextTime = 0;
+    _nextTime = _context?.currentTime ?? 0;
     _stopTracks();
   }
 
@@ -299,10 +298,14 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
     _processor?.disconnect();
     _source?.disconnect();
-    await _context?.close().toDart;
     final render = _policy.renderPlan(_renderId, sinkSupported: _sinkSupported);
-    final context = _openContext(render);
+    final context = _context ?? _openContext(render);
     _context = context;
+    try {
+      await context.resume().toDart.timeout(const Duration(seconds: 1));
+    } on Object {
+      // Already running, or the browser blocked resume.
+    }
     _nextTime = context.currentTime;
     _generation++;
     final source = context.createMediaStreamSource(stream);
@@ -395,5 +398,162 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       return applied;
     }
     return _renderId;
+  }
+
+  web.MediaStream? _videoStream;
+  web.HTMLVideoElement? _videoEl;
+  var _cameraViewId = 0;
+  VideoSurface? _cameraSurface;
+  VideoFormat? _cameraFormat;
+  String? _selectedCameraId;
+
+  @override
+  VideoSurface? get lastVideoSurface => _cameraSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _cameraFormat;
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() async {
+    final devices =
+        (await web.window.navigator.mediaDevices.enumerateDevices().toDart)
+            .toDart;
+    return [
+      for (final device in devices)
+        if (device.kind == 'videoinput')
+          CameraEndpoint(
+            id: device.deviceId,
+            name: device.label.isEmpty ? 'Camera' : device.label,
+            facing: CameraFacing.unspecified,
+            modes: const [VideoFormat.defaultFormat],
+          ),
+    ];
+  }
+
+  @override
+  Future<CameraPermission> requestCameraPermission() async {
+    try {
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(
+            web.MediaStreamConstraints(video: true.toJS),
+          )
+          .toDart
+          .timeout(const Duration(seconds: 2));
+      stream.getTracks().toDart.forEach((track) => track.stop());
+      return CameraPermission.granted;
+    } on Object {
+      return CameraPermission.denied;
+    }
+  }
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) async {
+    await stopCameraNative();
+    _selectedCameraId = cameraId;
+    final requested = videoFormat ?? VideoFormat.defaultFormat;
+    if (!enabled) {
+      _cameraSurface = null;
+      _cameraFormat = requested;
+      return NativeGraphStart.started;
+    }
+    try {
+      final JSAny videoConstraint = cameraId == null || cameraId.isEmpty
+          ? true.toJS
+          : web.MediaTrackConstraints(
+              deviceId: web.ConstrainDOMStringParameters(exact: cameraId.toJS),
+            );
+      final stream = await web.window.navigator.mediaDevices
+          .getUserMedia(web.MediaStreamConstraints(video: videoConstraint))
+          .toDart
+          .timeout(const Duration(seconds: 3));
+      _videoStream = stream;
+      _cameraViewId++;
+      final viewType = 'fac-camera-$_cameraViewId';
+      ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) {
+        final video = web.HTMLVideoElement()
+          ..autoplay = true
+          ..muted = true
+          ..srcObject = stream;
+        video.setAttribute('playsinline', 'true');
+        video.style
+          ..setProperty('width', '320px')
+          ..setProperty('height', '220px')
+          ..setProperty('object-fit', 'cover')
+          ..setProperty('display', 'block');
+        final wrap = web.HTMLDivElement();
+        wrap.style
+          ..setProperty('width', '320px')
+          ..setProperty('height', '220px')
+          ..setProperty('overflow', 'hidden')
+          ..setProperty('position', 'relative');
+        wrap.append(video);
+        _videoEl = video;
+        return wrap;
+      });
+      _cameraSurface = VideoSurface(
+        handle: _cameraViewId,
+        kind: VideoSurfaceKind.htmlElement,
+      );
+      _cameraFormat = requested;
+      if (muted) {
+        stream.getVideoTracks().toDart.forEach((track) {
+          track.enabled = false;
+        });
+      }
+      return NativeGraphStart.started;
+    } on Object {
+      _cameraSurface = null;
+      _cameraFormat = null;
+      return NativeGraphStart.unavailable;
+    }
+  }
+
+  @override
+  Future<void> stopCameraNative() async {
+    _videoStream?.getTracks().toDart.forEach((track) => track.stop());
+    _videoStream = null;
+    _videoEl = null;
+    _cameraSurface = null;
+    _cameraFormat = null;
+  }
+
+  @override
+  Future<void> selectCameraNative(String cameraId) async {
+    _selectedCameraId = cameraId;
+    if (_videoStream != null) {
+      await startCameraNative(
+        cameraId: cameraId,
+        videoFormat: _cameraFormat,
+        enabled: true,
+        muted: false,
+      );
+    }
+  }
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) async {
+    if (!enabled) {
+      _videoStream?.getTracks().toDart.forEach((track) => track.stop());
+      _videoStream = null;
+      _cameraSurface = null;
+    } else {
+      await startCameraNative(
+        cameraId: _selectedCameraId,
+        videoFormat: _cameraFormat,
+        enabled: true,
+      );
+    }
+  }
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) async {
+    _videoStream?.getVideoTracks().toDart.forEach((track) {
+      track.enabled = !muted;
+    });
   }
 }

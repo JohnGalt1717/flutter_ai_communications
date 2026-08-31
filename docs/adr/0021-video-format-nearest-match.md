@@ -1,0 +1,3 @@
+# Video Format is nearest-match; missing camera does not fail the Session
+
+The default requested Video Format is 1280×720 at 30 fps. The graph picks a Native Video Format closest to that request: the next higher resolution if any exists, otherwise the next lower, with frame rate closest to 30. A Session does not fail because no camera is present, camera permission was denied, or no mode matches. Session status reports that video is not running and why. The host decides whether that is a product failure (proctoring vs optional camera). Microphone denial when audio capture was requested remains a Start result failure.

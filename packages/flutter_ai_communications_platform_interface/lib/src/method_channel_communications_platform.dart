@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+import 'camera_permission.dart';
 import 'flutter_ai_communications_platform.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
@@ -253,6 +254,170 @@ class MethodChannelCommunicationsPlatform
   Stream<OsRouteChange> get osRouteChanges {
     _ensureListening();
     return _routeOut.stream;
+  }
+
+  VideoSurface? _lastVideoSurface;
+  VideoFormat? _lastNativeVideoFormat;
+
+  @override
+  VideoSurface? get lastVideoSurface => _lastVideoSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() async {
+    _ensureListening();
+    try {
+      final raw = await _methods.invokeMethod<List<dynamic>>('enumerateCameras');
+      return _readCameras(raw);
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  @override
+  Future<CameraPermission> requestCameraPermission() async {
+    _ensureListening();
+    try {
+      final value = await _methods.invokeMethod<String>(
+        'requestCameraPermission',
+      );
+      return switch (value) {
+        'denied' => CameraPermission.denied,
+        'restricted' => CameraPermission.restricted,
+        _ => CameraPermission.granted,
+      };
+    } on MissingPluginException {
+      return CameraPermission.denied;
+    }
+  }
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) async {
+    _ensureListening();
+    try {
+      final value = await _methods.invokeMethod<Object?>('startCameraNative', {
+        'cameraId': cameraId,
+        'width': videoFormat?.width ?? VideoFormat.defaultFormat.width,
+        'height': videoFormat?.height ?? VideoFormat.defaultFormat.height,
+        'frameRate': videoFormat?.frameRate ?? VideoFormat.defaultFormat.frameRate,
+        'enabled': enabled,
+        'muted': muted,
+      });
+      if (value is Map) {
+        final status = value['status'] as String? ?? 'started';
+        if (status != 'started') {
+          _lastVideoSurface = null;
+          _lastNativeVideoFormat = null;
+          return NativeGraphStart.unavailable;
+        }
+        final handle = value['textureId'] as int? ?? value['handle'] as int?;
+        final kindName = value['kind'] as String?;
+        _lastVideoSurface = handle == null
+            ? null
+            : VideoSurface(
+                handle: handle,
+                kind: kindName == 'htmlElement'
+                    ? VideoSurfaceKind.htmlElement
+                    : VideoSurfaceKind.texture,
+              );
+        final width = value['width'] as int?;
+        final height = value['height'] as int?;
+        final frameRate = value['frameRate'] as int?;
+        _lastNativeVideoFormat = width != null && height != null
+            ? VideoFormat(
+                width: width,
+                height: height,
+                frameRate: frameRate ?? 30,
+              )
+            : videoFormat ?? VideoFormat.defaultFormat;
+        return NativeGraphStart.started;
+      }
+      _lastVideoSurface = null;
+      _lastNativeVideoFormat = null;
+      return NativeGraphStart.unavailable;
+    } on MissingPluginException {
+      _lastVideoSurface = null;
+      _lastNativeVideoFormat = null;
+      return NativeGraphStart.unavailable;
+    }
+  }
+
+  @override
+  Future<void> stopCameraNative() async {
+    _lastVideoSurface = null;
+    _lastNativeVideoFormat = null;
+    try {
+      await _methods.invokeMethod<void>('stopCameraNative');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> selectCameraNative(String cameraId) async {
+    try {
+      await _methods.invokeMethod<void>('selectCameraNative', {
+        'cameraId': cameraId,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) async {
+    try {
+      await _methods.invokeMethod<void>('setCameraEnabledNative', {
+        'enabled': enabled,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) async {
+    try {
+      await _methods.invokeMethod<void>('setMuteVideoNative', {'muted': muted});
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  List<CameraEndpoint> _readCameras(List<dynamic>? raw) {
+    if (raw == null) {
+      return const [];
+    }
+    return [
+      for (final item in raw)
+        if (item is Map)
+          CameraEndpoint(
+            id: item['id'] as String? ?? '',
+            name: item['name'] as String? ?? '',
+            facing: switch (item['facing'] as String?) {
+              'user' => CameraFacing.user,
+              'environment' => CameraFacing.environment,
+              'external' => CameraFacing.external,
+              _ => CameraFacing.unspecified,
+            },
+            modes: [
+              for (final mode in item['modes'] as List<dynamic>? ?? const [])
+                if (mode is Map)
+                  VideoFormat(
+                    width: mode['width'] as int? ?? 0,
+                    height: mode['height'] as int? ?? 0,
+                    frameRate: mode['frameRate'] as int? ?? 30,
+                  ),
+            ],
+          ),
+    ];
   }
 
   /// EventChannels need ServicesBinding. Plugin [registerWith] runs first.

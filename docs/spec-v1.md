@@ -50,7 +50,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 ## Implementation Decisions
 
 - Pub workspace, federated plugin: app package, `platform_interface`, `shared`, `ios`, `android`, `web`, `macos`, `windows`, `linux`. No Melos. Current Flutter `pubspec` / workspace / analysis conventions.
-- Public module is `AudioManager` + one `Session`. Catalog works while idle.
+- Public module is `CommunicationsManager` + one `Session`. Catalog works while idle.
 - `StartResult` is a sealed set: `ready`, `denied`, `restricted`, `unavailable`, `alreadyActive`, `failed`. Isolation is never a start failure.
 - Preference is a `start()` argument only. Session select/setSoundFloor are ephemeral.
 - One capture stream; mute = silence frames; pause parks both sides; stop ends the Session.
@@ -67,7 +67,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 
 ## Testing Decisions
 
-- Test external behaviour at `AudioManager`, `Session`, `CoverageSource`, and the platform interface. Do not assert private native steps.
+- Test external behaviour at `CommunicationsManager`, `Session`, `CoverageSource`, and the platform interface. Do not assert private native steps.
 - Shared DSP (floor, barge-in, pairing, transcode) is tested with fixture PCM and a fake platform adapter.
 - Platform tickets add integration coverage: permission, enum, route class, Isolation detect, reset that does not end capture subscriptions.
 - Example + Orchestration is the UI-to-success path on iOS, Android, web, macOS, Windows, and Linux.

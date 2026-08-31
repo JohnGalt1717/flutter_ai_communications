@@ -21,6 +21,16 @@ final class Session {
     required this._onStopped,
     required this._logger,
     NativeFormatReport? nativeFormats,
+    this.cameraSend = false,
+    this.videoFormat = VideoFormat.defaultFormat,
+    this.cameraPreference = const CameraPreference(),
+    this.videoProcessor = const NoneVideoProcessor(),
+    String? cameraId,
+    bool cameraEnabled = true,
+    bool videoMuted = false,
+    VideoSurface? videoSurface,
+    VideoFormat? nativeVideoFormat,
+    String? videoUnavailableReason,
   }) : _platform = platform,
        _catalog = List<Endpoint>.of(catalog),
        _desired = desired,
@@ -36,7 +46,13 @@ final class Session {
        _captureController = StreamController<Uint8List>.broadcast(),
        _isolationController = StreamController<IsolationEvent>.broadcast(),
        _coverageController = StreamController<Coverage>.broadcast(),
-       _statusController = StreamController<SessionStatus>.broadcast() {
+       _statusController = StreamController<SessionStatus>.broadcast(),
+       _cameraId = cameraId,
+       _cameraEnabled = cameraEnabled,
+       _videoMuted = videoMuted,
+       _videoSurface = videoSurface,
+       _nativeVideoFormat = nativeVideoFormat,
+       _videoUnavailableReason = videoUnavailableReason {
     capture = _captureController.stream;
     isolation = _isolationController.stream;
     coverage = _coverageController.stream;
@@ -160,14 +176,26 @@ final class Session {
   /// Playback-in Format. May differ from [captureFormat].
   final AudioFormat playbackFormat;
 
-  /// Preference the host passed to [AudioManager.start]. Never rewritten.
+  /// Preference the host passed to [CommunicationsManager.start]. Never rewritten.
   final SessionPreference preference;
 
   /// Whether barge-in is local or left to remote VAD.
   final BargeInPolicy bargeInPolicy;
 
-  /// Capture, playback, or duplex.
+  /// Capture, playback, duplex, or no audio edges.
   final SessionDirection direction;
+
+  /// Whether this Session requested camera send.
+  final bool cameraSend;
+
+  /// Requested Video Format.
+  final VideoFormat videoFormat;
+
+  /// Camera preference used at start.
+  final CameraPreference cameraPreference;
+
+  /// v1 is [NoneVideoProcessor].
+  final VideoProcessor videoProcessor;
 
   /// Host-provided Session purpose. Named by [StartAlreadyActive].
   final String? purpose;
@@ -262,6 +290,63 @@ final class Session {
   /// Ephemeral render Endpoint id, if the user overrode [preference].
   String? get selectedRenderId => _desired.renderId;
 
+  /// Explicit or resolved camera id.
+  String? get selectedCameraId => _cameraId;
+
+  /// Whether outbound video is enabled (not Camera-off).
+  bool get isCameraEnabled => _cameraEnabled;
+
+  /// Whether Mute-video is substituting black frames.
+  bool get isVideoMuted => _videoMuted;
+
+  /// Local send Video surface, if video is running.
+  VideoSurface? get videoSurface => _videoSurface;
+
+  /// Negotiated Native Video Format, if video is running.
+  VideoFormat? get nativeVideoFormat => _nativeVideoFormat;
+
+  /// Why video is not running: `denied`, `restricted`, `none`, `no-mode`, or null.
+  String? get videoUnavailableReason => _videoUnavailableReason;
+
+  /// Whether remotes are still receiving a video send (including black frames).
+  bool get isSendingVideo =>
+      cameraSend &&
+      _cameraEnabled &&
+      _videoSurface != null &&
+      !_stopped &&
+      !_paused;
+
+  /// Start-able snapshot of this Session. Does not include Transport or streams.
+  SessionSettings get settings => SessionSettings(
+    direction: direction,
+    cameraSend: cameraSend,
+    captureFormat: captureFormat,
+    playbackFormat: playbackFormat,
+    videoFormat: videoFormat,
+    preference: SessionPreference(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId,
+      soundFloor: preference.soundFloor,
+      processor: preference.processor,
+      noiseCancelling: preference.noiseCancelling,
+      endpoints: _endpoints,
+    ),
+    cameraPreference: cameraPreference,
+    cameraId: _cameraId,
+    videoProcessor: videoProcessor,
+    muted: _muted,
+    cameraEnabled: _cameraEnabled,
+    purpose: purpose,
+    bargeInPolicy: bargeInPolicy,
+  );
+
+  String? _cameraId;
+  late bool _cameraEnabled;
+  late bool _videoMuted;
+  VideoSurface? _videoSurface;
+  VideoFormat? _nativeVideoFormat;
+  String? _videoUnavailableReason;
+
   /// Renders [bytes] in [playbackFormat]. No-op while paused, stopped, or
   /// capture-only.
   Future<void> play(Uint8List bytes) async {
@@ -282,6 +367,92 @@ final class Session {
       'rendered': _playback.rendered,
       'queued': _playback.queued,
     });
+  }
+
+  /// Live camera switch. Remotes see it. Does not write Camera preference.
+  Future<void> selectCamera(String cameraId) async {
+    if (_stopped) {
+      return;
+    }
+    _cameraId = cameraId;
+    await _platform.selectCameraNative(cameraId);
+  }
+
+  /// Mute-video: black frames, graph stays up.
+  Future<void> muteVideo() async {
+    if (_stopped || !_cameraEnabled) {
+      return;
+    }
+    _videoMuted = true;
+    await _platform.setMuteVideoNative(true);
+  }
+
+  /// Restores real frames on the same send path.
+  Future<void> unmuteVideo() async {
+    if (_stopped || !_cameraEnabled) {
+      return;
+    }
+    _videoMuted = false;
+    await _platform.setMuteVideoNative(false);
+  }
+
+  /// Camera-off when [enabled] is false. Audio continues.
+  Future<void> setCameraEnabled(bool enabled) async {
+    if (_stopped) {
+      return;
+    }
+    _cameraEnabled = enabled;
+    if (!enabled) {
+      _videoMuted = false;
+      _videoSurface = null;
+    }
+    await _platform.setCameraEnabledNative(enabled);
+    if (enabled) {
+      _videoSurface = _platform.lastVideoSurface;
+    }
+  }
+
+  /// Attach camera send later on the same Session. Does not replace [capture].
+  Future<void> enableVideo({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    VideoProcessor processor = const NoneVideoProcessor(),
+  }) async {
+    if (_stopped) {
+      return;
+    }
+    final permission = await _platform.requestCameraPermission();
+    if (permission != CameraPermission.granted) {
+      _videoUnavailableReason = permission.name;
+      _publishStatus(const SessionStatus.videoNotRunning());
+      return;
+    }
+    final cameras = await _platform.enumerateCameras();
+    final resolved =
+        cameraPreference.resolve(cameras) ?? cameras.firstOrNull;
+    final id = cameraId ?? _cameraId ?? resolved?.id;
+    if (id == null) {
+      _videoUnavailableReason = 'none';
+      _publishStatus(const SessionStatus.videoNotRunning());
+      return;
+    }
+    final start = await _platform.startCameraNative(
+      cameraId: id,
+      videoFormat: videoFormat ?? this.videoFormat,
+      enabled: true,
+      muted: false,
+    );
+    if (start != NativeGraphStart.started) {
+      _videoUnavailableReason = 'none';
+      _publishStatus(const SessionStatus.videoNotRunning());
+      return;
+    }
+    _cameraId = id;
+    _cameraEnabled = true;
+    _videoMuted = false;
+    _videoUnavailableReason = null;
+    _videoSurface = _platform.lastVideoSurface;
+    _nativeVideoFormat = _platform.lastNativeVideoFormat;
   }
 
   /// Mute keeps the same capture subscription and emits silence frames.
@@ -370,6 +541,7 @@ final class Session {
       _stopped = true;
       _lifecycle = SessionLifecycle.stopped;
       try {
+        await _platform.stopCameraNative();
         await _stopNativeBounded();
       } on Object catch (error, stack) {
         _logger.warning(

@@ -46,7 +46,7 @@ The federated iOS / Android / Web / macOS / Windows / Linux implementations are 
 ## Quick start
 
 ```dart
-final manager = AudioManager(
+final manager = CommunicationsManager(
   coverageSource: myCoverageSource, // optional; default reports airplane / path death
   logger: Logger('comms'),          // optional; attach to ISpect like Scribe does
 );

@@ -24,6 +24,8 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AI Communications needs the microphone for a live Session.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AI Communications needs the camera for a lobby Session and in-call video.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

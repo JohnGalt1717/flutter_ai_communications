@@ -4,6 +4,8 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AI Communications needs the microphone for a live Session.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AI Communications needs the camera for a lobby Session and in-call video.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>AI Communications routes a Session to Bluetooth headsets.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

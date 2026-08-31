@@ -123,7 +123,7 @@ final class LoopbackCommunicationsPlatform
         captureFormat: captureFormat,
         playbackFormat: playbackFormat,
         noiseCancelling: noiseCancelling,
-      );
+      ).timeout(const Duration(seconds: 3));
     } on Object {
       started = NativeGraphStart.failed;
     }

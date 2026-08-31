@@ -17,6 +17,13 @@ export 'src/pairing.dart';
 export 'src/playback_timeline.dart';
 export 'src/sound_floor.dart';
 export 'src/voice_metrics.dart';
+export 'src/camera_endpoint.dart';
+export 'src/camera_facing.dart';
+export 'src/camera_preference.dart';
+export 'src/video_format.dart';
+export 'src/video_format_negotiator.dart';
+export 'src/video_processor.dart';
+export 'src/video_surface.dart';
 
 /// Placeholder so older workspace tests still resolve.
 const String sharedPackageName = 'flutter_ai_communications_shared';

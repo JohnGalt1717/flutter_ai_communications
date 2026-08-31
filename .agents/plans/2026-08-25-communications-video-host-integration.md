@@ -1,7 +1,9 @@
 # Plan: Host communications video (example first)
 
-**Status:** Ready to implement after library contracts exist. Do not start
-native camera work in a host app.
+**Status:** Example lobby + Session contracts shipped. Do not start native
+camera work in a host app. Remaining native graphs are Windows and Linux
+(see `.agents/plans/video-capture-and-sinks.md` and
+`docs/windows-linux-video-setup.md`).
 **Audience:** Fresh agent working in `JohnGalt1717/flutter_ai_communications`.
 **Date:** 2026-08-25
 **Library source of truth:** `docs/spec-video-v1.md`, ADRs 0012–0017,
@@ -31,7 +33,7 @@ The host owns:
 - Transport: PeerConnection + signaling when a real call exists
 - attaching the library Video sink (first: flutter_webrtc companion package)
 - permission copy and all user-facing strings
-- Marionette keys on the landing and in-session pages
+- Orchestration keys on the lobby subsection and in-session pages
 
 The library owns:
 
@@ -49,11 +51,11 @@ the example. Done means:
 
 - one application-scoped Audio manager
 - idle camera catalog + Camera preference bind work before Session
-- a landing page follows the host narrative
-- join promotes preview into one Session
+- a lobby subsection follows the host narrative (lobby is a Session)
+- join stops the lobby Session and starts a meeting Session from Session settings
 - mute-audio, mute-video, Camera-off, switch camera, processor, pause, stop
 - host PeerConnection (or documented loopback) receives the sink track
-- Marionette can drive lobby → join → controls on at least one head
+- Orchestration can drive lobby → join → controls on at least one head
 - no second camera plugin, no Dart production frame pump, no PeerConnection
   types inside Session
 
@@ -74,16 +76,16 @@ page; ticket `13` is the library-side acceptance of it.
 
 | Topic | Decision |
 | --- | --- |
-| Output seam | Native Production video path + Preview Texture. No Dart byte wire into WebRTC. |
+| Output seam | Native Production video path + Video surface. No Dart byte wire into WebRTC. |
 | Session shape | One Session. Direction is a capability mask. Video can attach later. |
-| Pre-join | Idle manager preview. Not a Session. Promote or override on `start()`. |
+| Lobby | A Session with no Transport plugin. Join is stop + start with Session settings. |
 | Camera catalog | Separate from audio Endpoints. Separate Camera preference list. No AV Pair. |
-| Mute-video | Black frames, camera graph stays up, remote tile stays alive. |
-| Camera-off | Hardware stop, lens light out where the OS exposes it. |
+| Mute-video | In-session black frames. Not used in the lobby. |
+| Camera-off | Outbound video gone. Audio continues. Host avatar. |
 | Pause / stop | Pause parks audio+video. Stop ends the Session. |
-| Processors | Library-owned: none, blur(intensity), replace(bytes or asset). Fallback to none is a warning. |
-| Sinks | Provider seam. First sink is flutter_webrtc. Host owns PeerConnection and signaling. |
-| UI ownership | No library picker widgets. Host builds Teams-like and Zoom-like chrome. |
+| Processors | v1 none only. Blur/replace later plan. |
+| Transport | Plugin owns RTP. Host owns signaling, roster, tile layout. |
+| UI ownership | No library picker widgets. Example lobby is the first chrome and the Orchestration path. |
 | First library platforms | iOS, Android, Web, macOS, Windows. Linux camera and screen share later. |
 | Tickets | Markdown files in this repo. Not GitHub issues until asked. |
 
@@ -91,32 +93,32 @@ page; ticket `13` is the library-side acceptance of it.
 
 ```text
 Host (example/ first)
-  landing / in-call chrome, strings, routes, Marionette keys
+  lobby subsection + in-call chrome, strings, Orchestration keys
         |
         v
 Host wrapper (example services / view models)
-  one AudioManager
+  one Communications manager
   persist + bind Endpoint preference and Camera preference
-  Preview Texture widget (unbranded)
-  attach/detach Video sink
+  Video surface widget (unbranded)
+  attach Transport plugin after join
   map Start results and Session status to UI events
         |
         v
 flutter_ai_communications
-  catalogs, preview, Session, processors, native path
+  catalogs, lobby Session, meeting Session, Camera preview, native path
         |
-        +-- Preview Texture  --> Flutter Texture in host widget
-        +-- Video sink ------> flutter_ai_communications_webrtc
+        +-- Video surface --> Flutter Texture or web view id
+        +-- Transport plugin --> flutter_ai_communications_webrtc
                                   |
                                   v
-                         host PeerConnection.addTrack
+                         plugin PeerConnection / RTP
                          host signaling (out of this repo)
 ```
 
 Rules that are easy to violate:
 
-1. Do not start a Session just to draw a lobby self-view.
-2. Do not put flutter_webrtc types in `AudioManager` or Session wrappers
+1. Do start a Session for the lobby; do not attach a Transport plugin there.
+2. Do not put flutter_webrtc types in `CommunicationsManager` or Session wrappers
    beyond the sink package API.
 3. Do not invent a host-side blur/replace pipeline.
 4. Do not persist mid-session camera picks into Camera preference.

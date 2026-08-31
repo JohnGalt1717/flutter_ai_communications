@@ -22,11 +22,12 @@ export 'src/session_diagnostics.dart';
 export 'src/session_options.dart';
 export 'src/session_status.dart';
 
-part 'src/audio_manager.dart';
+part 'src/communications_manager.dart';
+part 'src/camera_preview.dart';
 part 'src/session.dart';
 part 'src/start_result.dart';
 
-/// App-facing entry. Prefer [AudioManager] for Session work.
+/// App-facing entry. Prefer [CommunicationsManager] for Session work.
 final class FlutterAiCommunications {
   /// The registered platform adapter's name.
   static String get platformName =>

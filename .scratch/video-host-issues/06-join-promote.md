@@ -1,14 +1,16 @@
-# 06 — Join, promote, enable-video-later
+# 06 — Join and enable-video-later
 
-**What to build:** `start()` promotes or overrides preview. After StartReady
-the Session owns the Texture. Audio-only join can enable video later on the
-same Session. Camera denial is a typed Start result.
+**What to build:** Join stops the lobby Session and starts a meeting Session
+from Session settings (or copied capture/render/camera ids, mute, Camera-off).
+Echo Transport / WebRTC plugin attaches only after the meeting Session is
+ready. Audio-only join can enable video later on the same meeting Session.
+Missing camera is Session status, not a failed start.
 
-**Blocked by:** 05 — Landing page; library ticket 02
+**Blocked by:** 05 — Lobby subsection; library ticket 02
 
 **Status:** ready-for-agent
 
-- [ ] Unchanged camera/processor does not flicker on promote
-- [ ] Override at start sticks
-- [ ] Enable-video-later does not replace audio streams
-- [ ] Denied / restricted / no usable camera are handled in UI
+- [ ] Lobby and meeting are different Session objects
+- [ ] Copied picks stick on the meeting Session
+- [ ] Enable-video-later does not replace the audio Capture stream
+- [ ] Camera denied / none is shown from Session status; Session stays up

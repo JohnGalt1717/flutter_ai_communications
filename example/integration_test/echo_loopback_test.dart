@@ -16,7 +16,7 @@ void main() {
     final loopback = LoopbackCommunicationsPlatform.wrapRegistered();
     addTearDown(loopback.dispose);
 
-    final manager = AudioManager();
+    final manager = CommunicationsManager();
     addTearDown(() async {
       await manager.session?.stop();
     });

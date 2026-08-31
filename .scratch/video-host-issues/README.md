@@ -17,9 +17,9 @@ Library tickets stay in `.scratch/video-v1-issues/`.
 | 02 | Audio manager and catalogs in example | 01 and library 01–02 |
 | 03 | Host preference persistence | 02 |
 | 04 | Unbranded Preview Texture primitive | 02 and library 03 |
-| 05 | Example landing page | 03, 04 |
-| 06 | Join, promote, enable-video-later | 05 and library 02 |
+| 05 | Example lobby subsection | 03, 04 |
+| 06 | Join and enable-video-later | 05 and library 02 |
 | 07 | In-session AV controls | 06 |
 | 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 |
-| 09 | Marionette path and receipts | 07 and one native library graph |
+| 09 | Orchestration path and receipts | 07 and one native library graph |
 | 10 | Docs pass | 09 |

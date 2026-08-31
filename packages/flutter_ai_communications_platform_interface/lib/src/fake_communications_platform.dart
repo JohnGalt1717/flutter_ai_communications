@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+import 'camera_permission.dart';
 import 'flutter_ai_communications_platform.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
@@ -14,9 +15,12 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Creates a fake adapter.
   FakeCommunicationsPlatform({
     this.permission = MicrophonePermission.granted,
+    this.cameraPermission = CameraPermission.granted,
     this.nativeStart = NativeGraphStart.started,
     List<Endpoint>? catalog,
-  }) : catalog = List<Endpoint>.of(catalog ?? defaultCatalog);
+    List<CameraEndpoint>? cameras,
+  }) : catalog = List<Endpoint>.of(catalog ?? defaultCatalog),
+       cameras = List<CameraEndpoint>.of(cameras ?? defaultCameras);
 
   /// Built-in handset and speakerphone Endpoints.
   static const List<Endpoint> defaultCatalog = [
@@ -57,6 +61,25 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       routeClass: RouteClass.bluetooth,
       isCapture: false,
       pairId: 'airpods',
+    ),
+  ];
+
+  /// Built-in front and back cameras.
+  static const List<CameraEndpoint> defaultCameras = [
+    CameraEndpoint(
+      id: 'front',
+      name: 'Front',
+      facing: CameraFacing.user,
+      modes: [VideoFormat.defaultFormat],
+    ),
+    CameraEndpoint(
+      id: 'back',
+      name: 'Back',
+      facing: CameraFacing.environment,
+      modes: [
+        VideoFormat(width: 1920, height: 1080, frameRate: 30),
+        VideoFormat.defaultFormat,
+      ],
     ),
   ];
 
@@ -335,6 +358,113 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   @override
   Stream<OsRouteChange> get osRouteChanges => osRouteController.stream;
+
+  /// Camera permission [requestCameraPermission] returns.
+  CameraPermission cameraPermission;
+
+  /// Current camera catalog.
+  List<CameraEndpoint> cameras;
+
+  /// How many times [requestCameraPermission] ran.
+  int cameraPermissionRequests = 0;
+
+  /// How many times [startCameraNative] ran.
+  int startCameraCalls = 0;
+
+  /// How many times [stopCameraNative] ran.
+  int stopCameraCalls = 0;
+
+  /// Whether the camera graph is running.
+  bool cameraRunning = false;
+
+  /// Whether the camera is enabled (not Camera-off).
+  bool cameraEnabled = true;
+
+  /// Whether Mute-video is substituting black frames.
+  bool muteVideo = false;
+
+  /// Selected camera id.
+  String? selectedCameraId;
+
+  VideoSurface? _lastVideoSurface;
+  VideoFormat? _lastNativeVideoFormat;
+
+  @override
+  VideoSurface? get lastVideoSurface => _lastVideoSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() async =>
+      List<CameraEndpoint>.of(cameras);
+
+  @override
+  Future<CameraPermission> requestCameraPermission() async {
+    cameraPermissionRequests++;
+    return cameraPermission;
+  }
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) async {
+    startCameraCalls++;
+    if (cameraPermission != CameraPermission.granted) {
+      cameraRunning = false;
+      _lastVideoSurface = null;
+      _lastNativeVideoFormat = null;
+      return NativeGraphStart.unavailable;
+    }
+    final resolved = cameras.where((camera) => camera.id == cameraId).firstOrNull ??
+        cameras.firstOrNull;
+    if (resolved == null) {
+      cameraRunning = false;
+      _lastVideoSurface = null;
+      _lastNativeVideoFormat = null;
+      return NativeGraphStart.unavailable;
+    }
+    selectedCameraId = resolved.id;
+    cameraEnabled = enabled;
+    muteVideo = muted;
+    cameraRunning = enabled;
+    const negotiator = VideoFormatNegotiator();
+    _lastNativeVideoFormat = negotiator.nearest(
+      videoFormat ?? VideoFormat.defaultFormat,
+      resolved.modes.isEmpty ? const [VideoFormat.defaultFormat] : resolved.modes,
+    );
+    _lastVideoSurface = cameraRunning
+        ? const VideoSurface(handle: 1)
+        : null;
+    return NativeGraphStart.started;
+  }
+
+  @override
+  Future<void> stopCameraNative() async {
+    stopCameraCalls++;
+    cameraRunning = false;
+    _lastVideoSurface = null;
+  }
+
+  @override
+  Future<void> selectCameraNative(String cameraId) async {
+    selectedCameraId = cameraId;
+  }
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) async {
+    cameraEnabled = enabled;
+    cameraRunning = enabled;
+    _lastVideoSurface = enabled ? const VideoSurface(handle: 1) : null;
+  }
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) async {
+    muteVideo = muted;
+  }
 
   /// Closes injected controllers. Tests only.
   Future<void> dispose() async {

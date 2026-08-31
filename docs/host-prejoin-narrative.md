@@ -1,109 +1,112 @@
-# Host narrative: Teams- and Zoom-style landing page
+# Host narrative: Teams- and Zoom-style lobby
 
-This library does not ship a device picker. It ships catalogs, preference resolution, Pre-join preview, and Session controls. The host builds the page. If this narrative cannot produce both a Teams-like and a Zoom-like lobby, the API failed.
+This library does not ship a device picker. It ships catalogs, preference
+resolution, Session, Camera preview, and Video surfaces. The host builds the
+page. If this narrative cannot produce both a Teams-like and a Zoom-like lobby,
+the API failed.
+
+The first host in this repo is `example/`. That lobby subsection is also the
+Orchestration e2e path. Product hosts copy the API usage, not native graphs.
 
 ## What the page must do
 
-Before a conversation exists, the user can:
+Before a meeting Transport exists, the user can:
 
-1. See which mode this product entry point is: audio only, video only, or AV.
-2. Pick capture and render audio Endpoints from the audio catalog.
-3. Pick one camera from the Camera Endpoint catalog when the mode includes video.
-4. See themselves on a Preview Texture when video is on.
-5. Choose Video processor none, blur, or replace, and see it on that preview.
-6. Mute-audio, Mute-video, or Camera-off in the lobby without creating a Session.
-7. Join, which calls `start()` with the current picks.
+1. See mode: audio only, video only, or AV.
+2. Enter a **lobby Session** (`start()`, no Transport plugin). Permission is
+   requested inside `start()` and waits.
+3. Pick capture and render Endpoints from the audio catalog (live switch on
+   that Session).
+4. Pick a Camera Endpoint when the mode includes video. Self-view is the lobby
+   Session’s Video surface, not Camera preview.
+5. Mute (silence on the Capture stream). Lobby video is Camera-off or camera
+   on, not Mute-video.
+6. Run Test record: record Capture stream bytes, play them on the selected
+   render Endpoint.
+7. Leave without joining: `session.stop()`.
+8. Join: read **Session settings**, `stop()` the lobby Session, `start()` a
+   meeting Session with those settings, attach the Transport plugin (example:
+   Echo Transport or the WebRTC plugin).
 
-Zoom-like chrome puts speaker, mic, and camera on one row under a large self-view. Teams-like chrome puts devices in a settings flyout beside a self-view. Both are the same library calls.
+Zoom-like chrome: speaker, mic, and camera on one row under a large self-view.
+Teams-like chrome: devices in a settings flyout beside a self-view. Both are
+the same library calls. The example mimics the best of both: large self-view,
+device picks, permission on enter, Join.
 
-## Idle, before Session
+## Lobby is a Session
 
 ```text
-manager.endpoints()            // audio catalog, works idle
-manager.cameras()              // camera catalog, works idle after permission
-manager.bindPreference(...)    // host-persisted audio list
+manager.endpoints()
+manager.cameras()                 // when the catalog exists
+manager.bindPreference(...)
 manager.bindCameraPreference(...)
-preview = await manager.startPreview(
-  videoFormat: ...,            // default 1280x720@30
-  cameraId: ...,               // optional explicit pick
-  processor: BlurVideoProcessor(intensity: 0.6)
-  // or ReplaceVideoProcessor.bytes(...) / .asset(...)
+result = await manager.start(
+  purpose: 'lobby',
+  direction: ...,                 // audio, video, or AV
+  preference: ...,
+  cameraPreference: ...,
 )
-preview.textureId             // Flutter Texture
-preview.selectCamera(id)      // ephemeral, does not write preference
-preview.setProcessor(...)
-preview.setCameraEnabled(false)  // Camera-off in the lobby
-await preview.stop()          // leaving the page without joining
+// no Transport plugin
+lobby.select(...)                 // audio live switch
+lobby.selectCamera(id)            // when video exists; remotes do not exist
+lobby.mute() / unmute()
+lobby.setCameraEnabled(false)     // Camera-off in the lobby
+settings = lobby.settings         // when the type exists; else host copies ids
+await lobby.stop()
 ```
 
-Permission: `startPreview` requests camera (and mic if the host asked for meters) and waits. Denied is a typed result. Do not invent a second permission helper in product code if the manager already waits.
-
-Audio meters on the landing page, if shown, subscribe to a short-lived preview meter or wait until Session. Do not start a full duplex Session just to draw a mic bar.
+Do not start a second graph for lobby meters. The Capture stream is the meter.
+Do not attach Echo Transport or a WebRTC plugin in the lobby.
 
 ## Join
 
 ```text
 result = await manager.start(
-  direction: audioCapture + audioPlayback + videoCapture,
-  captureFormat: ...,
-  playbackFormat: ...,
-  videoFormat: ...,
-  preference: SessionPreference(...),          // audio
-  cameraPreference: ...,                       // or explicit cameraId
-  videoProcessor: preview.processor,
+  purpose: 'meeting',
+  settings: settings,             // or equivalent start args copied from lobby
 )
+await session.attach Transport plugin / EchoTransport
 ```
 
-`start()` may override the preview camera. After `StartReady`, stop calling preview APIs; the Session now owns the Preview Texture. Promoting should not flicker if the camera and processor are unchanged.
+Objects are not shared. A brief exclusive-device gap is allowed. Do not freeze
+the last camera frame.
 
-Audio-only join omits video direction. Later:
+Audio-only join omits camera send. Later `enableVideo` on the same meeting
+Session. Missing camera or camera denial does not fail start(); Session status
+says video is not running. The host (proctoring vs optional camera) decides.
 
-```text
-await session.enableVideo(cameraId: ..., videoFormat: ..., processor: ...)
-await session.selectCamera(otherId)
-await session.setVideoProcessor(...)
-await session.muteVideo()       // black frames
-await session.setCameraEnabled(false)  // hardware off
-await session.pause()           // audio + video
-```
-
-## In-call controls both products need
+## In-call
 
 | Control | Library call |
 | --- | --- |
 | Mic mute | `session.mute()` / unmute (silence frames) |
 | Video mute / black tile | `session.muteVideo()` |
-| Camera off / lens light out | `session.setCameraEnabled(false)` |
-| Switch camera | `session.selectCamera(id)` |
-| Blur / replace / none | `session.setVideoProcessor(...)` |
-| Speaker / headset | `session.selectRender(...)` |
+| Camera off / avatar | `session.setCameraEnabled(false)` |
+| Flip camera | `session.selectCamera(id)` live switch |
+| Camera settings | Camera-off, then Camera preview; host Apply/Cancel |
+| Blur / replace | later plan; v1 processor is none |
+| Speaker / headset | `session.selectRender(...)` live switch |
 | Leave | `session.stop()` |
 
-If a product needs a control that is not a row in this table, open a spec gap. Do not fake it in the host with a second camera plugin.
+## Orchestration
 
-## Sinks
-
-Attach after `StartReady` (or as soon as video is enabled):
-
-```text
-await session.attachSink(webRtcSink)   // companion package
-// later: disk recorder, WebTransport
-```
-
-Local preview does not require a sink. `RTCVideoView` is optional extra after the WebRTC sink exists. The library Texture is the source of truth for “what I look like.”
+Drive the **example lobby** on a real head: enter lobby → permission → pick
+capture/render (and camera when present) → mute → Join → in-session mute /
+Camera-off / flip / leave. Keys live on the lobby subsection and the meeting
+subsection. That path is Orchestration. Do not call it Marionette.
 
 ## Persistence
 
-The host stores audio Endpoint preference and Camera preference. The library never writes them. Lobby picks that should survive the next launch belong in host storage and are passed into `bindPreference` / `bindCameraPreference` or `start()`.
+The host stores Endpoint preference and Camera preference. The library never
+writes them.
 
 ## Failure mapping
 
-Map typed results to product copy only:
+Host copy only:
 
-- microphone denied / restricted
-- camera denied / restricted
-- no usable camera
+- microphone denied / restricted (start failed when audio capture was requested)
+- camera denied / restricted / none / no-mode (Session up; status says so)
 - already-active Session (show the other purpose)
-- processor unavailable (keep Session, warn, fall back to none)
+- processor unavailable (later: warn, stay on none)
 
 No library strings.

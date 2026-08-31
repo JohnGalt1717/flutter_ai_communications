@@ -1,6 +1,6 @@
 # Agent guide
 
-Functional Teams/Zoom-class communications audio for Flutter. The host owns Transport, device-order preference, and product UI. This repo is the Audio manager.
+Functional Teams/Zoom-class communications for Flutter. The host owns signaling, preference persistence, tile layout, and product UI. This repo is the Communications manager.
 
 ## Read first
 
@@ -32,7 +32,7 @@ This is a single-context repository using root `CONTEXT.md` and `docs/adr/`. See
 Pub workspace (Dart 3 `workspace:` / `resolution: workspace`), federated Flutter plugin:
 
 ```text
-packages/flutter_ai_communications/                    # AudioManager
+packages/flutter_ai_communications/                    # Communications manager
 packages/flutter_ai_communications_platform_interface/
 packages/flutter_ai_communications_shared/             # pairing, floor, barge-in, transcode
 packages/flutter_ai_communications_ios/
@@ -69,16 +69,16 @@ Load the skill before the work it covers:
 
 ## Non-negotiables
 
-- One live Session per Audio manager. `start()` returns a `StartResult`; expected failures are values, not thrown exceptions.
+- One live Session per Communications manager, plus at most one Camera preview. `start()` returns a `StartResult`; expected failures are values, not thrown exceptions. Missing camera does not fail the Session.
 - Permission is requested inside `start()` and blocks until the OS answers.
 - One capture stream: Transport, visualizer, and VOD see the same bytes. Mute emits silence frames.
 - Native reset must not replace the Session or its broadcast streams (ADR-0004).
 - Isolation is an event. No user-facing strings in the library (ADR-0005).
 - No `record`, `flutter_recorder`, or `flutter_soloud`. No ISpect dependency; log with `package:logging`.
-- Device-order preference is host-owned and out of scope. Camera is out of scope.
+- Device-order preference persistence is host-owned. Camera is in scope (catalog, Session video, Camera preview, Transport plugin). Screen share is specified, native work later.
 
 ## Testing
 
-Test at public seams (`AudioManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the AI-voice agent harness for iOS, Android, web, macOS, Windows, and Linux — not a SignalR demo.
+Test at public seams (`CommunicationsManager` / today's `CommunicationsManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the AI-voice agent harness for iOS, Android, web, macOS, Windows, and Linux — not a SignalR demo. Its lobby subsection is the Orchestration e2e path (permission, device picks, Join).
 
 Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-orchestration.md` (receipts) and `device-agent-lens` (flutter_agent_lens + flutter-skill). `flutter test` from a package dir. Loopback identity is not native proof.

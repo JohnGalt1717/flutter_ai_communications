@@ -7,14 +7,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late FakeCommunicationsPlatform platform;
-  late AudioManager manager;
+  late CommunicationsManager manager;
 
   setUp(() {
     FlutterAiCommunicationsPlatform.debugReset();
     Session.teardownTimeout = Duration.zero;
     platform = FakeCommunicationsPlatform();
     FlutterAiCommunicationsPlatform.instance = platform;
-    manager = AudioManager(
+    manager = CommunicationsManager(
       platform: platform,
       coverageSource: const AlwaysOkCoverageSource(),
     );
@@ -42,16 +42,19 @@ void main() {
   );
 
   test('Orchestration shell keys exist on SessionPage', () {
-    const start = Key('start');
+    const enter = Key('lobby-enter');
+    const join = Key('lobby-join');
     const mute = Key('mute');
     const pause = Key('pause');
     expect(const ExampleApp().manager, isNull);
-    expect(start, isNot(mute));
-    expect(pause, isNot(start));
-    expect(const Key('prove'), isNot(start));
-    expect(const Key('pipeline-log'), isNot(start));
+    expect(enter, isNot(mute));
+    expect(join, isNot(enter));
+    expect(pause, isNot(enter));
+    expect(const Key('prove'), isNot(enter));
+    expect(const Key('pipeline-log'), isNot(enter));
     expect(const Key('desired-capture'), isNot(const Key('observed-capture')));
     expect(const Key('generation'), isNot(const Key('status')));
+    expect(const Key('lobby'), isNot(const Key('meeting')));
   });
 
   testWidgets(
@@ -60,7 +63,8 @@ void main() {
       await tester.pumpWidget(ExampleApp(manager: manager));
       await tester.pump();
       await tester.pump();
-      await tester.tap(find.byKey(const Key('start')));
+      expect(find.byKey(const Key('lobby')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('lobby-enter')));
       await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
@@ -114,6 +118,19 @@ void main() {
             .data,
         '0/0/0/0',
       );
+      expect(find.byKey(const Key('lobby-join')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('lobby-join')));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.byKey(const Key('meeting')), findsOneWidget);
+      expect(find.byKey(const Key('prove')), findsOneWidget);
+      expect(
+        (find.byKey(const Key('direction')).evaluate().single.widget as Text)
+            .data,
+        contains('meeting'),
+      );
+
       await manager.session?.stop();
       await tester.pump(Duration.zero);
     },

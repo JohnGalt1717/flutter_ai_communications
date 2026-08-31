@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'camera_permission.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
@@ -167,4 +168,52 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   /// Command completion is not observation. Adapters update this only from
   /// native route state.
   PairingSnapshot get lastObservedRoute => const PairingSnapshot();
+
+  /// Snapshot of Camera Endpoints. Defaults unimplemented so older adapters load.
+  Future<List<CameraEndpoint>> enumerateCameras() {
+    throw UnimplementedError('enumerateCameras() has not been implemented.');
+  }
+
+  /// Requests the camera and waits for the OS answer.
+  Future<CameraPermission> requestCameraPermission() {
+    throw UnimplementedError(
+      'requestCameraPermission() has not been implemented.',
+    );
+  }
+
+  /// Starts the native camera graph. Does not fail the audio Session.
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) {
+    throw UnimplementedError('startCameraNative() has not been implemented.');
+  }
+
+  /// Stops the native camera graph without ending the Session.
+  Future<void> stopCameraNative() async {}
+
+  /// Ephemeral camera pick. Must not persist Camera preference.
+  Future<void> selectCameraNative(String cameraId) {
+    throw UnimplementedError('selectCameraNative() has not been implemented.');
+  }
+
+  /// Camera-off when [enabled] is false; hardware may stop.
+  Future<void> setCameraEnabledNative(bool enabled) {
+    throw UnimplementedError(
+      'setCameraEnabledNative() has not been implemented.',
+    );
+  }
+
+  /// Mute-video substitutes black frames; the graph stays up.
+  Future<void> setMuteVideoNative(bool muted) {
+    throw UnimplementedError('setMuteVideoNative() has not been implemented.');
+  }
+
+  /// Last Video surface from camera start, if any.
+  VideoSurface? get lastVideoSurface => null;
+
+  /// Negotiated Native Video Format from the last camera start.
+  VideoFormat? get lastNativeVideoFormat => null;
 }

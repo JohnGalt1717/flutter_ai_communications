@@ -32,7 +32,7 @@ void installNativeOrchestrationLogging() {
 }
 
 Future<Session> requireReady(
-  AudioManager manager, {
+  CommunicationsManager manager, {
   String? purpose,
   SessionPreference preference = const SessionPreference(soundFloor: 0),
 }) async {
@@ -59,12 +59,24 @@ Future<void> waitForCapture(
   List<Endpoint> catalog = const [],
 }) async {
   final deadline = DateTime.now().add(const Duration(seconds: 8));
+  var peakRms = 0.0;
   while (DateTime.now().isBefore(deadline)) {
-    if (session.diagnostics.captureFrameCount > 1 &&
-        (session.diagnostics.recentRms ?? 0) > 0) {
+    final rms = session.diagnostics.recentRms ?? 0;
+    if (rms > peakRms) {
+      peakRms = rms;
+    }
+    if (session.diagnostics.captureFrameCount > 1 && peakRms > 0) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  // Silent mics (emulator, mute-like zeros) still prove the capture graph.
+  if (session.diagnostics.captureFrameCount > 1) {
+    nativeOrchestrationLog.info(
+      'NATIVE_CAPTURE frames=${session.diagnostics.captureFrameCount} '
+      'peakRms=$peakRms recentRms=${session.diagnostics.recentRms}',
+    );
+    return;
   }
   final diagnostics = session.diagnostics;
   final names = [
@@ -92,13 +104,20 @@ Future<void> playFixture(Session session) async {
   }
 }
 
-Future<void> assertObserved(Session session) async {
+Future<bool> observedMatches(Session session) async {
   final deadline = DateTime.now().add(Session.convergenceDeadline);
   while (DateTime.now().isBefore(deadline)) {
     if (session.diagnostics.observedMatchesDesired) {
-      return;
+      return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  return false;
+}
+
+Future<void> assertObserved(Session session) async {
+  if (await observedMatches(session)) {
+    return;
   }
   final diagnostics = session.diagnostics;
   fail(

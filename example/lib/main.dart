@@ -15,6 +15,16 @@ void main() {
   // FlutterSkillBinding is not a WidgetsBinding; initialize ServicesBinding
   // before any platform EventChannel listen (loopback wrap).
   WidgetsFlutterBinding.ensureInitialized();
+  ErrorWidget.builder = (details) {
+    return ColoredBox(
+      color: const Color(0xFF5B0000),
+      child: Text(
+        '${details.exception}',
+        key: const Key('error'),
+        style: const TextStyle(color: Color(0xFFFFFFFF)),
+      ),
+    );
+  };
   _installAgentBindings();
   LoopbackCommunicationsPlatform.wrapRegistered();
   runApp(const ExampleApp());
@@ -34,13 +44,15 @@ void _installAgentBindings() {
   FlutterSkillBinding.ensureInitialized();
 }
 
+enum _HarnessPhase { idle, lobby, meeting }
+
 /// AI-voice harness that looks like a communications client.
 final class ExampleApp extends StatelessWidget {
   /// Creates the example app.
   const ExampleApp({super.key, this.manager});
 
-  /// Optional injected Audio manager (tests / agent harness).
-  final AudioManager? manager;
+  /// Optional injected Communications manager (tests / agent harness).
+  final CommunicationsManager? manager;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +65,7 @@ final class ExampleApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: SessionPage(manager: manager ?? AudioManager()),
+      home: SessionPage(manager: manager ?? CommunicationsManager()),
     );
   }
 }
@@ -64,13 +76,14 @@ final class SessionPage extends StatefulWidget {
   const SessionPage({super.key, required this.manager});
 
   /// Audio manager driving the Session.
-  final AudioManager manager;
+  final CommunicationsManager manager;
 
   @override
   State<SessionPage> createState() => _SessionPageState();
 }
 
 final class _SessionPageState extends State<SessionPage> {
+  var _phase = _HarnessPhase.idle;
   Session? _session;
   EchoTransport? _echo;
   EchoProof? _proof;
@@ -80,11 +93,12 @@ final class _SessionPageState extends State<SessionPage> {
   double _level = 0;
   final _levels = <double>[];
   List<Endpoint> _endpoints = const [];
+  List<CameraEndpoint> _cameras = const [];
   SessionDiagnostics? _diagnostics;
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
 
-  AudioManager get _manager => widget.manager;
+  CommunicationsManager get _manager => widget.manager;
 
   @override
   void initState() {
@@ -109,40 +123,105 @@ final class _SessionPageState extends State<SessionPage> {
 
   Future<void> _loadEndpoints() async {
     final endpoints = await _manager.endpoints();
+    List<CameraEndpoint> cameras = const [];
+    try {
+      cameras = await _manager.cameras();
+    } on Object {
+      cameras = const [];
+    }
     if (mounted) {
-      setState(() => _endpoints = endpoints);
+      setState(() {
+        _endpoints = endpoints;
+        _cameras = cameras;
+      });
     }
   }
 
-  Future<void> _start() async {
-    final result = await _manager.start();
+  Future<void> _enterLobby() async {
+    await _applyStart(
+      await _manager.start(purpose: 'lobby', cameraSend: true),
+      meeting: false,
+    );
+  }
+
+  Future<void> _joinMeeting() async {
+    final lobby = _session;
+    if (lobby == null) {
+      return;
+    }
+    final settings = lobby.settings;
+    final muted = lobby.isMuted;
+    setState(() => _status = 'joining');
+    await _echo?.dispose();
+    await lobby.stop();
+    if (!mounted) {
+      return;
+    }
+    try {
+      await _applyStart(
+        await _manager.start(settings: settings, purpose: 'meeting'),
+        meeting: true,
+      );
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _session = null;
+          _echo = null;
+          _status = 'join-failed';
+          _phase = _HarnessPhase.idle;
+        });
+      }
+      return;
+    }
+    final meeting = _session;
+    if (muted && meeting != null) {
+      meeting.mute();
+    }
+  }
+
+  Future<void> _applyStart(StartResult result, {required bool meeting}) async {
     if (!mounted) {
       return;
     }
     switch (result) {
       case StartReady(:final session):
-        _bind(session);
+        _bind(session, meeting: meeting);
       case StartDenied():
-        setState(() => _status = 'denied');
+        setState(() {
+          _status = 'denied';
+          _phase = _HarnessPhase.idle;
+        });
       case StartRestricted():
-        setState(() => _status = 'restricted');
+        setState(() {
+          _status = 'restricted';
+          _phase = _HarnessPhase.idle;
+        });
       case StartUnavailable():
-        setState(() => _status = 'unavailable');
+        setState(() {
+          _status = 'unavailable';
+          _phase = _HarnessPhase.idle;
+        });
       case StartAlreadyActive():
         setState(() => _status = 'alreadyActive');
       case StartFailed():
-        setState(() => _status = 'failed');
+        setState(() {
+          _status = 'failed';
+          _phase = _HarnessPhase.idle;
+        });
     }
   }
 
-  void _bind(Session session) {
+  void _bind(Session session, {required bool meeting}) {
     _session = session;
+    _phase = meeting ? _HarnessPhase.meeting : _HarnessPhase.lobby;
     _status = session.status.code.name;
     _isolation = session.lastIsolation;
     _diagnostics = session.diagnostics;
-    final echo = EchoTransport(session, replay: false);
-    _echo = echo;
-    unawaited(echo.attach());
+    if (meeting) {
+      final echo = EchoTransport(session, replay: false);
+      _echo = echo;
+      unawaited(echo.attach());
+    }
     session.isolation.listen((event) {
       if (mounted) {
         setState(() => _isolation = event);
@@ -175,6 +254,7 @@ final class _SessionPageState extends State<SessionPage> {
       });
     });
     setState(() {});
+    unawaited(_loadEndpoints());
   }
 
   Future<void> _stop() async {
@@ -187,6 +267,7 @@ final class _SessionPageState extends State<SessionPage> {
         _proof = null;
         _status = null;
         _diagnostics = null;
+        _phase = _HarnessPhase.idle;
         _pipeline.clear();
         _levels.clear();
         _level = 0;
@@ -228,8 +309,20 @@ final class _SessionPageState extends State<SessionPage> {
         padding: const EdgeInsets.all(20),
         children: [
           Text(
-            session == null ? 'Ready when you are' : 'Live Session',
+            switch (_phase) {
+              _HarnessPhase.idle => 'Lobby',
+              _HarnessPhase.lobby => 'Lobby',
+              _HarnessPhase.meeting => 'Live Session',
+            },
+            key: Key(_phase == _HarnessPhase.meeting ? 'meeting' : 'lobby'),
             style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _phase == _HarnessPhase.meeting
+                ? 'Meeting'
+                : 'Pick devices, then Join. Permission is requested on Enter lobby.',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 8),
           Text(
@@ -242,28 +335,28 @@ final class _SessionPageState extends State<SessionPage> {
               'Isolation ${(session.lastIsolation.state.name)}',
               key: const Key('isolation'),
             ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: _pipelineKeys(session),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 72,
-            child: CustomPaint(
-              painter: _WavePainter(_levels, _level),
-              child: const SizedBox.expand(),
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           Wrap(
             spacing: 12,
             runSpacing: 12,
             children: [
-              FilledButton(
-                key: const Key('start'),
-                onPressed: session == null ? _start : null,
-                child: const Text('Start'),
-              ),
+              if (_phase != _HarnessPhase.meeting) ...[
+                FilledButton(
+                  key: const Key('lobby-enter'),
+                  onPressed: _phase == _HarnessPhase.idle ? _enterLobby : null,
+                  child: const Text('Enter lobby'),
+                ),
+                FilledButton(
+                  key: const Key('lobby-join'),
+                  onPressed: _phase == _HarnessPhase.lobby ? _joinMeeting : null,
+                  child: const Text('Join'),
+                ),
+                OutlinedButton(
+                  key: const Key('lobby-leave'),
+                  onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
+                  child: const Text('Leave'),
+                ),
+              ],
               FilledButton.tonal(
                 key: const Key('mute'),
                 onPressed: session == null
@@ -278,31 +371,45 @@ final class _SessionPageState extends State<SessionPage> {
                       },
                 child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
               ),
-              FilledButton.tonal(
-                key: const Key('pause'),
-                onPressed: session == null
-                    ? null
-                    : () async {
-                        if (session.isPaused) {
-                          await session.resume();
-                        } else {
-                          await session.pause();
-                        }
-                        setState(() {});
-                      },
-                child: Text(session?.isPaused == true ? 'Resume' : 'Pause'),
-              ),
-              OutlinedButton(
-                key: const Key('stop'),
-                onPressed: session == null ? null : _stop,
-                child: const Text('End'),
-              ),
-              FilledButton.tonal(
-                key: const Key('prove'),
-                onPressed: session == null ? null : _prove,
-                child: const Text('Prove'),
-              ),
+              if (_phase == _HarnessPhase.meeting) ...[
+                FilledButton.tonal(
+                  key: const Key('pause'),
+                  onPressed: () async {
+                    if (session!.isPaused) {
+                      await session.resume();
+                    } else {
+                      await session.pause();
+                    }
+                    setState(() {});
+                  },
+                  child: Text(session?.isPaused == true ? 'Resume' : 'Pause'),
+                ),
+                OutlinedButton(
+                  key: const Key('stop'),
+                  onPressed: _stop,
+                  child: const Text('End'),
+                ),
+                FilledButton.tonal(
+                  key: const Key('prove'),
+                  onPressed: _prove,
+                  child: const Text('Prove'),
+                ),
+              ],
             ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: _pipelineKeys(session),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(height: 220, child: _selfView(session)),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 72,
+            child: CustomPaint(
+              painter: _WavePainter(_levels, _level),
+              child: const SizedBox.expand(),
+            ),
           ),
           if (_proof != null)
             Padding(
@@ -316,6 +423,53 @@ final class _SessionPageState extends State<SessionPage> {
               ),
             ),
           const SizedBox(height: 24),
+          if (_phase != _HarnessPhase.idle && session != null)
+            Wrap(
+              spacing: 12,
+              children: [
+                FilledButton.tonal(
+                  key: const Key('camera-off'),
+                  onPressed: () async {
+                    await session.setCameraEnabled(!session.isCameraEnabled);
+                    setState(() {});
+                  },
+                  child: Text(
+                    session.isCameraEnabled ? 'Camera off' : 'Camera on',
+                  ),
+                ),
+                if (_phase == _HarnessPhase.meeting)
+                  FilledButton.tonal(
+                    key: const Key('mute-video'),
+                    onPressed: () async {
+                      if (session.isVideoMuted) {
+                        await session.unmuteVideo();
+                      } else {
+                        await session.muteVideo();
+                      }
+                      setState(() {});
+                    },
+                    child: Text(
+                      session.isVideoMuted ? 'Unmute video' : 'Mute video',
+                    ),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 16),
+          Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          for (final camera in _cameras)
+            ListTile(
+              key: Key('camera-${camera.id}'),
+              title: Text(camera.name),
+              subtitle: Text(camera.facing.name),
+              selected: camera.id == session?.selectedCameraId,
+              onTap: session == null
+                  ? null
+                  : () async {
+                      await session.selectCamera(camera.id);
+                      setState(() {});
+                    },
+            ),
           Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           for (final endpoint in _endpoints)
@@ -354,6 +508,41 @@ final class _SessionPageState extends State<SessionPage> {
         ],
       ),
     );
+  }
+
+  Widget _selfView(Session? session) {
+    final surface = session?.videoSurface;
+    if (session == null ||
+        !session.cameraSend ||
+        !session.isCameraEnabled ||
+        session.isVideoMuted ||
+        surface == null) {
+      return ColoredBox(
+        color: const Color(0xFF111118),
+        child: Center(
+          child: Text(
+            session?.videoUnavailableReason ?? 'Camera off',
+            key: const Key('self-view'),
+            style: const TextStyle(color: Color(0xFFB0B0C0)),
+          ),
+        ),
+      );
+    }
+    if (surface.kind == VideoSurfaceKind.htmlElement) {
+      // Flutter web platform views overlay the glass pane if they are unmounted
+      // or given percentage sizing. Keep a tight pixel box and clip it.
+      return SizedBox(
+        width: 320,
+        height: 220,
+        child: ClipRect(
+          child: HtmlElementView(
+            key: const Key('self-view'),
+            viewType: 'fac-camera-${surface.handle}',
+          ),
+        ),
+      );
+    }
+    return Texture(key: const Key('self-view'), textureId: surface.handle);
   }
 
   List<Widget> _pipelineKeys(Session? session) {

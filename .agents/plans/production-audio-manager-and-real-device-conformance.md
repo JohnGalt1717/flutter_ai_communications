@@ -12,7 +12,7 @@ The example application is the primary conformance harness. Synthetic loopback p
 
 ## Required architecture
 
-- One application-scoped `AudioManager`; at most one capture-only, playback-only, or duplex `Session`.
+- One application-scoped `CommunicationsManager`; at most one capture-only, playback-only, or duplex `Session`.
 - Product differences are edge attachments: Transport, capture sink, and playback source.
 - Stable Session edges survive route change, Format renegotiation, interruption, recovery, and native reset. SignalR/WebRTC never reconnects because of native audio work.
 - Application policy owns Desired Pair. Native commands produce Applied Pair; OS state produces Observed Pair. Bounded Route convergence makes Observed match Desired or reports a typed fault.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** ready-for-agent. Audio Orchestration on Windows can run before this graph exists (`docs/windows-linux-video-setup.md`). Empty `cameras()` is expected until this ticket lands.
 
 - [ ] External cameras appear in the catalog
 - [ ] Unplug falls back when preference controls the pick

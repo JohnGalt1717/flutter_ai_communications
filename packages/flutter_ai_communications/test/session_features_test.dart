@@ -7,14 +7,14 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   late FakeCommunicationsPlatform platform;
   late DefaultCoverageSource coverage;
-  late AudioManager manager;
+  late CommunicationsManager manager;
 
   setUp(() {
     FlutterAiCommunicationsPlatform.debugReset();
     platform = FakeCommunicationsPlatform();
     coverage = DefaultCoverageSource();
     FlutterAiCommunicationsPlatform.instance = platform;
-    manager = AudioManager(platform: platform, coverageSource: coverage);
+    manager = CommunicationsManager(platform: platform, coverageSource: coverage);
   });
 
   tearDown(() async {
