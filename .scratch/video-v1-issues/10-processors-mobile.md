@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — iOS camera graph; 06 — Android camera graph; 03 — Pre-join preview
 
-**Status:** ready-for-agent
+**Status:** deferred (2026-09-01). Later plan `.agents/plans/video-processors-blur-replace.md`. Native graphs exist; do not start blur/replace in v1.
 
 - [ ] none / blur / replace are selectable mid-preview and mid-session
 - [ ] Intensity changes are visible without restarting the Session

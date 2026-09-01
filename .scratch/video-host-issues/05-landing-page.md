@@ -9,7 +9,7 @@ Overlaps library ticket `13`. Do not build a second lobby.
 
 **Blocked by:** 03 — Preference persistence (camera when it exists)
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Example lobby subsection is the Orchestration path. Host preference persistence (ticket 03) is still open.
 
 - [ ] Lobby is a Session (`purpose: lobby`), no Transport plugin
 - [ ] Join uses current picks via Session settings or copied start args

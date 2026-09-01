@@ -1,5 +1,29 @@
 # Production Audio Manager and Real-Device Conformance Plan
 
+**Status (2026-09-01):** Code for issues #16–#29 exists on `main` (`e6b37b4`).
+Those GitHub issues stay **OPEN** until receipts close them. Fieldist is
+still blocked on #26: physical iPhone, physical Android, and Chrome.
+
+Verified evidence (do not treat as close):
+
+- Suite file: `example/integration_test/native_orchestration_test.dart`
+  (Marionette was renamed Orchestration).
+- Chrome 20-cycle + 45 capture×render receipts at commit `10f9c2c`
+  (comments on #21). `devicechange` still `skipped=capability`.
+- Windows exclusive audio 20-cycles: extra desktop evidence (PR #32
+  comment on #26). Linux/WSLg 20-cycles ran in the PR #33 window
+  (Plantronics/WASAPI on Windows; Pulse `RDPSource`/`RDPSink` on WSL).
+- Acoustic-profile registry and Capture processors: implemented in shared
+  + Session; physical calibration receipts still #26 / #29.
+- Windows directed Sessions: PR #32; does not close #27.
+- Observed emit on Windows: PR #32; does not close #17.
+- Video is a separate track (`.agents/plans/video-capture-and-sinks.md`).
+  Do not close audio tickets from camera receipts.
+
+The receipt handoff `.agents/plans/handoff-remaining-platform-signoff.md`
+was written against `10f9c2c` / PR #30. Read its 2026-09-01 banner before
+the historical matrix.
+
 ## Goal
 
 Make `flutter_ai_communications` the one production audio stack used by host applications. Prove native capture, render, Endpoint selection, Format guarantees, Capture processing, reset continuity, and repeated Session lifecycle on physical iOS, physical Android, and Chrome before Fieldist integration begins.

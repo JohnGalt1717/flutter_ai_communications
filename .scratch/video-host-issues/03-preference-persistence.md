@@ -6,7 +6,7 @@ not write preference.
 
 **Blocked by:** 02 — Audio manager and catalogs
 
-**Status:** ready-for-agent
+**Status:** not started (2026-09-01). `example/lib/main.dart` does not persist Endpoint preference or Camera preference.
 
 - [ ] Uses existing example storage if present, not a new stack
 - [ ] Camera preference is a separate list from audio

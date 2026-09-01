@@ -6,9 +6,10 @@ enable video later on the same Session.
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** graph in tree for a Linux VM. Dart adapter tests pass on any
-host. Native V4L2 + Flutter Texture still needs a Linux compile and a
-physical receipt (`docs/windows-linux-video-setup.md`).
+**Status (2026-09-01):** graph in tree on `main` (`e6b37b4`, PR #34) for a
+Linux VM. Dart adapter tests pass on any host. Native V4L2 + Flutter
+Texture still needs a Linux compile and a physical receipt
+(`docs/windows-linux-video-setup.md`).
 
 - [x] Dart CameraBackend + MethodChannel wiring
 - [x] V4L2 capture → Flutter Texture (YUYV / NV12 / RGB24 / BGR24, STREAMING nodes)

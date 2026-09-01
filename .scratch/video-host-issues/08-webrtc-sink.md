@@ -6,7 +6,7 @@ addTrack. Detach on leave does not leak the camera.
 
 **Blocked by:** 07 — In-session controls; library tickets 04 and 12
 
-**Status:** ready-for-agent
+**Status:** not started (2026-09-01). Blocked on library tickets 04 and 12. Example uses Echo Transport.
 
 - [ ] Session wrapper has no PeerConnection type
 - [ ] Sink attach/detach is tested

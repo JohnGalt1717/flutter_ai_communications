@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Lobby driven via flutter-skill + Agent Lens.
 
-- [ ] Permission prompt is inside start/preview and blocks
-- [ ] devicechange updates the camera catalog
-- [ ] Mute-video and Camera-off are distinct
-- [ ] Limits are documented for hosts
+- [x] Permission prompt is inside start/preview and blocks
+- [x] devicechange updates the camera catalog
+- [x] Mute-video and Camera-off are distinct
+- [x] Limits are documented for hosts

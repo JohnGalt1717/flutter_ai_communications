@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). iPhone 17 sim Orchestration. Physical iPhone Allow-dialog receipt still open on the video plan.
 
-- [ ] Catalog includes facing metadata
-- [ ] Permission denial is a typed Start result
-- [ ] Preview Texture is the Production video path
-- [ ] Camera-off stops hardware capture
-- [ ] Physical-device receipt or documented equivalent for the example harness
+- [x] Catalog includes facing metadata
+- [x] Permission denial is a typed Start result
+- [x] Preview Texture is the Production video path
+- [x] Camera-off stops hardware capture
+- [x] Physical-device receipt or documented equivalent for the example harness (sim)

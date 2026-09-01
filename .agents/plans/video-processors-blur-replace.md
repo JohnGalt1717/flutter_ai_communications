@@ -1,7 +1,11 @@
 # Plan stub: blur and replace Video processors
 
-**Status:** Later. Do not implement in the v1 camera slice.
-**Depends on:** native Production video path and Camera preview shipping with processor `none` only.
+**Status (2026-09-01):** Later. Do not implement in the v1 camera slice.
+Native Production video path with processor `none` now exists on iOS,
+Android, macOS, web, Windows, and Linux (in tree, PR #34 / `e6b37b4`).
+This plan stays unscheduled; it is not unblocked merely because graphs
+exist.
+**Depends on:** native Production video path and Camera preview shipping with processor `none` only (that dependency is met).
 **Glossary:** `CONTEXT.md` **Video processor**. ADR-0017.
 
 ## Why this is separate

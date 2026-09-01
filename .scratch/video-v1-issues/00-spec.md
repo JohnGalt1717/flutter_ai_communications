@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Spec, glossary, ADRs 0012–0021 on `main`.
 
 - [x] `CONTEXT.md` includes Camera Endpoint, Video Format, Native Video Format, Video processor, Video surface, Camera preview, Mute-video, Camera-off, Session settings, Transport plugin
 - [x] ADRs 0012–0021 exist and match the grilled decisions (0014 superseded by 0020; 0015 superseded by 0018)

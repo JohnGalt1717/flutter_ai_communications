@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 — Shared video types
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Fake-platform Session video contracts on `main`.
 
-- [ ] Fake-adapter tests cover every new Start result
-- [ ] One live Session still holds
-- [ ] Mid-session camera picks do not write Camera preference
-- [ ] Enable-video-later does not replace the audio Capture stream
-- [ ] Mute-video and Camera-off are distinct and tested
-- [ ] No flutter_webrtc types in the app or platform_interface packages
+- [x] Fake-adapter tests cover every new Start result
+- [x] One live Session still holds
+- [x] Mid-session camera picks do not write Camera preference
+- [x] Enable-video-later does not replace the audio Capture stream
+- [x] Mute-video and Camera-off are distinct and tested
+- [x] No flutter_webrtc types in the app or platform_interface packages

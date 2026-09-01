@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Lobby is a Session; Join is stop + start with Session settings.
 
-- [ ] `start(purpose: lobby)` works with no Transport plugin
-- [ ] Capture stream is the lobby meter; no second audio graph
-- [ ] Join is stop + start; objects are not shared
-- [ ] Leaving the lobby is `session.stop`
-- [ ] Example lobby subsection can be driven by Orchestration
+- [x] `start(purpose: lobby)` works with no Transport plugin
+- [x] Capture stream is the lobby meter; no second audio graph
+- [x] Join is stop + start; objects are not shared
+- [x] Leaving the lobby is `session.stop`
+- [x] Example lobby subsection can be driven by Orchestration

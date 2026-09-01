@@ -4,9 +4,9 @@
 
 **Blocked by:** 00 — Video spec, glossary, and ADRs
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Types live in `flutter_ai_communications_shared`.
 
-- [ ] Types live in the shared package and use glossary names
-- [ ] Default Video Format is 1280×720 at 30 fps
-- [ ] Processor types are selectable values, not a host-injected strategy object
-- [ ] Unit tests cover equality, defaults, and invalid intensity / empty background
+- [x] Types live in the shared package and use glossary names
+- [x] Default Video Format is 1280×720 at 30 fps
+- [x] Processor types are selectable values, not a host-injected strategy object
+- [x] Unit tests cover equality, defaults, and invalid intensity / empty background

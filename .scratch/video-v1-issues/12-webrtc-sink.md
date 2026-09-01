@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Video sink provider seam; 05 — iOS camera graph (or any one native graph)
 
-**Status:** ready-for-agent
+**Status:** not started (2026-09-01). Blocked by ticket 04.
 
 - [ ] Host can attach the sink after StartReady or enableVideo
 - [ ] Local Texture preview works without this package

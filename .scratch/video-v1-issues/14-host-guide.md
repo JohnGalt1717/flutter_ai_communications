@@ -4,8 +4,8 @@
 
 **Blocked by:** 13 — Example landing page and in-session AV harness
 
-**Status:** ready-for-agent
+**Status:** in progress (2026-09-01). `docs/host-prejoin-narrative.md` matches lobby Session + Join. Linux/Windows camera status now current in plans/setup docs. Remaining: any missing Teams/Zoom control filed as follow-up.
 
-- [ ] Narrative call names match the public API
-- [ ] Failure mapping matches Start results
+- [x] Narrative call names match the public API
+- [x] Failure mapping matches Start results
 - [ ] Any missing Teams/Zoom control is filed, not papered over

@@ -1,10 +1,13 @@
 # Plan: Host communications video (example first)
 
-**Status:** Example lobby + Session contracts shipped. Do not start native
-camera work in a host app. Windows and Linux camera graphs are in the
-federated packages; remaining work is physical receipts (see
+**Status (2026-09-01):** Example lobby + Session contracts shipped. Do not
+start native camera work in a host app. All six platform camera graphs are
+in the federated packages (PR #34 / `e6b37b4` on `main`). Windows LifeCam
+Studio camera receipt passed. Remaining library work for the host is Linux
+camera compile + receipt, then Transport plugin tickets 04 / 12 (see
 `.agents/plans/video-capture-and-sinks.md` and
-`docs/windows-linux-video-setup.md`).
+`docs/windows-linux-video-setup.md`). Host preference persistence is still
+unshipped in `example/`.
 **Audience:** Fresh agent working in `JohnGalt1717/flutter_ai_communications`.
 **Date:** 2026-08-25
 **Library source of truth:** `docs/spec-video-v1.md`, ADRs 0012–0017,
@@ -87,7 +90,7 @@ page; ticket `13` is the library-side acceptance of it.
 | Processors | v1 none only. Blur/replace later plan. |
 | Transport | Plugin owns RTP. Host owns signaling, roster, tile layout. |
 | UI ownership | No library picker widgets. Example lobby is the first chrome and the Orchestration path. |
-| First library platforms | iOS, Android, Web, macOS, Windows. Linux camera and screen share later. |
+| First library platforms | iOS, Android, Web, macOS, Windows, Linux. Screen share later. Linux camera receipts remaining. |
 | Tickets | Markdown files in this repo. Not GitHub issues until asked. |
 
 ## Architecture
@@ -261,7 +264,7 @@ beyond calling the library.
 - PeerConnection, SFU, or signaling inside `flutter_ai_communications`
   Session types.
 - Library-owned landing page widgets shipped as product chrome.
-- Screen share, Linux camera, beauty filters, avatars, background video.
+- Screen share, beauty filters, avatars, background video.
 - Multi-camera simultaneous publish.
 - GitHub issues for this slice.
 - Any work in ProjectFulcrum for this slice.

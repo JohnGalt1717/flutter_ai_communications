@@ -6,6 +6,8 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
+Status as of 2026-09-01, HEAD `e6b37b4` (PR #34 on `main`).
+
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
 | 00 | Video spec, glossary, and ADRs | — | done |
@@ -16,7 +18,7 @@ Both are in this repository. First host surface is `example/`.
 | 05 | iOS camera graph | 02 | done (sim receipt) |
 | 06 | Android camera graph | 02 | done (SM A176U1 receipt) |
 | 07 | macOS camera graph | 02 | done (graph + audio Orchestration) |
-| 08 | Windows camera graph | 02 | done (LifeCam Studio native_camera_test) |
+| 08 | Windows camera graph | 02 | done (LifeCam Studio native_camera_test, `e6b37b4`) |
 | — | Linux camera graph | 02 | graph landed for VM compile — receipts remaining |
 | 09 | Web camera graph | 02 | done (lobby via flutter-skill) |
 | 10 | Video processors on iOS and Android | 03, 05, 06 | deferred |

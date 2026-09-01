@@ -5,7 +5,7 @@ No native camera code is copied into the example.
 
 **Blocked by:** 00 — Domain lock and first host surface
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Example depends on workspace packages; camera graphs stay in federated packages.
 
 - [ ] Workspace path deps cover communications + webrtc sink when it exists
 - [ ] Analyzer is clean on touched pubspecs

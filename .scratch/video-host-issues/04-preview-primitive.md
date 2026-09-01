@@ -6,7 +6,7 @@ idle manager. No branded lobby layout in a helper widget.
 
 **Blocked by:** 02 — Audio manager; library ticket 03
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Example `self-view` renders the Session Video surface Texture.
 
 - [ ] Preview works with no Session
 - [ ] Widget test accepts a fake texture id

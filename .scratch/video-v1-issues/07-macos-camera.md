@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Graph + macOS audio Orchestration. Dedicated camera receipt still thinner than Windows LifeCam.
 
-- [ ] External cameras appear in the catalog
-- [ ] Unplug falls back when preference controls the pick
-- [ ] Explicit camera selection does not silently fall back
-- [ ] Entitlement / permission denial is a typed result
+- [x] External cameras appear in the catalog
+- [x] Unplug falls back when preference controls the pick
+- [x] Explicit camera selection does not silently fall back
+- [x] Entitlement / permission denial is a typed result

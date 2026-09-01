@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 — macOS camera graph; 08 — Windows camera graph; 09 — Web camera graph; 10 — Video processors on iOS and Android
 
-**Status:** ready-for-agent
+**Status:** deferred (2026-09-01). Later plan `.agents/plans/video-processors-blur-replace.md`. Native graphs exist; do not start blur/replace in v1.
 
 - [ ] Same public processor types as mobile
 - [ ] Fallback is a warning, not a crash

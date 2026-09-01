@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** graph landed and proven on Microsoft LifeCam Studio (USB,
-facing=external, Native Video Format 640×480@30). Suite:
-`example/integration_test/native_camera_test.dart -d windows`.
+**Status:** done (2026-09-01). Graph landed and proven on Microsoft LifeCam
+Studio (USB, facing=external, Native Video Format 640×480@30) at `e6b37b4`
+(PR #34). Suite: `example/integration_test/native_camera_test.dart -d windows`.
 
 - [x] External cameras appear in the catalog (USB facing)
 - [x] Unplug falls back when preference controls the pick (manager)

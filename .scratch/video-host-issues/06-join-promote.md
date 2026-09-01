@@ -8,7 +8,7 @@ Missing camera is Session status, not a failed start.
 
 **Blocked by:** 05 — Lobby subsection; library ticket 02
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Join is stop + start with Session settings; Echo Transport attaches only after meeting start.
 
 - [ ] Lobby and meeting are different Session objects
 - [ ] Copied picks stick on the meeting Session

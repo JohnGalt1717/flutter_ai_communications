@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent
+**Status:** not started (2026-09-01). Native graphs exist; Transport plugin seam is the next library slice.
 
 - [ ] Two fake sinks can attach at once
 - [ ] Mute-video and Camera-off notify sinks differently

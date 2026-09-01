@@ -6,7 +6,7 @@ and already-active failures are values, not thrown exceptions.
 
 **Blocked by:** 01 — Package wiring; library tickets 01–02
 
-**Status:** ready-for-agent
+**Status:** done (2026-09-01). Example uses one `CommunicationsManager` and idle `endpoints()` / `cameras()`.
 
 - [ ] One manager per app process
 - [ ] `endpoints()` and `cameras()` work while idle

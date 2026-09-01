@@ -1,19 +1,23 @@
 # Video Capture, Processors, and Sink Providers Plan
 
-**Status:** Shipped on iOS, Android, macOS, and web. Windows and Linux
-camera graphs are in tree (Media Foundation / V4L2 → Texture). Next is
-physical receipts on those machines. See
-`docs/windows-linux-video-setup.md`.
+**Status (2026-09-01):** Camera graphs shipped on iOS, Android, macOS, web,
+Windows, and Linux (in tree). PR #34 squash-merged to `main` as `e6b37b4`.
+Windows LifeCam Studio `native_camera_test` passed. Next is Linux
+`flutter build linux` plus a physical camera receipt, then Transport plugin
+seam (tickets 04 / 12). See `docs/windows-linux-video-setup.md`.
 **Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.
 
-## Current slice (2026-08-31)
+## Current slice (2026-09-01)
 
-Ready for a second Windows machine and a Linux machine to **build, run the
-example, and collect audio plus camera Orchestration receipts**. Native
-camera methods are implemented; missing/denied camera must not fail
-`start()`.
+HEAD: `e6b37b4` on `main`. Working tree clean after PR #34.
+
+Linux remains: compile the V4L2 graph on a machine with clang/cmake/GTK/v4l
+headers, then collect camera Orchestration receipts. Windows camera is
+proven on JamieDesktop (Microsoft LifeCam Studio). A second Windows machine
+only re-runs receipts if hardware differs. Missing/denied camera must not
+fail `start()`.
 
 ### Done
 
@@ -21,17 +25,21 @@ camera methods are implemented; missing/denied camera must not fail
 - Shared types + fake platform + `CommunicationsManager` / Session video APIs
 - Lobby is a Session; Join is host `stop` + `start` with Session settings
 - Native camera graphs: iOS (AVFoundation), Android (Camera2), macOS
-  (AVFoundation), web (getUserMedia + HtmlElementView)
+  (AVFoundation), web (getUserMedia + HtmlElementView), Windows (Media
+  Foundation → Texture), Linux (V4L2 → Texture, in tree)
 - Example lobby (`lobby-enter` → pick → `lobby-join`) with self-view,
   Camera-off, Mute-video
 - Orchestration e2e passed: iPhone 17 simulator, SM A176U1, macOS (audio),
   example harness Enter → Join
+- Windows camera receipt: LifeCam Studio, permission granted, catalog 1 cam
+  (USB / external), Texture 640×480@30, live non-black frames, Mute-video vs
+  Camera-off, join via Session settings, enable-video-later (audio Capture
+  stream identity kept)
 - v1 processor is `none` only
-- Windows/Linux audio backends already exist (WASAPI / Pulse). Camera graphs
-  are Media Foundation (Windows) and V4L2 (Linux) → Flutter Texture. Physical
-  receipts are still outstanding.
+- Windows/Linux audio backends already exist (WASAPI / Pulse). Audio
+  Orchestration 20-cycles ran in the PR #32 / #33 window
 
-### Not in this slice (do not block Win/Linux receipts)
+### Not in this slice (do not block Linux receipts)
 
 - Ticket 04 / 12: Transport plugin RTP seam and `flutter_webrtc` package
 - Tickets 10–11: blur / replace processors (see
@@ -45,23 +53,23 @@ camera methods are implemented; missing/denied camera must not fail
 
 | Track | Windows | Linux |
 | --- | --- | --- |
-| Build / doctor | VS + C++ desktop workload | clang, cmake, ninja, GTK, Pulse/PipeWire |
-| Audio Orchestration | Run now (`-d windows`) | Run now (`-d linux`) |
-| Example lobby audio | Run now; camera list empty | Run now; camera list empty |
-| Camera graph | Ticket 08 landed: Media Foundation → Flutter Texture | Landed: V4L2 capture → Flutter Texture (VM compile) |
-| Camera permission | Windows privacy consent | PipeWire/portal or v4l device node |
-| Mute-video / Camera-off | Black frames vs stop device | Same contract as iOS/Android |
-| Receipt | Catalog, preview Texture, lobby → join, 20 cycles | Same |
+| Build / doctor | VS + C++ desktop workload | clang, cmake, ninja, GTK, Pulse/PipeWire, v4l headers |
+| Audio Orchestration | 20-cycle suite already ran (`-d windows`) | 20-cycle suite already ran on WSLg (`-d linux`) |
+| Example lobby | Camera list populated when a device is present | Camera list populated when `/dev/video*` exists |
+| Camera graph | Done: Media Foundation → Flutter Texture (`e6b37b4`) | In tree: V4L2 → Flutter Texture. VM compile remaining |
+| Camera permission | Windows privacy consent (unpackaged granted on JamieDesktop) | Device-node access (PipeWire portal is later) |
+| Mute-video / Camera-off | Proven on LifeCam Studio | Same contract; unproven on hardware |
+| Receipt | LifeCam Studio `native_camera_test` passed | `flutter build linux` then `native_camera_test.dart -d linux` |
 
-Windows and Linux camera graphs must match the existing Session APIs
+Windows and Linux camera graphs match the existing Session APIs
 (`enumerateCameras`, `requestCameraPermission`, `startCameraNative`,
 `selectCameraNative`, `setCameraEnabledNative`, `setMuteVideoNative`). Do not
-add a second camera plugin. Empty catalog before those graphs land is
-expected, not a failed Session.
+add a second camera plugin. Empty catalog when no camera is present or
+permission is denied is expected, not a failed Session.
 
 ## Goal
 
-Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications` without turning Session into a WebRTC client. Cameras, lobby Session (no Transport plugin), Production video path, Mute-video, Camera-off, Camera preview, Video processor none in v1, Transport plugin (WebRTC). First platforms are iOS, Android, Web, macOS, and Windows.
+Give host apps a Teams/Zoom-class camera stack inside `flutter_ai_communications` without turning Session into a WebRTC client. Cameras, lobby Session (no Transport plugin), Production video path, Mute-video, Camera-off, Camera preview, Video processor none in v1, Transport plugin (WebRTC). First platforms are iOS, Android, Web, macOS, Windows, and Linux.
 
 Parity bar: a host must be able to build both a Teams-like and a Zoom-like product on this API. Missing in-call or lobby capability is a spec bug. The example lobby is the Orchestration e2e path.
 
@@ -80,10 +88,11 @@ Do not treat video as done when a Texture shows a camera. Done means:
 - Mute-video vs Camera-off vs pause
 - native Production video path
 - Transport plugin (flutter_webrtc) plus a fake in tests
-- example lobby subsection + in-session AV on the five platforms, driven by Orchestration
+- example lobby subsection + in-session AV on the six platforms, driven by Orchestration
 - host narrative can be followed without a second camera plugin
 
-Screen share stays a later plan (ADR-0019). Linux camera is now in the same remaining-native bucket as Windows ticket 08.
+Screen share stays a later plan (ADR-0019). Windows ticket 08 is done.
+Linux camera compile and physical receipt remain.
 
 ## Required architecture
 
@@ -159,7 +168,7 @@ Complete when tests prove two sinks see one path and detach does not end the Ses
 
 ### 4. Native camera graphs
 
-Tickets 05–09 plus Linux: iOS, Android, macOS, Windows, Web, then Linux.
+Tickets 05–09 plus Linux: iOS, Android, macOS, Windows, Web, Linux.
 
 | Platform | Graph | Receipt |
 | --- | --- | --- |
@@ -167,8 +176,8 @@ Tickets 05–09 plus Linux: iOS, Android, macOS, Windows, Web, then Linux.
 | Android | Done (`AndroidCameraGraph`) | SM A176U1 Orchestration passed |
 | macOS | Done (`MacCameraGraph`) | macOS audio Orchestration passed |
 | Web | Done (getUserMedia) | Lobby driven via flutter-skill + Agent Lens |
-| Windows | Graph in tree (Media Foundation → Texture) | LifeCam Studio `native_camera_test` passed |
-| Linux | Graph in tree (V4L2 → Texture) for a Linux VM | Run `native_camera_test.dart -d linux` |
+| Windows | Done (Media Foundation → Texture, PR #34 / `e6b37b4`) | LifeCam Studio `native_camera_test` passed |
+| Linux | Graph in tree (V4L2 → Texture, PR #34) | `flutter build linux` then `native_camera_test.dart -d linux` |
 
 Each remaining graph delivers catalog, permission, negotiated Video Format, Preview Texture, camera switch, Mute-video black frames, Camera-off hardware stop, and enable-video-later.
 
@@ -212,7 +221,7 @@ Tickets 13–14, plus `.scratch/video-host-issues/`.
 | 02 | Session and platform-interface contracts | 01 |
 | 03 | Lobby Session | 02 |
 | 04 | Transport plugin video seam | 02 |
-| 05–09 | iOS / Android / macOS / Windows / Web graphs | 02 |
+| 05–09 | iOS / Android / macOS / Windows / Web graphs | 02 — 05–09 done; Linux graph in tree, receipts remaining |
 | 10 | Processors on iOS and Android | deferred — later plan |
 | 11 | Processors on macOS, Windows, Web | deferred — later plan |
 | 12 | flutter_webrtc Transport plugin | 04 and one native graph |
@@ -223,7 +232,7 @@ Tickets 13–14, plus `.scratch/video-host-issues/`.
 
 Primary gate on relevant video changes:
 
-- physical iPhone, physical Android, Chrome, macOS, Windows
+- physical iPhone, physical Android, Chrome, macOS, Windows (LifeCam Studio camera receipt on `e6b37b4`), Linux (camera receipt remaining)
 - first lobby `start()` after install permission
 - front/back or built-in/USB live flip
 - lobby Session then join (stop + start with settings)
@@ -271,7 +280,8 @@ Human confirmation of blur quality is allowed. Cadence and Texture liveness shou
 - Tickets in `.scratch/video-v1-issues/` complete
 - Host tickets in `.scratch/video-host-issues/` complete or explicitly deferred
 - Fake-platform and public-seam tests pass
-- Five-platform receipts for catalog, preview, start, mute-video, Camera-off
+- Six-platform receipts for catalog, preview, start, mute-video, Camera-off
+  (Linux camera receipt still outstanding)
 - Processors work on iOS and Android at minimum; other platforms documented if delayed
 - flutter_webrtc sink package attaches without Session knowing WebRTC types
 - Example lobby subsection is Orchestration-drivable
