@@ -7,6 +7,7 @@
 #include <mfidl.h>
 #include <mfobjects.h>
 #include <mfreadwrite.h>
+#include <objbase.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -27,8 +28,9 @@ std::string WideToUtf8(const wchar_t* wide) {
   if (size <= 1) {
     return {};
   }
-  std::string out(static_cast<size_t>(size - 1), 0);
+  std::string out(static_cast<size_t>(size), '\0');
   WideCharToMultiByte(CP_UTF8, 0, wide, -1, out.data(), size, nullptr, nullptr);
+  out.resize(static_cast<size_t>(size - 1));
   return out;
 }
 
@@ -535,6 +537,7 @@ bool CameraGraph::PickNativeMode(IMFSourceReader* reader,
 }
 
 void CameraGraph::CaptureLoop() {
+  const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   while (running_.load()) {
     if (reader_ == nullptr) {
       break;
@@ -565,6 +568,9 @@ void CameraGraph::CaptureLoop() {
     if (textures_ != nullptr && texture_id_ >= 0) {
       textures_->MarkTextureFrameAvailable(texture_id_);
     }
+  }
+  if (com == S_OK) {
+    CoUninitialize();
   }
 }
 
