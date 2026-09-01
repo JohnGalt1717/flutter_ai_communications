@@ -20,6 +20,3 @@ physical receipt (`docs/windows-linux-video-setup.md`).
 
 PipeWire camera portal is not this slice. Device-node access only.
 Do not add a second camera plugin. Empty `cameras()` is not `StartFailed`.
-
-PipeWire camera portal is not this slice. Device-node access only.
-Do not add a second camera plugin. Empty `cameras()` is not `StartFailed`.
