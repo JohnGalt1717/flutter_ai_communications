@@ -141,6 +141,7 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_plugin_registrar_get_messenger(registrar),
       "flutter_ai_communications/methods", FL_METHOD_CODEC(codec));
-  fl_method_channel_set_method_call_handler(channel, HandleMethodCall, plugin,
-                                            g_object_unref);
+  fl_method_channel_set_method_call_handler(
+      channel, HandleMethodCall, g_object_ref(plugin), g_object_unref);
+  g_object_unref(plugin);
 }

@@ -50,22 +50,23 @@ std::string ReadString(const flutter::EncodableMap& args, const char* key) {
 class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar) {
-    auto channel =
-        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-            registrar->messenger(), "flutter_ai_communications/methods",
-            &flutter::StandardMethodCodec::GetInstance());
     auto plugin = std::make_unique<FlutterAiCommunicationsWindowsPlugin>(
-        registrar->texture_registrar());
-    channel->SetMethodCallHandler(
-        [plugin_pointer = plugin.get()](const auto& call, auto result) {
-          plugin_pointer->HandleMethodCall(call, std::move(result));
-        });
+        registrar);
     registrar->AddPlugin(std::move(plugin));
   }
 
   explicit FlutterAiCommunicationsWindowsPlugin(
-      flutter::TextureRegistrar* textures)
-      : camera_(textures) {}
+      flutter::PluginRegistrarWindows* registrar)
+      : camera_(registrar->texture_registrar()) {
+    channel_ =
+        std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+            registrar->messenger(), "flutter_ai_communications/methods",
+            &flutter::StandardMethodCodec::GetInstance());
+    channel_->SetMethodCallHandler(
+        [this](const auto& call, auto result) {
+          HandleMethodCall(call, std::move(result));
+        });
+  }
 
   ~FlutterAiCommunicationsWindowsPlugin() override = default;
 
@@ -124,6 +125,7 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
     result->NotImplemented();
   }
 
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   CameraGraph camera_;
 };
 

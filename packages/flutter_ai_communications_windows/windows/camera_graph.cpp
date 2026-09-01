@@ -254,6 +254,9 @@ flutter::EncodableMap CameraGraph::Start(const std::string& camera_id,
   }
   if (!enabled) {
     StopCapture();
+    if (textures_ != nullptr && texture_id_ >= 0) {
+      textures_->MarkTextureFrameAvailable(texture_id_);
+    }
     flutter::EncodableMap started;
     started[flutter::EncodableValue("status")] =
         flutter::EncodableValue("started");

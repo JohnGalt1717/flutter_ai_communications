@@ -224,6 +224,10 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   }
   if (!enabled) {
     StopCapture();
+    if (textures_ != nullptr && texture_ != nullptr) {
+      fl_texture_registrar_mark_texture_frame_available(textures_,
+                                                        FL_TEXTURE(texture_));
+    }
     fl_value_set_string_take(result, "status", fl_value_new_string("started"));
     fl_value_set_string_take(result, "textureId",
                              fl_value_new_int(texture_id_));
@@ -543,28 +547,28 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
       }
     }
   } else {
-  for (int y = 0; y < height_; y++) {
-    const uint8_t* row = src + static_cast<ptrdiff_t>(stride) * y;
-    uint8_t* out = dst + static_cast<size_t>(y) * width_ * 4;
-    for (int x = 0; x + 1 < width_; x += 2) {
-      const int y0 = row[x * 2 + 0];
-      const int u = row[x * 2 + 1];
-      const int y1 = row[x * 2 + 2];
-      const int v = row[x * 2 + 3];
-      const int c0 = y0 - 16;
-      const int c1 = y1 - 16;
-      const int d = u - 128;
-      const int e = v - 128;
-      out[x * 4 + 0] = Clamp((298 * c0 + 409 * e + 128) >> 8);
-      out[x * 4 + 1] = Clamp((298 * c0 - 100 * d - 208 * e + 128) >> 8);
-      out[x * 4 + 2] = Clamp((298 * c0 + 516 * d + 128) >> 8);
-      out[x * 4 + 3] = 255;
-      out[(x + 1) * 4 + 0] = Clamp((298 * c1 + 409 * e + 128) >> 8);
-      out[(x + 1) * 4 + 1] = Clamp((298 * c1 - 100 * d - 208 * e + 128) >> 8);
-      out[(x + 1) * 4 + 2] = Clamp((298 * c1 + 516 * d + 128) >> 8);
-      out[(x + 1) * 4 + 3] = 255;
+    for (int y = 0; y < height_; y++) {
+      const uint8_t* row = src + static_cast<ptrdiff_t>(stride) * y;
+      uint8_t* out = dst + static_cast<size_t>(y) * width_ * 4;
+      for (int x = 0; x + 1 < width_; x += 2) {
+        const int y0 = row[x * 2 + 0];
+        const int u = row[x * 2 + 1];
+        const int y1 = row[x * 2 + 2];
+        const int v = row[x * 2 + 3];
+        const int c0 = y0 - 16;
+        const int c1 = y1 - 16;
+        const int d = u - 128;
+        const int e = v - 128;
+        out[x * 4 + 0] = Clamp((298 * c0 + 409 * e + 128) >> 8);
+        out[x * 4 + 1] = Clamp((298 * c0 - 100 * d - 208 * e + 128) >> 8);
+        out[x * 4 + 2] = Clamp((298 * c0 + 516 * d + 128) >> 8);
+        out[x * 4 + 3] = 255;
+        out[(x + 1) * 4 + 0] = Clamp((298 * c1 + 409 * e + 128) >> 8);
+        out[(x + 1) * 4 + 1] = Clamp((298 * c1 - 100 * d - 208 * e + 128) >> 8);
+        out[(x + 1) * 4 + 2] = Clamp((298 * c1 + 516 * d + 128) >> 8);
+        out[(x + 1) * 4 + 3] = 255;
+      }
     }
-  }
   }
   for (size_t i = 0; i + 3 < front_.size(); i += 64) {
     if (front_[i] > 8 || front_[i + 1] > 8 || front_[i + 2] > 8) {
