@@ -256,6 +256,8 @@ flutter::EncodableMap CameraGraph::Start(const std::string& camera_id,
   }
   if (!enabled) {
     StopCapture();
+    frame_count_.store(0);
+    live_frames_.store(0);
     if (textures_ != nullptr && texture_id_ >= 0) {
       textures_->MarkTextureFrameAvailable(texture_id_);
     }
@@ -569,7 +571,7 @@ void CameraGraph::CaptureLoop() {
       textures_->MarkTextureFrameAvailable(texture_id_);
     }
   }
-  if (com == S_OK) {
+  if (SUCCEEDED(com)) {
     CoUninitialize();
   }
 }

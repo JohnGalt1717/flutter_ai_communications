@@ -224,6 +224,8 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   }
   if (!enabled) {
     StopCapture();
+    frame_count_.store(0);
+    live_frames_.store(0);
     if (textures_ != nullptr && texture_ != nullptr) {
       fl_texture_registrar_mark_texture_frame_available(textures_,
                                                         FL_TEXTURE(texture_));
