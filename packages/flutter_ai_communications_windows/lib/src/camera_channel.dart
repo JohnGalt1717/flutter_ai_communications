@@ -9,8 +9,7 @@ final class MethodChannelCameraBackend implements CameraBackend {
   /// Creates a channel backend.
   MethodChannelCameraBackend({MethodChannel? methods})
     : _methods =
-          methods ??
-          const MethodChannel('flutter_ai_communications/methods');
+          methods ?? const MethodChannel('flutter_ai_communications/methods');
 
   final MethodChannel _methods;
   VideoSurface? _lastSurface;
@@ -33,7 +32,9 @@ final class MethodChannelCameraBackend implements CameraBackend {
   @override
   Future<List<CameraEndpoint>> enumerate() async {
     try {
-      final raw = await _methods.invokeMethod<List<dynamic>>('enumerateCameras');
+      final raw = await _methods.invokeMethod<List<dynamic>>(
+        'enumerateCameras',
+      );
       return _readCameras(raw);
     } on MissingPluginException {
       return const [];
@@ -78,12 +79,13 @@ final class MethodChannelCameraBackend implements CameraBackend {
         if (status != 'started') {
           _lastSurface = null;
           _lastFormat = null;
-          return NativeGraphStart.unavailable;
+          return status == 'failed'
+              ? NativeGraphStart.failed
+              : NativeGraphStart.unavailable;
         }
-        final handle = _readInt(value['textureId']) ?? _readInt(value['handle']);
-        _lastSurface = handle == null
-            ? null
-            : VideoSurface(handle: handle);
+        final handle =
+            _readInt(value['textureId']) ?? _readInt(value['handle']);
+        _lastSurface = handle == null ? null : VideoSurface(handle: handle);
         final width = _readInt(value['width']);
         final height = _readInt(value['height']);
         final frameRate = _readInt(value['frameRate']);

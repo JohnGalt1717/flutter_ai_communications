@@ -1,5 +1,7 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_linux/flutter_ai_communications_linux.dart';
 import 'package:flutter_ai_communications_linux/src/camera_backend.dart';
+import 'package:flutter_ai_communications_linux/src/camera_channel.dart';
 import 'package:flutter_ai_communications_linux/src/linux_camera_facing.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -54,35 +56,38 @@ void main() {
     );
   });
 
-  test('permission denial is a typed result without starting capture', () async {
-    final camera = _RecordingCamera()
-      ..cameras = [usb]
-      ..permission = CameraPermission.denied;
-    final adapter = adapterFor(camera);
-    expect(
-      await adapter.requestCameraPermission(),
-      CameraPermission.denied,
-    );
-    expect(camera.startCalls, 0);
-  });
+  test(
+    'permission denial is a typed result without starting capture',
+    () async {
+      final camera = _RecordingCamera()
+        ..cameras = [usb]
+        ..permission = CameraPermission.denied;
+      final adapter = adapterFor(camera);
+      expect(await adapter.requestCameraPermission(), CameraPermission.denied);
+      expect(camera.startCalls, 0);
+    },
+  );
 
-  test('start yields a Video surface and nearest Native Video Format', () async {
-    final camera = _RecordingCamera()..cameras = [usb, integrated];
-    final adapter = adapterFor(camera);
-    expect(
-      await adapter.startCameraNative(
-        cameraId: '/dev/video0',
-        videoFormat: VideoFormat.defaultFormat,
-      ),
-      NativeGraphStart.started,
-    );
-    expect(adapter.lastVideoSurface?.handle, 1);
-    expect(adapter.lastVideoSurface?.kind, VideoSurfaceKind.texture);
-    expect(
-      adapter.lastNativeVideoFormat,
-      const VideoFormat(width: 1920, height: 1080, frameRate: 30),
-    );
-  });
+  test(
+    'start yields a Video surface and nearest Native Video Format',
+    () async {
+      final camera = _RecordingCamera()..cameras = [usb, integrated];
+      final adapter = adapterFor(camera);
+      expect(
+        await adapter.startCameraNative(
+          cameraId: '/dev/video0',
+          videoFormat: VideoFormat.defaultFormat,
+        ),
+        NativeGraphStart.started,
+      );
+      expect(adapter.lastVideoSurface?.handle, 1);
+      expect(adapter.lastVideoSurface?.kind, VideoSurfaceKind.texture);
+      expect(
+        adapter.lastNativeVideoFormat,
+        const VideoFormat(width: 1920, height: 1080, frameRate: 30),
+      );
+    },
+  );
 
   test('missing camera is unavailable, not a failed Session graph', () async {
     final camera = _RecordingCamera();
@@ -92,6 +97,25 @@ void main() {
       NativeGraphStart.unavailable,
     );
     expect(adapter.lastVideoSurface, isNull);
+  });
+
+  test('native status failed is NativeGraphStart.failed', () async {
+    const methods = MethodChannel('flutter_ai_communications/methods');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'startCameraNative') {
+        return {'status': 'failed'};
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(methods, null));
+    final backend = MethodChannelCameraBackend(methods: methods);
+    expect(
+      await backend.start(cameraId: '/dev/video0'),
+      NativeGraphStart.failed,
+    );
+    expect(backend.lastSurface, isNull);
   });
 
   test('Mute-video keeps the surface; Camera-off stops hardware', () async {

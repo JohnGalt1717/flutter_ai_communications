@@ -277,7 +277,9 @@ class MethodChannelCommunicationsPlatform
   Future<List<CameraEndpoint>> enumerateCameras() async {
     _ensureListening();
     try {
-      final raw = await _methods.invokeMethod<List<dynamic>>('enumerateCameras');
+      final raw = await _methods.invokeMethod<List<dynamic>>(
+        'enumerateCameras',
+      );
       return _readCameras(raw);
     } on MissingPluginException {
       return const [];
@@ -314,7 +316,8 @@ class MethodChannelCommunicationsPlatform
         'cameraId': cameraId,
         'width': videoFormat?.width ?? VideoFormat.defaultFormat.width,
         'height': videoFormat?.height ?? VideoFormat.defaultFormat.height,
-        'frameRate': videoFormat?.frameRate ?? VideoFormat.defaultFormat.frameRate,
+        'frameRate':
+            videoFormat?.frameRate ?? VideoFormat.defaultFormat.frameRate,
         'enabled': enabled,
         'muted': muted,
       });
@@ -323,7 +326,9 @@ class MethodChannelCommunicationsPlatform
         if (status != 'started') {
           _lastVideoSurface = null;
           _lastNativeVideoFormat = null;
-          return NativeGraphStart.unavailable;
+          return status == 'failed'
+              ? NativeGraphStart.failed
+              : NativeGraphStart.unavailable;
         }
         final handle = value['textureId'] as int? ?? value['handle'] as int?;
         final kindName = value['kind'] as String?;

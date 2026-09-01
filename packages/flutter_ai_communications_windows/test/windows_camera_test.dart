@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 import 'package:flutter_ai_communications_windows/flutter_ai_communications_windows.dart';
 import 'package:flutter_ai_communications_windows/src/camera_backend.dart';
+import 'package:flutter_ai_communications_windows/src/camera_channel.dart';
 import 'package:flutter_ai_communications_windows/src/windows_camera_consent.dart';
 import 'package:flutter_ai_communications_windows/src/windows_camera_facing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,20 +63,20 @@ void main() {
     );
   });
 
-  test('permission denial is a typed result without starting capture', () async {
-    final camera = _RecordingCamera()..cameras = [usb];
-    final adapter = FlutterAiCommunicationsWindows(
-      camera: camera,
-      cameraConsent: _FixedCameraConsent(CameraPermission.denied),
-    );
-    addTearDown(adapter.stopCameraNative);
-    expect(
-      await adapter.requestCameraPermission(),
-      CameraPermission.denied,
-    );
-    expect(camera.permissionCalls, 0);
-    expect(camera.startCalls, 0);
-  });
+  test(
+    'permission denial is a typed result without starting capture',
+    () async {
+      final camera = _RecordingCamera()..cameras = [usb];
+      final adapter = FlutterAiCommunicationsWindows(
+        camera: camera,
+        cameraConsent: _FixedCameraConsent(CameraPermission.denied),
+      );
+      addTearDown(adapter.stopCameraNative);
+      expect(await adapter.requestCameraPermission(), CameraPermission.denied);
+      expect(camera.permissionCalls, 0);
+      expect(camera.startCalls, 0);
+    },
+  );
 
   test('restricted consent is restricted without starting capture', () async {
     final camera = _RecordingCamera()..cameras = [usb];
@@ -101,30 +103,30 @@ void main() {
       ),
     );
     addTearDown(adapter.stopCameraNative);
-    expect(
-      await adapter.requestCameraPermission(),
-      CameraPermission.granted,
-    );
+    expect(await adapter.requestCameraPermission(), CameraPermission.granted);
     expect(packaged.calls, 0);
   });
 
-  test('start yields a Video surface and nearest Native Video Format', () async {
-    final camera = _RecordingCamera()..cameras = [usb, integrated];
-    final adapter = adapterFor(camera);
-    expect(
-      await adapter.startCameraNative(
-        cameraId: 'usb-cam',
-        videoFormat: VideoFormat.defaultFormat,
-      ),
-      NativeGraphStart.started,
-    );
-    expect(adapter.lastVideoSurface?.handle, 1);
-    expect(adapter.lastVideoSurface?.kind, VideoSurfaceKind.texture);
-    expect(
-      adapter.lastNativeVideoFormat,
-      const VideoFormat(width: 1920, height: 1080, frameRate: 30),
-    );
-  });
+  test(
+    'start yields a Video surface and nearest Native Video Format',
+    () async {
+      final camera = _RecordingCamera()..cameras = [usb, integrated];
+      final adapter = adapterFor(camera);
+      expect(
+        await adapter.startCameraNative(
+          cameraId: 'usb-cam',
+          videoFormat: VideoFormat.defaultFormat,
+        ),
+        NativeGraphStart.started,
+      );
+      expect(adapter.lastVideoSurface?.handle, 1);
+      expect(adapter.lastVideoSurface?.kind, VideoSurfaceKind.texture);
+      expect(
+        adapter.lastNativeVideoFormat,
+        const VideoFormat(width: 1920, height: 1080, frameRate: 30),
+      );
+    },
+  );
 
   test('missing camera is unavailable, not a failed Session graph', () async {
     final camera = _RecordingCamera();
@@ -135,6 +137,22 @@ void main() {
     );
     expect(adapter.lastVideoSurface, isNull);
     expect(adapter.lastNativeVideoFormat, isNull);
+  });
+
+  test('native status failed is NativeGraphStart.failed', () async {
+    const methods = MethodChannel('flutter_ai_communications/methods');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'startCameraNative') {
+        return {'status': 'failed'};
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(methods, null));
+    final backend = MethodChannelCameraBackend(methods: methods);
+    expect(await backend.start(cameraId: 'cam'), NativeGraphStart.failed);
+    expect(backend.lastSurface, isNull);
   });
 
   test('Mute-video keeps the surface; Camera-off stops hardware', () async {
