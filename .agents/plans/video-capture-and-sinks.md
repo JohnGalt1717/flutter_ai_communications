@@ -1,8 +1,9 @@
 # Video Capture, Processors, and Sink Providers Plan
 
-**Status:** Shipped on iOS, Android, macOS, and web. Next native work is
-Windows (ticket 08) and Linux camera graphs, plus audio/lobby receipts on
-those machines. See `docs/windows-linux-video-setup.md`.
+**Status:** Shipped on iOS, Android, macOS, and web. Windows and Linux
+camera graphs are in tree (Media Foundation / V4L2 → Texture). Next is
+physical receipts on those machines. See
+`docs/windows-linux-video-setup.md`.
 **Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.
@@ -10,9 +11,9 @@ those machines. See `docs/windows-linux-video-setup.md`.
 ## Current slice (2026-08-31)
 
 Ready for a second Windows machine and a Linux machine to **build, run the
-example, and collect audio Orchestration receipts**. Camera catalogs on those
-two platforms are empty until their native graphs land. Missing/denied camera
-must not fail `start()`.
+example, and collect audio plus camera Orchestration receipts**. Native
+camera methods are implemented; missing/denied camera must not fail
+`start()`.
 
 ### Done
 
@@ -26,8 +27,9 @@ must not fail `start()`.
 - Orchestration e2e passed: iPhone 17 simulator, SM A176U1, macOS (audio),
   example harness Enter → Join
 - v1 processor is `none` only
-- Windows/Linux audio backends already exist (WASAPI / Pulse). Camera methods
-  stay unimplemented and are treated as unavailable, not `StartFailed`
+- Windows/Linux audio backends already exist (WASAPI / Pulse). Camera graphs
+  are Media Foundation (Windows) and V4L2 (Linux) → Flutter Texture. Physical
+  receipts are still outstanding.
 
 ### Not in this slice (do not block Win/Linux receipts)
 
@@ -46,7 +48,7 @@ must not fail `start()`.
 | Build / doctor | VS + C++ desktop workload | clang, cmake, ninja, GTK, Pulse/PipeWire |
 | Audio Orchestration | Run now (`-d windows`) | Run now (`-d linux`) |
 | Example lobby audio | Run now; camera list empty | Run now; camera list empty |
-| Camera graph | Ticket 08: Media Foundation / `Windows.Media.Capture` → Flutter Texture | New: V4L2 capture → Flutter Texture |
+| Camera graph | Ticket 08 landed: Media Foundation → Flutter Texture | Landed: V4L2 capture → Flutter Texture (VM compile) |
 | Camera permission | Windows privacy consent | PipeWire/portal or v4l device node |
 | Mute-video / Camera-off | Black frames vs stop device | Same contract as iOS/Android |
 | Receipt | Catalog, preview Texture, lobby → join, 20 cycles | Same |
@@ -165,8 +167,8 @@ Tickets 05–09 plus Linux: iOS, Android, macOS, Windows, Web, then Linux.
 | Android | Done (`AndroidCameraGraph`) | SM A176U1 Orchestration passed |
 | macOS | Done (`MacCameraGraph`) | macOS audio Orchestration passed |
 | Web | Done (getUserMedia) | Lobby driven via flutter-skill + Agent Lens |
-| Windows | **Not started** — ticket 08 | Audio Orchestration can run now |
-| Linux | **Not started** — later in the original plan; do it with Windows receipts | Audio Orchestration can run now |
+| Windows | Graph in tree (Media Foundation → Texture) | LifeCam Studio `native_camera_test` passed |
+| Linux | Graph in tree (V4L2 → Texture) for a Linux VM | Run `native_camera_test.dart -d linux` |
 
 Each remaining graph delivers catalog, permission, negotiated Video Format, Preview Texture, camera switch, Mute-video black frames, Camera-off hardware stop, and enable-video-later.
 

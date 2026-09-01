@@ -35,9 +35,11 @@ Future<Session> requireReady(
   CommunicationsManager manager, {
   String? purpose,
   SessionPreference preference = const SessionPreference(soundFloor: 0),
+  bool cameraSend = false,
 }) async {
   final result = await manager.start(
     purpose: purpose,
+    cameraSend: cameraSend,
     preference: SessionPreference(
       soundFloor: preference.soundFloor ?? 0,
       endpoints: preference.endpoints,
@@ -52,6 +54,32 @@ Future<Session> requireReady(
     reason: 'native start must succeed ($result)',
   );
   return (result as StartReady).session;
+}
+
+Future<void> waitForCameraStream(
+  FlutterAiCommunicationsPlatform platform, {
+  int minFrames = 8,
+  int minLive = 1,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  var frames = 0;
+  var live = 0;
+  while (DateTime.now().isBefore(deadline)) {
+    await platform.pollCameraNative();
+    frames = platform.lastCameraFrameCount;
+    live = platform.lastCameraLiveFrames;
+    if (frames >= minFrames && live >= minLive) {
+      nativeOrchestrationLog.info(
+        'NATIVE_CAMERA_STREAM frames=$frames live=$live',
+      );
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  fail(
+    'camera stream not live after 5s frames=$frames live=$live '
+    '(need frames>=$minFrames live>=$minLive)',
+  );
 }
 
 Future<void> waitForCapture(
@@ -188,6 +216,13 @@ Map<String, Object?> snapshot(Session session, {required String caseName}) {
     'captureConversionPath': diagnostics.captureConversionPath.name,
     'status': session.status.code.name,
     'isolation': session.lastIsolation.state.name,
+    'cameraSend': session.cameraSend,
+    'cameraEnabled': session.isCameraEnabled,
+    'videoMuted': session.isVideoMuted,
+    'videoSurface': session.videoSurface?.handle,
+    'nativeVideoFormat': session.nativeVideoFormat?.toString(),
+    'videoUnavailableReason': session.videoUnavailableReason,
+    'selectedCameraId': session.selectedCameraId,
   };
 }
 

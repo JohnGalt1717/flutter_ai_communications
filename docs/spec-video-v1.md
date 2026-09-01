@@ -60,7 +60,7 @@ in the federated packages.
   Lobby has Camera-off / camera on, not Mute-video.
 - v1 processor is none only.
 - Screen source is specified; native capture later.
-- Linux camera later.
+- Linux camera graph is V4L2 → Texture; physical receipts are later.
 - Markdown tickets in `.scratch/video-v1-issues/` and
   `.scratch/video-host-issues/`. No GitHub issues unless a human asks.
 

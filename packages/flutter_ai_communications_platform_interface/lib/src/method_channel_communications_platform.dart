@@ -258,12 +258,20 @@ class MethodChannelCommunicationsPlatform
 
   VideoSurface? _lastVideoSurface;
   VideoFormat? _lastNativeVideoFormat;
+  var _lastCameraFrameCount = 0;
+  var _lastCameraLiveFrames = 0;
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
 
   @override
   VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
+
+  @override
+  int get lastCameraFrameCount => _lastCameraFrameCount;
+
+  @override
+  int get lastCameraLiveFrames => _lastCameraLiveFrames;
 
   @override
   Future<List<CameraEndpoint>> enumerateCameras() async {
@@ -390,6 +398,26 @@ class MethodChannelCommunicationsPlatform
       return;
     }
   }
+
+  @override
+  Future<void> pollCameraNative() async {
+    try {
+      final value = await _methods.invokeMethod<Object?>('cameraGraphStats');
+      if (value is Map) {
+        _lastCameraFrameCount = _readInt(value['frameCount']) ?? 0;
+        _lastCameraLiveFrames = _readInt(value['liveFrames']) ?? 0;
+      }
+    } on MissingPluginException {
+      _lastCameraFrameCount = 0;
+      _lastCameraLiveFrames = 0;
+    }
+  }
+
+  int? _readInt(Object? value) => switch (value) {
+    int n => n,
+    num n => n.toInt(),
+    _ => null,
+  };
 
   List<CameraEndpoint> _readCameras(List<dynamic>? raw) {
     if (raw == null) {

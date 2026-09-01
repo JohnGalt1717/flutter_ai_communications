@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  flutter_ai_communications_linux
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

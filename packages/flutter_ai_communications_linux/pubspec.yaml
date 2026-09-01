@@ -27,4 +27,5 @@ flutter:
     implements: flutter_ai_communications
     platforms:
       linux:
+        pluginClass: FlutterAiCommunicationsLinuxPlugin
         dartPluginClass: FlutterAiCommunicationsLinux

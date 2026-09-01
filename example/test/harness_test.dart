@@ -135,4 +135,33 @@ void main() {
       await tester.pump(Duration.zero);
     },
   );
+
+  testWidgets('lobby Session exposes camera keys and self-view', (tester) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.scrollUntilVisible(find.byKey(const Key('self-view')), 80);
+    expect(find.byKey(const Key('self-view')), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
+    expect(find.byKey(const Key('camera-front')), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), 80);
+    expect(find.byKey(const Key('camera-off')), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -80);
+    await tester.tap(find.byKey(const Key('lobby-join')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.scrollUntilVisible(find.byKey(const Key('mute-video')), 80);
+    expect(find.byKey(const Key('mute-video')), findsOneWidget);
+    await manager.session?.muteVideo();
+    expect(manager.session?.isVideoMuted, isTrue);
+    await manager.session?.setCameraEnabled(false);
+    expect(manager.session?.isCameraEnabled, isFalse);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
 }

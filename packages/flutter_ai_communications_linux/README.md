@@ -58,3 +58,15 @@ These are documented limits, not bugs:
 - **WSLg** exposes the Windows default route as `RDPSource` /
   `RDPSink`, not per-device Bluetooth Endpoints from the Windows
   radio. Native Linux Bluetooth needs BlueZ on the Linux host.
+
+## Camera
+
+V4L2 (`/dev/video*`) feeds a Flutter Texture. PipeWire camera portal
+is not implemented in this slice; sandboxed hosts (Flatpak / Snap)
+must grant the video device node. Mute-video substitutes black frames
+with the graph still running. Camera-off stops the device. Missing or
+denied camera does not fail `start()`.
+
+Install `v4l-utils` on the Linux machine that collects receipts. The
+graph is written for a Linux VM compile; device receipts are not
+claimed from Windows.

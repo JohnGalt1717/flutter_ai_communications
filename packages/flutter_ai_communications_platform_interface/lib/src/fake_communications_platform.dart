@@ -395,6 +395,15 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   @override
   VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
 
+  var _cameraFrameCount = 0;
+  var _cameraLiveFrames = 0;
+
+  @override
+  int get lastCameraFrameCount => _cameraFrameCount;
+
+  @override
+  int get lastCameraLiveFrames => _cameraLiveFrames;
+
   @override
   Future<List<CameraEndpoint>> enumerateCameras() async =>
       List<CameraEndpoint>.of(cameras);
@@ -439,6 +448,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     _lastVideoSurface = cameraRunning
         ? const VideoSurface(handle: 1)
         : null;
+    _cameraFrameCount = cameraRunning ? 8 : 0;
+    _cameraLiveFrames = cameraRunning && !muted ? 8 : 0;
     return NativeGraphStart.started;
   }
 
@@ -447,6 +458,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     stopCameraCalls++;
     cameraRunning = false;
     _lastVideoSurface = null;
+    _cameraFrameCount = 0;
+    _cameraLiveFrames = 0;
   }
 
   @override
@@ -464,6 +477,19 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> setMuteVideoNative(bool muted) async {
     muteVideo = muted;
+    if (muted) {
+      _cameraLiveFrames = 0;
+    }
+  }
+
+  @override
+  Future<void> pollCameraNative() async {
+    if (cameraRunning && !muteVideo) {
+      _cameraFrameCount += 4;
+      _cameraLiveFrames += 4;
+    } else if (cameraRunning) {
+      _cameraFrameCount += 4;
+    }
   }
 
   /// Closes injected controllers. Tests only.

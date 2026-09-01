@@ -28,4 +28,5 @@ flutter:
     implements: flutter_ai_communications
     platforms:
       windows:
+        pluginClass: FlutterAiCommunicationsWindowsPlugin
         dartPluginClass: FlutterAiCommunicationsWindows

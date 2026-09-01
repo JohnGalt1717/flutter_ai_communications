@@ -2,9 +2,9 @@
 
 **As of 2026-08-31.** iOS, Android, macOS, and web camera graphs are in this
 repo. Windows and Linux already have **audio** backends (WASAPI / Pulse).
-They do **not** yet implement camera methods; `enumerateCameras` stays
-unimplemented and the Communications manager treats that as unavailable
-video, not `StartFailed`.
+Camera graphs are in tree (Windows Media Foundation, Linux V4L2). Empty
+`cameras()` still happens when no device is present or permission is
+denied; that is unavailable video, not `StartFailed`.
 
 Use a second Windows machine and a Linux machine for two tracks, in order:
 
@@ -37,6 +37,7 @@ Use a second Windows machine and a Linux machine for two tracks, in order:
 
 ```text
 flutter test integration_test/native_orchestration_test.dart -d <device-id>
+flutter test integration_test/native_camera_test.dart -d <device-id>
 flutter run -d <device-id>
 ```
 
@@ -61,8 +62,9 @@ flutter test integration_test/native_orchestration_test.dart -d windows
 flutter run -d windows
 ```
 
-4. Enter lobby. Mic permission is requested inside `start()`. Camera list
-   is empty; self-view shows unavailable, not a failed Session.
+4. Enter lobby. Mic permission is requested inside `start()`. Camera
+   permission is requested when the lobby Session includes camera send.
+   Empty `cameras()` still means unavailable video, not a failed Session.
 5. Join, mute, End, confirm 20 start/stop cycles in the Orchestration
    receipt.
 
@@ -80,7 +82,8 @@ flutter test integration_test/native_orchestration_test.dart -d linux
 flutter run -d linux
 ```
 
-4. Same empty-camera expectation as Windows.
+4. Camera list is populated when `/dev/video*` capture nodes exist.
+   Empty `cameras()` still means unavailable video, not a failed Session.
 
 ### What to send back from track 1
 
@@ -90,7 +93,7 @@ flutter run -d linux
 - Orchestration receipt JSON
 - Confirmation that lobby `start()` succeeded with no camera
 
-## Track 2 — camera graphs (not started)
+## Track 2 — camera graphs (in tree; receipts remaining)
 
 Implement in the federated packages, not in `example/`. Match iOS/Android
 contracts in ADR-0012, ADR-0013, ADR-0021.
