@@ -158,6 +158,33 @@ void main() {
     messenger.setMockStreamHandler(events, null);
   });
 
+  test('startCameraNative maps failed separately from unavailable', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'startCameraNative') {
+        return {'status': 'failed'};
+      }
+      return null;
+    });
+    expect(
+      await platform.startCameraNative(cameraId: 'cam'),
+      NativeGraphStart.failed,
+    );
+    expect(platform.lastVideoSurface, isNull);
+
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'startCameraNative') {
+        return {'status': 'unavailable'};
+      }
+      return null;
+    });
+    expect(
+      await platform.startCameraNative(cameraId: 'cam'),
+      NativeGraphStart.unavailable,
+    );
+  });
+
   test('route events update last Observed Pair', () async {
     await platform.dispose();
     const events = EventChannel('flutter_ai_communications/events');

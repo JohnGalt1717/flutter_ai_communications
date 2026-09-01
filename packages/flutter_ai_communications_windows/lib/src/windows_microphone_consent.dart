@@ -91,7 +91,7 @@ final class WinrtWindowsMicrophoneConsent implements WindowsMicrophoneConsent {
   @override
   Future<MicrophonePermission> request() async {
     _ensureWinrt();
-    final deviceStatus = _deviceAccessStatus();
+    final deviceStatus = deviceAccessStatusForClass(_audioCaptureDeviceClass);
     final fromDevice = permissionFromDeviceAccessStatus(deviceStatus ?? -1);
     if (fromDevice == MicrophonePermission.granted ||
         fromDevice == MicrophonePermission.denied ||
@@ -115,7 +115,12 @@ void _ensureWinrt() {
   }
 }
 
-int? _deviceAccessStatus() {
+/// Windows.Devices.Enumeration.DeviceClass.AudioCapture.
+const _audioCaptureDeviceClass = 1;
+
+/// DeviceAccessInformation.CurrentStatus for a [DeviceClass] value.
+int? deviceAccessStatusForClass(int deviceClass) {
+  _ensureWinrt();
   IUnknown? factory;
   IUnknown? info;
   try {
@@ -126,7 +131,7 @@ int? _deviceAccessStatus() {
     if (factory == null) {
       return null;
     }
-    info = _createFromDeviceClass(factory, 1);
+    info = _createFromDeviceClass(factory, deviceClass);
     if (info == null) {
       return null;
     }

@@ -7,17 +7,23 @@ import 'package:logging/logging.dart';
 
 import 'src/audio_backend.dart';
 import 'src/audio_factory.dart';
+import 'src/camera_backend.dart';
+import 'src/camera_channel.dart';
 import 'src/linux_bluetooth_identity.dart';
 
 /// Linux adapter. Isolation is unavailable. Pulse / PipeWire via Dart FFI.
+///
+/// Camera uses a MethodChannel native graph (V4L2 → Texture).
 final class FlutterAiCommunicationsLinux
     extends FlutterAiCommunicationsPlatform {
   /// Creates the Linux adapter.
   FlutterAiCommunicationsLinux({
     AudioBackend? backend,
     BluetoothIdentitySource? bluetooth,
+    CameraBackend? camera,
   }) : _backend = backend ?? createAudioBackend(),
-       _bluetooth = bluetooth ?? createBluetoothIdentitySource();
+       _bluetooth = bluetooth ?? createBluetoothIdentitySource(),
+       _camera = camera ?? MethodChannelCameraBackend();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -28,6 +34,7 @@ final class FlutterAiCommunicationsLinux
 
   final AudioBackend _backend;
   final BluetoothIdentitySource _bluetooth;
+  final CameraBackend _camera;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -208,4 +215,54 @@ final class FlutterAiCommunicationsLinux
 
   @override
   Stream<CoverageHint> get pathCoverage => _path.stream;
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() => _camera.enumerate();
+
+  @override
+  Future<CameraPermission> requestCameraPermission() =>
+      _camera.requestPermission();
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) {
+    return _camera.start(
+      cameraId: cameraId,
+      videoFormat: videoFormat,
+      enabled: enabled,
+      muted: muted,
+    );
+  }
+
+  @override
+  Future<void> stopCameraNative() => _camera.stop();
+
+  @override
+  Future<void> selectCameraNative(String cameraId) => _camera.select(cameraId);
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) =>
+      _camera.setEnabled(enabled);
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) => _camera.setMuted(muted);
+
+  @override
+  VideoSurface? get lastVideoSurface => _camera.lastSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _camera.lastFormat;
+
+  @override
+  int get lastCameraFrameCount => _camera.frameCount;
+
+  @override
+  int get lastCameraLiveFrames => _camera.liveFrames;
+
+  @override
+  Future<void> pollCameraNative() => _camera.pollStats();
 }

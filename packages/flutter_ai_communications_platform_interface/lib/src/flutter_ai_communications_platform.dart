@@ -216,4 +216,13 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
 
   /// Negotiated Native Video Format from the last camera start.
   VideoFormat? get lastNativeVideoFormat => null;
+
+  /// Native captured frames since the last camera start. Not a Dart byte tap.
+  int get lastCameraFrameCount => 0;
+
+  /// Frames that contained non-black pixels. Proves the sensor is live.
+  int get lastCameraLiveFrames => 0;
+
+  /// Refreshes [lastCameraFrameCount] and [lastCameraLiveFrames] from native.
+  Future<void> pollCameraNative() async {}
 }

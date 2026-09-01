@@ -5,12 +5,17 @@ import 'package:flutter_ai_communications_platform_interface/flutter_ai_communic
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 import 'package:logging/logging.dart';
 
+import 'src/camera_backend.dart';
+import 'src/camera_channel.dart';
 import 'src/wasapi_backend.dart';
 import 'src/wasapi_factory.dart';
 import 'src/windows_bluetooth_identity.dart';
+import 'src/windows_camera_consent.dart';
 import 'src/windows_microphone_consent.dart';
 
 /// Windows adapter. Isolation is unavailable. WASAPI is called via Dart FFI.
+///
+/// Camera uses a MethodChannel native graph (Media Foundation → Texture).
 final class FlutterAiCommunicationsWindows
     extends FlutterAiCommunicationsPlatform {
   /// Creates the Windows adapter.
@@ -18,9 +23,13 @@ final class FlutterAiCommunicationsWindows
     WasapiBackend? backend,
     WindowsMicrophoneConsent? consent,
     BluetoothIdentitySource? bluetooth,
+    CameraBackend? camera,
+    WindowsCameraConsent? cameraConsent,
   }) : _backend = backend ?? createWasapiBackend(),
        _consent = consent ?? createWindowsMicrophoneConsent(),
-       _bluetooth = bluetooth ?? createBluetoothIdentitySource();
+       _bluetooth = bluetooth ?? createBluetoothIdentitySource(),
+       _camera = camera ?? MethodChannelCameraBackend(),
+       _cameraConsent = cameraConsent ?? createWindowsCameraConsent();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -32,6 +41,8 @@ final class FlutterAiCommunicationsWindows
   final WasapiBackend _backend;
   final WindowsMicrophoneConsent _consent;
   final BluetoothIdentitySource _bluetooth;
+  final CameraBackend _camera;
+  final WindowsCameraConsent _cameraConsent;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -216,4 +227,59 @@ final class FlutterAiCommunicationsWindows
 
   @override
   Stream<CoverageHint> get pathCoverage => _path.stream;
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() => _camera.enumerate();
+
+  @override
+  Future<CameraPermission> requestCameraPermission() async {
+    final consent = await _cameraConsent.request();
+    if (consent != CameraPermission.granted) {
+      return consent;
+    }
+    return _camera.requestPermission();
+  }
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) {
+    return _camera.start(
+      cameraId: cameraId,
+      videoFormat: videoFormat,
+      enabled: enabled,
+      muted: muted,
+    );
+  }
+
+  @override
+  Future<void> stopCameraNative() => _camera.stop();
+
+  @override
+  Future<void> selectCameraNative(String cameraId) => _camera.select(cameraId);
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) =>
+      _camera.setEnabled(enabled);
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) => _camera.setMuted(muted);
+
+  @override
+  VideoSurface? get lastVideoSurface => _camera.lastSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _camera.lastFormat;
+
+  @override
+  int get lastCameraFrameCount => _camera.frameCount;
+
+  @override
+  int get lastCameraLiveFrames => _camera.liveFrames;
+
+  @override
+  Future<void> pollCameraNative() => _camera.pollStats();
 }

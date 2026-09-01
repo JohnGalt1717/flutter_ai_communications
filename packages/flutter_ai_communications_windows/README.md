@@ -72,3 +72,18 @@ These are documented limits, not bugs:
 - **Quality is best-effort.** Endpoint switches restart the graph
   and emit a silence frame so the Session capture subscription
   survives (ADR-0004).
+
+## Camera
+
+Media Foundation Source Reader feeds a Flutter Texture. Mute-video
+substitutes black frames with the graph still running. Camera-off
+stops the capture device. Missing or denied camera does not fail
+`start()`.
+
+Unpackaged Win32 (`flutter run -d windows`): allow desktop apps under
+Settings → Privacy → Camera. Packaged Store / MSIX hosts must declare
+webcam themselves:
+
+```xml
+<DeviceCapability Name="webcam"/>
+```

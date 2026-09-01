@@ -258,6 +258,8 @@ class MethodChannelCommunicationsPlatform
 
   VideoSurface? _lastVideoSurface;
   VideoFormat? _lastNativeVideoFormat;
+  var _lastCameraFrameCount = 0;
+  var _lastCameraLiveFrames = 0;
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
@@ -266,10 +268,18 @@ class MethodChannelCommunicationsPlatform
   VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
 
   @override
+  int get lastCameraFrameCount => _lastCameraFrameCount;
+
+  @override
+  int get lastCameraLiveFrames => _lastCameraLiveFrames;
+
+  @override
   Future<List<CameraEndpoint>> enumerateCameras() async {
     _ensureListening();
     try {
-      final raw = await _methods.invokeMethod<List<dynamic>>('enumerateCameras');
+      final raw = await _methods.invokeMethod<List<dynamic>>(
+        'enumerateCameras',
+      );
       return _readCameras(raw);
     } on MissingPluginException {
       return const [];
@@ -306,7 +316,8 @@ class MethodChannelCommunicationsPlatform
         'cameraId': cameraId,
         'width': videoFormat?.width ?? VideoFormat.defaultFormat.width,
         'height': videoFormat?.height ?? VideoFormat.defaultFormat.height,
-        'frameRate': videoFormat?.frameRate ?? VideoFormat.defaultFormat.frameRate,
+        'frameRate':
+            videoFormat?.frameRate ?? VideoFormat.defaultFormat.frameRate,
         'enabled': enabled,
         'muted': muted,
       });
@@ -315,7 +326,9 @@ class MethodChannelCommunicationsPlatform
         if (status != 'started') {
           _lastVideoSurface = null;
           _lastNativeVideoFormat = null;
-          return NativeGraphStart.unavailable;
+          return status == 'failed'
+              ? NativeGraphStart.failed
+              : NativeGraphStart.unavailable;
         }
         final handle = value['textureId'] as int? ?? value['handle'] as int?;
         final kindName = value['kind'] as String?;
@@ -390,6 +403,26 @@ class MethodChannelCommunicationsPlatform
       return;
     }
   }
+
+  @override
+  Future<void> pollCameraNative() async {
+    try {
+      final value = await _methods.invokeMethod<Object?>('cameraGraphStats');
+      if (value is Map) {
+        _lastCameraFrameCount = _readInt(value['frameCount']) ?? 0;
+        _lastCameraLiveFrames = _readInt(value['liveFrames']) ?? 0;
+      }
+    } on MissingPluginException {
+      _lastCameraFrameCount = 0;
+      _lastCameraLiveFrames = 0;
+    }
+  }
+
+  int? _readInt(Object? value) => switch (value) {
+    int n => n,
+    num n => n.toInt(),
+    _ => null,
+  };
 
   List<CameraEndpoint> _readCameras(List<dynamic>? raw) {
     if (raw == null) {

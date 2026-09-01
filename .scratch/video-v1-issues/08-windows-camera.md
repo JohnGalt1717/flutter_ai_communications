@@ -4,9 +4,15 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** ready-for-agent. Audio Orchestration on Windows can run before this graph exists (`docs/windows-linux-video-setup.md`). Empty `cameras()` is expected until this ticket lands.
+**Status:** graph landed and proven on Microsoft LifeCam Studio (USB,
+facing=external, Native Video Format 640×480@30). Suite:
+`example/integration_test/native_camera_test.dart -d windows`.
 
-- [ ] External cameras appear in the catalog
-- [ ] Unplug falls back when preference controls the pick
-- [ ] Explicit camera selection does not silently fall back
-- [ ] Permission denial is a typed result
+- [x] External cameras appear in the catalog (USB facing)
+- [x] Unplug falls back when preference controls the pick (manager)
+- [x] Explicit camera selection does not silently fall back
+- [x] Permission denial is a typed result
+- [x] Physical receipt: catalog, Texture, Mute-video, Camera-off, join
+      settings, enable-video-later (LifeCam Studio, JamieDesktop)
+- [x] Permission `granted`; native stream `frames>=8` and `liveFrames>=8`
+      (non-black pixels, not a Dart byte tap)

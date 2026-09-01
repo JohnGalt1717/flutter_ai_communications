@@ -24,4 +24,9 @@ Echo Transport (`lib/echo/`) is the host stand-in. A Loopback Pair taps
 be compared byte for byte. Analog speaker → microphone is not that path;
 see `docs/echo-e2e.md`.
 
-Windows and Linux camera receipts on other machines: `docs/windows-linux-video-setup.md`.
+Windows and Linux camera receipts: `docs/windows-linux-video-setup.md`.
+
+```text
+flutter test integration_test/native_camera_test.dart -d windows
+flutter test integration_test/native_camera_test.dart -d linux
+```

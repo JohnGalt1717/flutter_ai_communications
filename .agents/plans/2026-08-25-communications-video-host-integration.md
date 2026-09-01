@@ -1,8 +1,9 @@
 # Plan: Host communications video (example first)
 
 **Status:** Example lobby + Session contracts shipped. Do not start native
-camera work in a host app. Remaining native graphs are Windows and Linux
-(see `.agents/plans/video-capture-and-sinks.md` and
+camera work in a host app. Windows and Linux camera graphs are in the
+federated packages; remaining work is physical receipts (see
+`.agents/plans/video-capture-and-sinks.md` and
 `docs/windows-linux-video-setup.md`).
 **Audience:** Fresh agent working in `JohnGalt1717/flutter_ai_communications`.
 **Date:** 2026-08-25
