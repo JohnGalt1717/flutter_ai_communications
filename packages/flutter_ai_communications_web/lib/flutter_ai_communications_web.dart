@@ -35,6 +35,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       StreamController<IsolationEvent>.broadcast();
   final StreamController<OsRouteChange> _routes =
       StreamController<OsRouteChange>.broadcast();
+  final StreamController<List<ScreenSource>> _screenCatalog =
+      StreamController<List<ScreenSource>>.broadcast();
 
   web.MediaStream? _stream;
   web.AudioContext? _context;
@@ -615,15 +617,21 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   String? get lastScreenUnavailableReason => _screenUnavailableReason;
 
+  static const _systemPicker = [
+    ScreenSource(
+      id: 'system-picker',
+      name: 'System picker',
+      kind: ScreenSourceKind.systemPicker,
+    ),
+  ];
+
   @override
-  Future<List<ScreenSource>> enumerateScreenSources() async {
-    return const [
-      ScreenSource(
-        id: 'system-picker',
-        name: 'System picker',
-        kind: ScreenSourceKind.systemPicker,
-      ),
-    ];
+  Future<List<ScreenSource>> enumerateScreenSources() async => _systemPicker;
+
+  @override
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
+    yield _systemPicker;
+    yield* _screenCatalog.stream;
   }
 
   @override
@@ -692,9 +700,12 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       track?.addEventListener(
         'ended',
         (web.Event _) {
+          _screenStream = null;
+          _screenEl = null;
           _screenSurface = null;
           _screenFormat = null;
           _screenUnavailableReason = 'gone';
+          _screenCatalog.add(const []);
         }.toJS,
       );
       return NativeGraphStart.started;

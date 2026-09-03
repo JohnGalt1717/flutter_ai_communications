@@ -94,7 +94,10 @@ class FlutterAiCommunicationsPlugin :
         appContext = binding.applicationContext
         textures = binding.textureRegistry
         cameraGraph = AndroidCameraGraph(binding.applicationContext, binding.textureRegistry)
-        screenGraph = AndroidScreenGraph(binding.applicationContext, binding.textureRegistry)
+        screenGraph =
+            AndroidScreenGraph(binding.applicationContext, binding.textureRegistry) {
+                emit("screenCatalog", emptyList<Any>())
+            }
         audioManager =
             binding.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         methods = MethodChannel(binding.binaryMessenger, "flutter_ai_communications/methods")

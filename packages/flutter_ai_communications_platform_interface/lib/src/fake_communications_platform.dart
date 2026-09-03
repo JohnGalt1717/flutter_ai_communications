@@ -570,6 +570,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// When set, [startScreenShareNative] fails with this reason.
   String? screenShareStartReason;
 
+  /// When set, [startScreenShareNative] throws instead of returning a value.
+  Object? screenShareThrow;
+
   final Map<String, VideoSurface> _screenPreviews = {};
   VideoSurface? _lastScreenSurface;
   VideoFormat? _lastScreenNativeFormat;
@@ -649,6 +652,10 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     bool motion = false,
   }) async {
     startScreenShareCalls++;
+    final thrown = screenShareThrow;
+    if (thrown != null) {
+      throw thrown;
+    }
     final forced = screenShareStartReason;
     if (forced != null) {
       screenSending = false;

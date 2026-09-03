@@ -84,6 +84,17 @@ void main() {
     expect(session.screenUnavailableReason, 'denied');
   });
 
+  test('thrown native start is ScreenShareFailed and does not end Session', () async {
+    platform.screenShareThrow = StateError('native');
+    final session = ((await manager.start()) as StartReady).session;
+    expect(
+      await session.startScreenShare('display-0'),
+      isA<ScreenShareFailed>(),
+    );
+    expect(session.isStopped, isFalse);
+    expect(session.isScreenSending, isFalse);
+  });
+
   test('denied permission on replace stops the live screen send', () async {
     final session = ((await manager.start()) as StartReady).session;
     await session.startScreenShare('display-0');

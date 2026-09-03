@@ -18,6 +18,7 @@ import io.flutter.view.TextureRegistry
 class AndroidScreenGraph(
     private val context: Context,
     private val textures: TextureRegistry,
+    private val onSystemStop: () -> Unit,
 ) : PluginRegistry.ActivityResultListener {
     private val manager =
         context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -31,6 +32,18 @@ class AndroidScreenGraph(
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private val requestCode = 0xFAC4
+    private val projectionCallback =
+        object : MediaProjection.Callback() {
+            override fun onStop() {
+                main.post {
+                    if (projection == null) {
+                        return@post
+                    }
+                    stop()
+                    onSystemStop()
+                }
+            }
+        }
 
     fun attachActivity(activity: Activity?) {
         this.activity = activity
@@ -70,8 +83,14 @@ class AndroidScreenGraph(
         pending = null
         virtualDisplay?.release()
         virtualDisplay = null
-        projection?.stop()
+        val live = projection
         projection = null
+        if (live != null) {
+            if (Build.VERSION.SDK_INT >= 34) {
+                live.unregisterCallback(projectionCallback)
+            }
+            live.stop()
+        }
         surface?.release()
         surface = null
         entry?.release()
@@ -114,6 +133,7 @@ class AndroidScreenGraph(
             return true
         }
         this.projection = projection
+        projection.registerCallback(projectionCallback, main)
         virtualDisplay =
             projection.createVirtualDisplay(
                 "fac-screen",

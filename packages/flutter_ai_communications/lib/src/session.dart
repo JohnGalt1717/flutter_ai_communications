@@ -471,14 +471,18 @@ final class Session {
     if (_isLobby) {
       return const ScreenPickBlocked();
     }
-    final permission = await _platform.requestScreenPermission();
-    final start = await _platform.beginScreenPickNative();
-    _screenPickOpen = true;
-    if (permission != ScreenPermission.granted ||
-        start != NativeGraphStart.started) {
-      return const ScreenPickReady(previewsGranted: false);
+    try {
+      final permission = await _platform.requestScreenPermission();
+      final start = await _platform.beginScreenPickNative();
+      _screenPickOpen = true;
+      if (permission != ScreenPermission.granted ||
+          start != NativeGraphStart.started) {
+        return const ScreenPickReady(previewsGranted: false);
+      }
+      return const ScreenPickReady();
+    } on Object catch (error) {
+      return ScreenPickFailed(error);
     }
-    return const ScreenPickReady();
   }
 
   /// Tears down Screen pick thumbs. Share frame stays if screen send is live.
@@ -514,49 +518,54 @@ final class Session {
     if (_isLobby) {
       return const ScreenShareBlocked();
     }
-    final permission = await _platform.requestScreenPermission();
-    if (permission == ScreenPermission.denied) {
-      await _clearScreenSend(reason: 'denied');
-      return const ScreenShareDenied();
-    }
-    if (permission == ScreenPermission.restricted) {
-      await _clearScreenSend(reason: 'restricted');
-      return const ScreenShareRestricted();
-    }
-    final start = await _platform.startScreenShareNative(
-      sourceId: sourceId,
-      includeSystemAudio: includeSystemAudio,
-      cursor: cursor,
-      motion: motion,
-    );
-    if (start != NativeGraphStart.started) {
-      final reason = _platform.lastScreenUnavailableReason ?? 'none';
-      await _clearScreenSend(reason: reason);
-      return switch (reason) {
-        'denied' => const ScreenShareDenied(),
-        'restricted' => const ScreenShareRestricted(),
-        _ => const ScreenShareUnavailable(),
-      };
-    }
-    _screenSending = true;
-    _screenSourceId = sourceId;
-    _includeSystemAudio = includeSystemAudio;
-    _screenCursor = cursor;
-    _screenMotion = motion;
-    _screenSurface = _platform.lastScreenSurface;
-    _screenNativeFormat = _platform.lastScreenNativeFormat;
-    _screenUnavailableReason = null;
-    if (includeSystemAudio) {
-      final audio = await _platform.setIncludeSystemAudioNative(true);
-      _includeSystemAudio = audio;
-      if (!audio) {
-        _publishStatus(SessionStatus.screenAudioUnavailable(purpose: purpose));
+    try {
+      final permission = await _platform.requestScreenPermission();
+      if (permission == ScreenPermission.denied) {
+        await _clearScreenSend(reason: 'denied');
+        return const ScreenShareDenied();
       }
+      if (permission == ScreenPermission.restricted) {
+        await _clearScreenSend(reason: 'restricted');
+        return const ScreenShareRestricted();
+      }
+      final start = await _platform.startScreenShareNative(
+        sourceId: sourceId,
+        includeSystemAudio: includeSystemAudio,
+        cursor: cursor,
+        motion: motion,
+      );
+      if (start != NativeGraphStart.started) {
+        final reason = _platform.lastScreenUnavailableReason ?? 'none';
+        await _clearScreenSend(reason: reason);
+        return switch (reason) {
+          'denied' => const ScreenShareDenied(),
+          'restricted' => const ScreenShareRestricted(),
+          _ => const ScreenShareUnavailable(),
+        };
+      }
+      _screenSending = true;
+      _screenSourceId = sourceId;
+      _includeSystemAudio = includeSystemAudio;
+      _screenCursor = cursor;
+      _screenMotion = motion;
+      _screenSurface = _platform.lastScreenSurface;
+      _screenNativeFormat = _platform.lastScreenNativeFormat;
+      _screenUnavailableReason = null;
+      if (includeSystemAudio) {
+        final audio = await _platform.setIncludeSystemAudioNative(true);
+        _includeSystemAudio = audio;
+        if (!audio) {
+          _publishStatus(SessionStatus.screenAudioUnavailable(purpose: purpose));
+        }
+      }
+      if (_screenPickOpen) {
+        await endScreenPick();
+      }
+      return const ScreenShareReady();
+    } on Object catch (error) {
+      await _clearScreenSend(reason: 'none');
+      return ScreenShareFailed(error);
     }
-    if (_screenPickOpen) {
-      await endScreenPick();
-    }
-    return const ScreenShareReady();
   }
 
   /// Stops screen send. Camera send is unchanged.

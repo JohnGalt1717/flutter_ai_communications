@@ -227,12 +227,8 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   /// Refreshes [lastCameraFrameCount] and [lastCameraLiveFrames] from native.
   Future<void> pollCameraNative() async {}
 
-  /// Snapshot of Screen sources. Defaults unimplemented so older adapters load.
-  Future<List<ScreenSource>> enumerateScreenSources() {
-    throw UnimplementedError(
-      'enumerateScreenSources() has not been implemented.',
-    );
-  }
+  /// Snapshot of Screen sources. Older adapters omit screen send.
+  Future<List<ScreenSource>> enumerateScreenSources() async => const [];
 
   /// Live Screen source catalog. Defaults to a single snapshot.
   Stream<List<ScreenSource>> get screenSourceCatalog async* {
@@ -240,18 +236,12 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   }
 
   /// Requests screen recording and waits for the OS answer.
-  Future<ScreenPermission> requestScreenPermission() {
-    throw UnimplementedError(
-      'requestScreenPermission() has not been implemented.',
-    );
-  }
+  Future<ScreenPermission> requestScreenPermission() async =>
+      ScreenPermission.denied;
 
   /// Opens Screen pick thumbs. Does not send.
-  Future<NativeGraphStart> beginScreenPickNative() {
-    throw UnimplementedError(
-      'beginScreenPickNative() has not been implemented.',
-    );
-  }
+  Future<NativeGraphStart> beginScreenPickNative() async =>
+      NativeGraphStart.unavailable;
 
   /// Tears down Screen pick thumbs.
   Future<void> endScreenPickNative() async {}
@@ -268,11 +258,7 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
     bool includeSystemAudio = false,
     bool cursor = true,
     bool motion = false,
-  }) {
-    throw UnimplementedError(
-      'startScreenShareNative() has not been implemented.',
-    );
-  }
+  }) async => NativeGraphStart.unavailable;
 
   /// Stops screen send without ending the Session.
   Future<void> stopScreenShareNative() async {}
