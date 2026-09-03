@@ -569,8 +569,19 @@ final class _SessionPageState extends State<SessionPage> {
         '${session.direction.name} ${session.purpose ?? ''}'.trim(),
         key: const Key('direction'),
       ),
+      Text(session.status.code.name, key: const Key('status-code')),
       Text(session.status.severity.name, key: const Key('status-severity')),
+      Text(
+        session.status.recoverability.name,
+        key: const Key('status-recoverability'),
+      ),
+      Text(session.status.usability.name, key: const Key('status-usability')),
       Text(session.status.action.name, key: const Key('status-action')),
+      Text('${session.status.attempt}', key: const Key('status-attempt')),
+      Text(
+        '${session.status.maxAttempts}',
+        key: const Key('status-max-attempts'),
+      ),
       Text('${diagnostics.selectionGeneration}', key: const Key('generation')),
       Text(
         diagnostics.desired.captureId ?? '',
