@@ -101,6 +101,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   }) async {
     _captureId = captureId;
     _renderId = renderId;
+    _lastNativeFormats = const NativeFormatReport();
     _listenForDeviceChanges();
     final granted = await _acquireCapture(captureId);
     if (granted != MicrophonePermission.granted) {
@@ -115,6 +116,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     try {
       await _startGraph();
     } on Object {
+      _lastNativeFormats = const NativeFormatReport();
       return NativeGraphStart.failed;
     }
     return NativeGraphStart.started;
