@@ -31,7 +31,6 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 - Android MediaProjection + FGS; OS-stop via `MediaProjection.Callback`
 - Web `getDisplayMedia` + HtmlElementView; track `ended` is source-gone
 - Camera Production video path per platform (do not reuse as a screen graph)
-- Native screen graphs on Windows, Linux (X11), Android, web (PR #39)
 - Video sink seam (#46) and WebrtcVideoSink Send tracks (#48)
 
 ### Shipped vs remaining (native)
