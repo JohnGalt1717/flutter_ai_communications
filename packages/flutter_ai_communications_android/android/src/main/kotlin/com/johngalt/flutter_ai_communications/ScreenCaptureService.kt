@@ -10,6 +10,11 @@ import android.os.Build
 import android.os.IBinder
 
 class ScreenCaptureService : Service() {
+    companion object {
+        @Volatile
+        var onStarted: (() -> Unit)? = null
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(
@@ -50,6 +55,9 @@ class ScreenCaptureService : Service() {
         } else {
             startForeground(0xFAC4, notification)
         }
+        val started = onStarted
+        onStarted = null
+        started?.invoke()
         return START_STICKY
     }
 }

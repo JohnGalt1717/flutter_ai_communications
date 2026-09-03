@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
+import java.util.concurrent.atomic.AtomicBoolean
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import io.flutter.view.TextureRegistry
@@ -121,16 +122,60 @@ class AndroidScreenGraph(
         val surface = Surface(texture.surfaceTexture())
         entry = texture
         this.surface = surface
+        val replied = AtomicBoolean(false)
+        val finish: (Map<String, Any>) -> Unit = { payload ->
+            if (replied.compareAndSet(false, true)) {
+                reply?.success(payload)
+            }
+        }
+        ScreenCaptureService.onStarted = {
+            main.post {
+                bindProjection(resultCode, data, texture, width, height, density, finish)
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(Intent(context, ScreenCaptureService::class.java))
         } else {
             context.startService(Intent(context, ScreenCaptureService::class.java))
         }
-        val projection = manager.getMediaProjection(resultCode, data)
+        main.postDelayed(
+            {
+                if (replied.get()) {
+                    return@postDelayed
+                }
+                ScreenCaptureService.onStarted = null
+                stop()
+                finish(mapOf("status" to "failed", "reason" to "none"))
+            },
+            2_000,
+        )
+        return true
+    }
+
+    private fun bindProjection(
+        resultCode: Int,
+        data: Intent,
+        texture: TextureRegistry.SurfaceTextureEntry,
+        width: Int,
+        height: Int,
+        density: Int,
+        finish: (Map<String, Any>) -> Unit,
+    ) {
+        if (projection != null) {
+            return
+        }
+        val projection =
+            try {
+                manager.getMediaProjection(resultCode, data)
+            } catch (_: SecurityException) {
+                stop()
+                finish(mapOf("status" to "failed", "reason" to "none"))
+                return
+            }
         if (projection == null) {
             stop()
-            reply?.success(mapOf("status" to "failed", "reason" to "none"))
-            return true
+            finish(mapOf("status" to "failed", "reason" to "none"))
+            return
         }
         this.projection = projection
         projection.registerCallback(projectionCallback, main)
@@ -145,7 +190,7 @@ class AndroidScreenGraph(
                 null,
                 main,
             )
-        reply?.success(
+        finish(
             mapOf(
                 "status" to "started",
                 "textureId" to texture.id(),
@@ -155,6 +200,5 @@ class AndroidScreenGraph(
                 "systemAudio" to false,
             ),
         )
-        return true
     }
 }
