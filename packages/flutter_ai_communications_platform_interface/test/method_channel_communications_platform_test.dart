@@ -325,4 +325,13 @@ void main() {
     await sub.cancel();
     messenger.setMockStreamHandler(events, null);
   });
+
+  test(
+    'Production video path attach is a no-op on the method channel',
+    () async {
+      await platform.attachProductionVideoPathNative(token: 'video-sink-0');
+      await platform.detachProductionVideoPathNative(token: 'video-sink-0');
+      expect(calls, isEmpty);
+    },
+  );
 }

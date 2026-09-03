@@ -59,6 +59,11 @@ in the federated packages.
 - Mute-video is in-session black frames. Camera-off stops outbound video.
   Lobby has Camera-off / camera on, not Mute-video.
 - v1 processor is none only.
+- Hosts attach Video sinks on Session (`attachVideoSink` / `detachVideoSink`).
+  Mute-video and Camera-off notify differently. Detach does not end the
+  Session or replace the Capture stream. Native consumers bind with
+  `attachProductionVideoPathNative`; frames stay native (ADR-0013). Camera
+  preview has no Video sink seam. Session has no PeerConnection types.
 - Screen source is specified; native capture later.
 - Linux camera graph is V4L2 → Texture (in tree, PR #34 / `e6b37b4`);
   physical receipts are later. Windows Media Foundation graph is proven on
@@ -70,7 +75,8 @@ in the federated packages.
 
 - Fake platform adapter covers direction, lobby Session, join via settings,
   Camera-off, live `selectCamera`, Camera preview fail-closed, missing camera
-  as Session status.
+  as Session status, two Video sinks on one path, Mute-video vs Camera-off
+  notifications, idempotent detach.
 - Example lobby + Orchestration is the UI-to-success path. Keys on the lobby
   subsection are the e2e handles. Do not call this Marionette.
 - Physical receipts: first `start()` permission, device pick, lobby → join,

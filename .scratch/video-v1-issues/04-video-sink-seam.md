@@ -4,9 +4,9 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** not started (2026-09-01). Native graphs exist; Transport plugin seam is the next library slice.
+**Status:** done (2026-09-03). GitHub #45. `Session.attachVideoSink` / `detachVideoSink`; native hook `attachProductionVideoPathNative`.
 
-- [ ] Two fake sinks can attach at once
-- [ ] Mute-video and Camera-off notify sinks differently
-- [ ] Detach is idempotent
-- [ ] Session API has no PeerConnection or MediaStream types
+- [x] Two fake sinks can attach at once
+- [x] Mute-video and Camera-off notify sinks differently
+- [x] Detach is idempotent
+- [x] Session API has no PeerConnection or MediaStream types

@@ -448,6 +448,12 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Whether Mute-video is substituting black frames.
   bool muteVideo = false;
 
+  /// Tokens passed to [attachProductionVideoPathNative].
+  final List<String> attachedProductionVideoPathTokens = <String>[];
+
+  /// Tokens passed to [detachProductionVideoPathNative].
+  final List<String> detachedProductionVideoPathTokens = <String>[];
+
   /// Selected camera id.
   String? selectedCameraId;
 
@@ -546,6 +552,16 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (muted) {
       _cameraLiveFrames = 0;
     }
+  }
+
+  @override
+  Future<void> attachProductionVideoPathNative({required String token}) async {
+    attachedProductionVideoPathTokens.add(token);
+  }
+
+  @override
+  Future<void> detachProductionVideoPathNative({required String token}) async {
+    detachedProductionVideoPathTokens.add(token);
   }
 
   @override
