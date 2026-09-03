@@ -133,8 +133,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _processor = null;
     _source = null;
     _player = null;
-    _nextTime = _context?.currentTime ?? 0;
     _stopTracks();
+    await _closeContext();
   }
 
   @override
@@ -299,8 +299,26 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _processor?.disconnect();
     _source?.disconnect();
     final render = _policy.renderPlan(_renderId, sinkSupported: _sinkSupported);
-    final context = _context ?? _openContext(render);
-    _context = context;
+    final bind = _policy.sinkBind(
+      contextOpen: _context != null,
+      appliedSinkId: _appliedSinkId,
+      desiredSinkId: render.sinkId,
+      stopping: false,
+    );
+    final web.AudioContext context;
+    switch (bind) {
+      case WebSinkBind.open:
+        context = _openContext(render);
+        _context = context;
+      case WebSinkBind.replace:
+        await _closeContext();
+        context = _openContext(render);
+        _context = context;
+      case WebSinkBind.keep:
+        context = _context!;
+      case WebSinkBind.close:
+        throw StateError('stop does not start a graph');
+    }
     try {
       await context.resume().toDart.timeout(const Duration(seconds: 1));
     } on Object {
@@ -370,9 +388,33 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
   }
 
+  Future<void> _closeContext() async {
+    try {
+      _player?.stop();
+    } on Object {
+      // Node may already be dead with the context.
+    }
+    _player = null;
+    final context = _context;
+    _context = null;
+    _appliedSinkId = null;
+    _nextTime = 0.0;
+    if (context == null) {
+      return;
+    }
+    try {
+      await context.close().toDart;
+    } on Object {
+      // Already closed.
+    }
+  }
+
   void _emitObserved({WebSinkUnsupported? unsupported}) {
     final capture = _observedCaptureId();
-    final render = unsupported == null ? _observedRenderId() : null;
+    final render = _policy.observedRenderId(
+      appliedSinkId: _appliedSinkId,
+      unsupported: unsupported,
+    );
     _observed = PairingSnapshot(captureId: capture, renderId: render);
     _routes.add(
       OsRouteChange(
@@ -392,13 +434,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     return _captureId;
   }
 
-  String? _observedRenderId() {
-    final applied = _appliedSinkId;
-    if (applied != null && applied.isNotEmpty) {
-      return applied;
-    }
-    return _renderId;
-  }
+
 
   web.MediaStream? _videoStream;
   web.HTMLVideoElement? _videoEl;

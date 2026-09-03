@@ -85,7 +85,7 @@ The suite prints `NATIVE_ORCHESTRATION_RECEIPT {json}` on the host log and write
 
 ## Close hardware issues only with receipts
 
-Do not close #17, #19, #20, or #26 without the matching receipt. Comment the receipt path and the pass/fail summary.
+Do not close #26 without the matching receipt. Comment the receipt path and the pass/fail summary. Library work that used to live on #17, #19, and #20 is closed; new hardware failures are filed as new issues and still need a receipt.
 
 ## Fail closed
 

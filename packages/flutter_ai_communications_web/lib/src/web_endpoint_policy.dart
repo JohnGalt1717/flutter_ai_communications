@@ -34,6 +34,21 @@ final class WebRenderPlan {
   final WebSinkUnsupported? unsupported;
 }
 
+/// How the adapter binds a render sink to [AudioContext].
+enum WebSinkBind {
+  /// Keep the live context; the applied sink already matches.
+  keep,
+
+  /// Construct a new context with the Desired sink.
+  open,
+
+  /// Close the live context and construct one with the Desired sink.
+  replace,
+
+  /// Close the live context on stop.
+  close,
+}
+
 /// Testable web capture/render selection policy.
 final class WebEndpointPolicy {
   /// Creates the policy.
@@ -66,5 +81,48 @@ final class WebEndpointPolicy {
       );
     }
     return WebRenderPlan(sinkId: id);
+  }
+
+  /// Observed render is the sink the context actually opened, never the
+  /// requested id. A missing or unsupported sink stays null.
+  String? observedRenderId({
+    required String? appliedSinkId,
+    WebSinkUnsupported? unsupported,
+  }) {
+    if (unsupported != null) {
+      return null;
+    }
+    final applied = appliedSinkId;
+    if (applied == null || applied.isEmpty) {
+      return null;
+    }
+    return applied;
+  }
+
+  /// Whether to keep, open, replace, or close the AudioContext for a sink.
+  WebSinkBind sinkBind({
+    required bool contextOpen,
+    required String? appliedSinkId,
+    required String? desiredSinkId,
+    required bool stopping,
+  }) {
+    if (stopping) {
+      return contextOpen ? WebSinkBind.close : WebSinkBind.keep;
+    }
+    if (!contextOpen) {
+      return WebSinkBind.open;
+    }
+    final applied = switch (appliedSinkId) {
+      null || '' => null,
+      final value => value,
+    };
+    final desired = switch (desiredSinkId) {
+      null || '' => null,
+      final value => value,
+    };
+    if (applied == desired) {
+      return WebSinkBind.keep;
+    }
+    return WebSinkBind.replace;
   }
 }
