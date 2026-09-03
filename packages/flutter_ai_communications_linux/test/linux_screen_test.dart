@@ -55,4 +55,56 @@ void main() {
       ScreenSourceKind.systemPicker,
     });
   });
+
+  test('Linux beginScreenPick maps preview textures', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'beginScreenPickNative') {
+            return {
+              'previews': {'display-0': 4, 'window-1': 5},
+            };
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsLinux(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(await adapter.beginScreenPickNative(), NativeGraphStart.started);
+    expect(adapter.screenPreviewNative('display-0')?.handle, 4);
+  });
+
+  test('Linux startScreenShare maps a texture handle', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'requestScreenPermission') {
+            return 'granted';
+          }
+          if (call.method == 'startScreenShareNative') {
+            return {
+              'status': 'started',
+              'textureId': 11,
+              'width': 1920,
+              'height': 1080,
+              'frameRate': 5,
+            };
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsLinux(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(
+      await adapter.startScreenShareNative(sourceId: 'display-0'),
+      NativeGraphStart.started,
+    );
+    expect(adapter.lastScreenSurface?.handle, 11);
+  });
 }

@@ -48,5 +48,14 @@ final class UnavailableWasapiBackend implements WasapiBackend {
   Stream<Uint8List> get capture => const Stream.empty();
 
   @override
+  bool startLoopback() => false;
+
+  @override
+  void stopLoopback() {}
+
+  @override
+  Stream<Uint8List> get loopback => const Stream.empty();
+
+  @override
   void dispose() {}
 }

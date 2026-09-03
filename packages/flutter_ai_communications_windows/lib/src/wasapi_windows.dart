@@ -14,6 +14,7 @@ import 'wasapi_backend.dart';
 /// Shared-mode WASAPI PCM16 LE conversion flags.
 const _autoConvertPcm = 0x80000000;
 const _srcDefaultQuality = 0x08000000;
+const _loopbackFlag = 0x00020000;
 const _refTimes20ms = 20 * 10000;
 const _sampleRate = 24000;
 const _silenceBytes = 480;
@@ -53,6 +54,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
   IAudioRenderClient? _render;
   int _renderFrames = 0;
   Timer? _poll;
+  Arena? _loopbackGraph;
+  IAudioClient? _loopbackClient;
+  IAudioCaptureClient? _loopbackCapture;
+  Timer? _loopbackPoll;
+  var _loopbackRunning = false;
+  var _loopbackBlockAlign = 2;
+  final StreamController<Uint8List> _loopbackOut =
+      StreamController<Uint8List>.broadcast();
   var _running = false;
   var _paused = false;
   String? _captureId;
@@ -66,6 +75,9 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   @override
   Stream<Uint8List> get capture => _captureOut.stream;
+
+  @override
+  Stream<Uint8List> get loopback => _loopbackOut.stream;
 
   @override
   List<Endpoint> enumerate() {
@@ -194,10 +206,75 @@ final class WasapiWindowsBackend implements WasapiBackend {
   }
 
   @override
+  bool startLoopback() {
+    stopLoopback();
+    final enumerator = _enumerator;
+    if (enumerator == null) {
+      return false;
+    }
+    final graph = Arena();
+    try {
+      final opened = _openDevice(
+        enumerator,
+        null,
+        eRender,
+        graph,
+        fallback: true,
+        role: eConsole,
+      );
+      final device = opened.device;
+      if (device == null) {
+        graph.releaseAll();
+        return false;
+      }
+      final bound = _bindLoopback(device, graph);
+      if (bound == null) {
+        graph.releaseAll();
+        return false;
+      }
+      _loopbackClient = bound.client;
+      _loopbackBlockAlign = bound.channels * 2;
+      _loopbackCapture = graph.adopt(
+        bound.client.getService<IAudioCaptureClient>(),
+      );
+      bound.client.start();
+      _loopbackGraph = graph;
+      _loopbackRunning = true;
+      _loopbackPoll = Timer.periodic(const Duration(milliseconds: 10), (_) {
+        _pumpLoopback();
+      });
+      return true;
+    } on Object catch (error, stack) {
+      _log.warning('WASAPI loopback start failed', error, stack);
+      graph.releaseAll();
+      return false;
+    }
+  }
+
+  @override
+  void stopLoopback() {
+    _loopbackRunning = false;
+    _loopbackPoll?.cancel();
+    _loopbackPoll = null;
+    try {
+      _loopbackClient?.stop();
+    } on Object {
+      // Teardown is best-effort.
+    }
+    _loopbackGraph?.releaseAll();
+    _loopbackGraph = null;
+    _loopbackClient = null;
+    _loopbackCapture = null;
+    _loopbackBlockAlign = 2;
+  }
+
+  @override
   void dispose() {
     stop();
+    stopLoopback();
     _lifetime.releaseAll();
     unawaited(_captureOut.close());
+    unawaited(_loopbackOut.close());
     if (_comInitialized) {
       CoUninitialize();
       _comInitialized = false;
@@ -410,12 +487,88 @@ final class WasapiWindowsBackend implements WasapiBackend {
     _captureOut.add(Uint8List(_silenceBytes));
   }
 
+  ({IAudioClient client, int rate, int channels})? _bindLoopback(
+    IMMDevice device,
+    Arena graph,
+  ) {
+    const rates = [48000, _sampleRate, 16000];
+    const channelSets = [2, 1];
+    final flagSets = [
+      _loopbackFlag | _autoConvertPcm | _srcDefaultQuality,
+      _loopbackFlag,
+    ];
+    for (final flags in flagSets) {
+      for (final channels in channelSets) {
+        for (final rate in rates) {
+          try {
+            final client = graph.adopt(
+              device.activate<IAudioClient>(CLSCTX_ALL, null),
+            );
+            final format = graph<WAVEFORMATEX>();
+            format.ref
+              ..wFormatTag = WAVE_FORMAT_PCM
+              ..nChannels = channels
+              ..nSamplesPerSec = rate
+              ..wBitsPerSample = 16
+              ..nBlockAlign = 2 * channels
+              ..nAvgBytesPerSec = rate * 2 * channels
+              ..cbSize = 0;
+            client.initialize(
+              AUDCLNT_SHAREMODE_SHARED,
+              flags,
+              _refTimes20ms,
+              0,
+              format,
+              null,
+            );
+            return (client: client, rate: rate, channels: channels);
+          } on Object {
+            continue;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  void _pumpLoopback() {
+    final capture = _loopbackCapture;
+    if (capture == null || !_loopbackRunning) {
+      return;
+    }
+    using((arena) {
+      final data = arena<Pointer<Uint8>>();
+      final frames = arena<Uint32>();
+      final flags = arena<Uint32>();
+      try {
+        var packet = capture.getNextPacketSize();
+        while (packet > 0 && _loopbackRunning) {
+          capture.getBuffer(data, frames, flags, null, null);
+          final count = frames.value;
+          final bytes = Uint8List(count * _loopbackBlockAlign);
+          if (flags.value & AUDCLNT_BUFFERFLAGS_SILENT == 0 &&
+              data.value != nullptr) {
+            bytes.setAll(0, data.value.asTypedList(bytes.length));
+          }
+          capture.releaseBuffer(count);
+          if (!_loopbackOut.isClosed) {
+            _loopbackOut.add(bytes);
+          }
+          packet = capture.getNextPacketSize();
+        }
+      } on Object {
+        // Drain is best-effort. Never mix into the mic Capture stream.
+      }
+    });
+  }
+
   ({IMMDevice? device, String? id}) _openDevice(
     IMMDeviceEnumerator enumerator,
     String? id,
     EDataFlow flow,
     Arena arena, {
     required bool fallback,
+    ERole role = eCommunications,
   }) {
     if (id != null && id.isNotEmpty) {
       try {
@@ -438,7 +591,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
     try {
       final fallback = enumerator.getDefaultAudioEndpoint(
         flow,
-        eCommunications,
+        role,
       );
       if (fallback == null) {
         return (device: null, id: null);

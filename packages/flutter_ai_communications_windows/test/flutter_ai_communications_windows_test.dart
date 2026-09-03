@@ -525,6 +525,15 @@ final class _BluetoothBackend implements WasapiBackend {
   Stream<Uint8List> get capture => _inner.capture;
 
   @override
+  bool startLoopback() => _inner.startLoopback();
+
+  @override
+  void stopLoopback() => _inner.stopLoopback();
+
+  @override
+  Stream<Uint8List> get loopback => _inner.loopback;
+
+  @override
   void dispose() => _inner.dispose();
 }
 
@@ -626,6 +635,15 @@ final class _RecordingBackend implements WasapiBackend {
 
   @override
   Stream<Uint8List> get capture => const Stream.empty();
+
+  @override
+  bool startLoopback() => false;
+
+  @override
+  void stopLoopback() {}
+
+  @override
+  Stream<Uint8List> get loopback => const Stream.empty();
 
   @override
   void dispose() {}

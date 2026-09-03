@@ -8,11 +8,12 @@ required. AudioPlaybackCapture for Include sound.
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
 **Status:** in progress (PR #39). MediaProjection + FGS shipped.
-AudioPlaybackCapture and SM receipt later.
+AudioPlaybackCapture is a GitHub issue (not this Windows/Linux slice).
+SM receipt on #44.
 
 - [x] Catalog is one system-picker source
 - [x] Consent every start (MediaProjection intent)
 - [x] Production VirtualDisplay → Texture
-- [ ] AudioPlaybackCapture when includeSystemAudio is on
+- [ ] AudioPlaybackCapture when includeSystemAudio is on ([#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51))
 - [x] User stop from the system UI is source-gone (`MediaProjection.Callback`)
 - [ ] Physical receipt: SM-class device, consent sheet, send, stop (#44)

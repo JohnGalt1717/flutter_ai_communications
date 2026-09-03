@@ -324,11 +324,19 @@ final class FlutterAiCommunicationsWindows
   }
 
   @override
-  Future<void> stopScreenShareNative() => _screen.stop();
+  Future<void> stopScreenShareNative() async {
+    _backend.stopLoopback();
+    await _screen.stop();
+  }
 
   @override
-  Future<bool> setIncludeSystemAudioNative(bool enabled) =>
-      _screen.setIncludeSystemAudio(enabled);
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async {
+    if (!enabled) {
+      _backend.stopLoopback();
+      return false;
+    }
+    return _backend.startLoopback();
+  }
 
   @override
   Future<void> setScreenMotionNative(bool motion) => _screen.setMotion(motion);

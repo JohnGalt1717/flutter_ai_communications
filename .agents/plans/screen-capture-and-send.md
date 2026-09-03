@@ -37,11 +37,11 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 
 | Platform | Shipped | Remaining |
 | --- | --- | --- |
-| Windows | GDI catalog, thumbs, Share frame, send, exclude-self | WGC production, WASAPI Include sound, WGC-border receipt note |
-| Linux X11 | catalog + send | thumbs, Share frame, Pulse/PipeWire loopback, receipt |
-| Linux Wayland | system-picker catalog | portal ScreenCast + PipeWire |
+| Windows | GDI thumbs + Share frame; WGC production; WASAPI FFI Include sound | WGC-border receipt note on #44 |
+| Linux X11 | catalog, send, thumbs, Share frame | Pulse/PipeWire loopback, receipt |
+| Linux Wayland | system-picker catalog + portal ScreenCast | PipeWire frame pull when libpipewire is present; receipt |
 | Web | system-picker + `getDisplayMedia` | Chrome/Edge receipt (#44) |
-| Android | MediaProjection Texture | AudioPlaybackCapture, SM-class receipt (#44) |
+| Android | MediaProjection Texture | AudioPlaybackCapture ([#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51)), SM-class receipt (#44) |
 | macOS | fail-closed | ScreenCaptureKit (#43) |
 | iOS | fail-closed | ReplayKit Broadcast (#43) |
 
@@ -214,11 +214,11 @@ does not silence system audio.
 | 01 | Shared screen types | 00 | done |
 | 02 | Session and platform-interface contracts | 01 | done |
 | 03 | Fake Screen pick, indicate, catalog stream | 02 | done |
-| 04 | Windows screen graph | 02 | in progress (GDI; WGC/WASAPI later) |
+| 04 | Windows screen graph | 02 | in progress (WGC + WASAPI FFI; GDI thumbs) |
 | 05 | macOS screen graph | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
-| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 send; thumbs/portal later) |
+| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 thumbs/Share frame + portal) |
 | 07 | Web getDisplayMedia | 02 | in progress (graph shipped; Chrome receipt on #44) |
-| 08 | Android MediaProjection | 02 | in progress (graph shipped; AudioPlaybackCapture + receipt later) |
+| 08 | Android MediaProjection | 02 | in progress (graph shipped; AudioPlaybackCapture [#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51)) |
 | 09 | iOS ReplayKit / Broadcast | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
 | 10 | Example in-session picker | 03 and one native graph | done |
 | 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows automated receipt collected) |
