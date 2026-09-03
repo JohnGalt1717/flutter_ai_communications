@@ -18,11 +18,12 @@ class ScreenCaptureService : Service() {
         startId: Int,
     ): Int {
         val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val label = applicationInfo.loadLabel(packageManager).toString()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
                 NotificationChannel(
                     "fac-screen",
-                    "Screen send",
+                    label,
                     NotificationManager.IMPORTANCE_LOW,
                 ),
             )
@@ -31,13 +32,13 @@ class ScreenCaptureService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(this, "fac-screen")
                     .setSmallIcon(android.R.drawable.presence_video_online)
-                    .setContentTitle("Screen send")
+                    .setContentTitle(label)
                     .build()
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
                     .setSmallIcon(android.R.drawable.presence_video_online)
-                    .setContentTitle("Screen send")
+                    .setContentTitle(label)
                     .build()
             }
         if (Build.VERSION.SDK_INT >= 29) {

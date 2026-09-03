@@ -567,6 +567,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// How many times [startScreenShareNative] ran.
   int startScreenShareCalls = 0;
 
+  /// When set, [startScreenShareNative] fails with this reason.
+  String? screenShareStartReason;
+
   final Map<String, VideoSurface> _screenPreviews = {};
   VideoSurface? _lastScreenSurface;
   VideoFormat? _lastScreenNativeFormat;
@@ -590,8 +593,10 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       List<ScreenSource>.of(screenSources);
 
   @override
-  Stream<List<ScreenSource>> get screenSourceCatalog =>
-      screenCatalogController.stream;
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
+    yield List<ScreenSource>.of(screenSources);
+    yield* screenCatalogController.stream;
+  }
 
   @override
   Future<ScreenPermission> requestScreenPermission() async {
@@ -644,6 +649,14 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     bool motion = false,
   }) async {
     startScreenShareCalls++;
+    final forced = screenShareStartReason;
+    if (forced != null) {
+      screenSending = false;
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = forced;
+      return NativeGraphStart.unavailable;
+    }
     if (screenPermission != ScreenPermission.granted) {
       screenSending = false;
       _lastScreenSurface = null;

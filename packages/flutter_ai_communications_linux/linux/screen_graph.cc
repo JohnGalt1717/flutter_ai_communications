@@ -58,8 +58,23 @@ static void fac_screen_texture_init(FacScreenTexture* self) {
 
 ScreenGraph::ScreenGraph(FlTextureRegistrar* textures) : textures_(textures) {}
 
+void ScreenGraph::EnsureDisplay() {
+  if (display_ != nullptr) {
+    return;
+  }
+  display_ = XOpenDisplay(nullptr);
+}
+
+void ScreenGraph::CloseDisplay() {
+  if (display_ != nullptr) {
+    XCloseDisplay(display_);
+    display_ = nullptr;
+  }
+}
+
 ScreenGraph::~ScreenGraph() {
   Stop();
+  CloseDisplay();
   if (textures_ != nullptr && texture_ != nullptr) {
     fl_texture_registrar_unregister_texture(textures_, FL_TEXTURE(texture_));
   }
@@ -215,6 +230,7 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool, bool motio
   send_width_ = std::max(1, static_cast<int>(src_w * scale));
   send_height_ = std::max(1, static_cast<int>(src_h * scale));
   EnsureTexture();
+  EnsureDisplay();
   running_ = true;
   capture_thread_ = std::thread([this] { CaptureLoop(); });
   fl_value_set_string_take(result, "status", fl_value_new_string("started"));
@@ -232,6 +248,7 @@ void ScreenGraph::Stop() {
     capture_thread_.join();
   }
   send_id_.clear();
+  CloseDisplay();
 }
 
 bool ScreenGraph::SetIncludeSystemAudio(bool) { return false; }
@@ -263,32 +280,38 @@ void ScreenGraph::CaptureLoop() {
 }
 
 bool ScreenGraph::CaptureX11(const Source& source, int out_w, int out_h) {
-  Display* display = XOpenDisplay(nullptr);
-  if (display == nullptr || source.window == 0) {
+  if (display_ == nullptr || source.window == 0 || source.width <= 0 ||
+      source.height <= 0) {
     return false;
   }
   XImage* image =
-      XGetImage(display, source.window, 0, 0, static_cast<unsigned>(source.width),
+      XGetImage(display_, source.window, 0, 0,
+                static_cast<unsigned>(source.width),
                 static_cast<unsigned>(source.height), AllPlanes, ZPixmap);
-  if (image == nullptr) {
-    XCloseDisplay(display);
+  if (image == nullptr || image->data == nullptr) {
+    return false;
+  }
+  const int bpp = image->bits_per_pixel / 8;
+  if (bpp < 3) {
+    XDestroyImage(image);
     return false;
   }
   front_.assign(static_cast<size_t>(out_w) * out_h * 4, 0);
   for (int y = 0; y < out_h; y++) {
     const int src_y = y * source.height / out_h;
+    const char* row = image->data + static_cast<size_t>(src_y) * image->bytes_per_line;
     for (int x = 0; x < out_w; x++) {
       const int src_x = x * source.width / out_w;
-      const unsigned long pixel = XGetPixel(image, src_x, src_y);
+      const auto* px =
+          reinterpret_cast<const unsigned char*>(row + src_x * bpp);
       const size_t i = static_cast<size_t>(y * out_w + x) * 4;
-      front_[i] = static_cast<uint8_t>((pixel >> 16) & 0xff);
-      front_[i + 1] = static_cast<uint8_t>((pixel >> 8) & 0xff);
-      front_[i + 2] = static_cast<uint8_t>(pixel & 0xff);
+      front_[i] = px[2];
+      front_[i + 1] = px[1];
+      front_[i + 2] = px[0];
       front_[i + 3] = 255;
     }
   }
   XDestroyImage(image);
-  XCloseDisplay(display);
   return true;
 }
 

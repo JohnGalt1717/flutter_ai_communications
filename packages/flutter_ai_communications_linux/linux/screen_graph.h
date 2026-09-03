@@ -1,6 +1,7 @@
 #ifndef FLUTTER_PLUGIN_LINUX_SCREEN_GRAPH_H_
 #define FLUTTER_PLUGIN_LINUX_SCREEN_GRAPH_H_
 
+#include <X11/Xlib.h>
 #include <flutter_linux/flutter_linux.h>
 
 #include <atomic>
@@ -49,8 +50,11 @@ class ScreenGraph {
   void EnsureTexture();
   void CaptureLoop();
   bool CaptureX11(const Source& source, int out_w, int out_h);
+  void EnsureDisplay();
+  void CloseDisplay();
 
   FlTextureRegistrar* textures_;
+  Display* display_ = nullptr;
   FlPixelBufferTexture* texture_ = nullptr;
   int64_t texture_id_ = -1;
   std::mutex mutex_;

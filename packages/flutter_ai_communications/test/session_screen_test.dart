@@ -67,6 +67,14 @@ void main() {
     expect(session.isScreenPickOpen, isFalse);
   });
 
+  test('OS picker decline maps to ScreenShareDenied', () async {
+    platform.screenShareStartReason = 'denied';
+    final session = ((await manager.start()) as StartReady).session;
+    expect(await session.startScreenShare('display-0'), isA<ScreenShareDenied>());
+    expect(session.isStopped, isFalse);
+    expect(session.screenUnavailableReason, 'denied');
+  });
+
   test('denied screen permission does not end the Session', () async {
     platform.screenPermission = ScreenPermission.denied;
     final session = ((await manager.start()) as StartReady).session;

@@ -532,10 +532,14 @@ final class Session {
       _screenSending = false;
       _screenSurface = null;
       _screenNativeFormat = null;
-      _screenUnavailableReason =
-          _platform.lastScreenUnavailableReason ?? 'none';
+      final reason = _platform.lastScreenUnavailableReason ?? 'none';
+      _screenUnavailableReason = reason;
       _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
-      return const ScreenShareUnavailable();
+      return switch (reason) {
+        'denied' => const ScreenShareDenied(),
+        'restricted' => const ScreenShareRestricted(),
+        _ => const ScreenShareUnavailable(),
+      };
     }
     _screenSending = true;
     _screenSourceId = sourceId;

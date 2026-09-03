@@ -66,6 +66,8 @@ class AndroidScreenGraph(
     }
 
     fun stop() {
+        pending?.success(mapOf("status" to "unavailable", "reason" to "none"))
+        pending = null
         virtualDisplay?.release()
         virtualDisplay = null
         projection?.stop()
@@ -74,7 +76,7 @@ class AndroidScreenGraph(
         surface = null
         entry?.release()
         entry = null
-        pending = null
+        context.stopService(Intent(context, ScreenCaptureService::class.java))
     }
 
     override fun onActivityResult(

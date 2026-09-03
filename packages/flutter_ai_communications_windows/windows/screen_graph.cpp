@@ -55,8 +55,34 @@ int ClampInt(int value, int lo, int hi) {
   return value;
 }
 
+void FillExcludedWindow(HDC mem, HWND hwnd, const RECT& src_rect, int src_w,
+                        int src_h, int out_w, int out_h) {
+  if (hwnd == nullptr) {
+    return;
+  }
+  RECT window_rect{};
+  if (!GetWindowRect(hwnd, &window_rect)) {
+    return;
+  }
+  RECT local = window_rect;
+  local.left -= src_rect.left;
+  local.top -= src_rect.top;
+  local.right -= src_rect.left;
+  local.bottom -= src_rect.top;
+  const double scale_x = static_cast<double>(out_w) / src_w;
+  const double scale_y = static_cast<double>(out_h) / src_h;
+  const int x0 = ClampInt(static_cast<int>(local.left * scale_x), 0, out_w);
+  const int y0 = ClampInt(static_cast<int>(local.top * scale_y), 0, out_h);
+  const int x1 = ClampInt(static_cast<int>(local.right * scale_x), 0, out_w);
+  const int y1 = ClampInt(static_cast<int>(local.bottom * scale_y), 0, out_h);
+  HBRUSH brush = CreateSolidBrush(RGB(0, 0, 0));
+  RECT fill{x0, y0, x1, y1};
+  FillRect(mem, &fill, brush);
+  DeleteObject(brush);
+}
+
 void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
-                   std::vector<uint8_t>* dest, HWND exclude) {
+                   std::vector<uint8_t>* dest, HWND exclude_a, HWND exclude_b) {
   if (out_w <= 0 || out_h <= 0) {
     dest->clear();
     return;
@@ -87,26 +113,8 @@ void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
   SetStretchBltMode(mem, HALFTONE);
   StretchBlt(mem, 0, 0, out_w, out_h, src, src_rect.left, src_rect.top, src_w,
              src_h, SRCCOPY);
-  if (exclude != nullptr) {
-    RECT flutter_rect{};
-    if (GetWindowRect(exclude, &flutter_rect)) {
-      RECT local = flutter_rect;
-      local.left -= src_rect.left;
-      local.top -= src_rect.top;
-      local.right -= src_rect.left;
-      local.bottom -= src_rect.top;
-      const double scale_x = static_cast<double>(out_w) / src_w;
-      const double scale_y = static_cast<double>(out_h) / src_h;
-      const int x0 = ClampInt(static_cast<int>(local.left * scale_x), 0, out_w);
-      const int y0 = ClampInt(static_cast<int>(local.top * scale_y), 0, out_h);
-      const int x1 = ClampInt(static_cast<int>(local.right * scale_x), 0, out_w);
-      const int y1 = ClampInt(static_cast<int>(local.bottom * scale_y), 0, out_h);
-      HBRUSH brush = CreateSolidBrush(RGB(0, 0, 0));
-      RECT fill{x0, y0, x1, y1};
-      FillRect(mem, &fill, brush);
-      DeleteObject(brush);
-    }
-  }
+  FillExcludedWindow(mem, exclude_a, src_rect, src_w, src_h, out_w, out_h);
+  FillExcludedWindow(mem, exclude_b, src_rect, src_w, src_h, out_w, out_h);
   auto* bgra = static_cast<uint8_t*>(bits);
   for (int i = 0; i < out_w * out_h; i++) {
     (*dest)[static_cast<size_t>(i) * 4 + 0] = bgra[static_cast<size_t>(i) * 4 + 2];
@@ -416,7 +424,7 @@ void ScreenGraph::CaptureSourceLocked(const Source& source, int out_w, int out_h
   HDC screen = GetDC(nullptr);
   RECT bounds = source.bounds;
   HWND exclude = source.kind == "window" ? nullptr : flutter_window_;
-  BltRectToRgba(screen, bounds, out_w, out_h, dest, exclude);
+  BltRectToRgba(screen, bounds, out_w, out_h, dest, exclude, frame_window_);
   ReleaseDC(nullptr, screen);
 }
 
