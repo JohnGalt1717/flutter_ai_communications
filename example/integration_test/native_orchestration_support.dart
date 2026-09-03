@@ -215,7 +215,6 @@ Map<String, Object?> snapshot(Session session, {required String caseName}) {
     'edgeCaptureFormat': diagnostics.edgeCaptureFormat?.toString(),
     'captureConversionPath': diagnostics.captureConversionPath.name,
     'status': session.status.code.name,
-    'statusCode': session.status.code.name,
     'severity': session.status.severity.name,
     'recoverability': session.status.recoverability.name,
     'usability': session.status.usability.name,

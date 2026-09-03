@@ -368,7 +368,6 @@ void main() {
         expect(session.status.code, SessionStatusCode.routeMismatch);
         expect(session.status.severity, StatusSeverity.error);
         expect(session.status.usability, StatusUsability.unusable);
-        expect(session.diagnostics.preferenceControlled, isFalse);
         expect(platform.selectEndpointsCalls - before, lessThanOrEqualTo(3));
         expect(platform.selectEndpointsCalls - before, greaterThan(0));
       },

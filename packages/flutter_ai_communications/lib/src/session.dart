@@ -949,20 +949,6 @@ final class Session {
     if (direction.hasPlayback && _nativePlaybackFormat == null) {
       return SessionStatus.starting(purpose: purpose, generation: _generation);
     }
-    final converting =
-        _captureConversionPath == ConversionPath.dart ||
-        _playbackConversionPath == ConversionPath.dart;
-    if (converting) {
-      return SessionStatus(
-        severity: StatusSeverity.warning,
-        code: SessionStatusCode.formatConverted,
-        recoverability: StatusRecoverability.none,
-        usability: StatusUsability.usable,
-        action: SessionAction.none,
-        purpose: purpose,
-        generation: _generation,
-      );
-    }
     if (direction.hasCapture && !direction.hasPlayback) {
       return SessionStatus(
         severity: StatusSeverity.success,
@@ -978,6 +964,20 @@ final class Session {
       return SessionStatus(
         severity: StatusSeverity.success,
         code: SessionStatusCode.playbackReady,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
+    }
+    final converting =
+        _captureConversionPath == ConversionPath.dart ||
+        _playbackConversionPath == ConversionPath.dart;
+    if (converting) {
+      return SessionStatus(
+        severity: StatusSeverity.warning,
+        code: SessionStatusCode.formatConverted,
         recoverability: StatusRecoverability.none,
         usability: StatusUsability.usable,
         action: SessionAction.none,
