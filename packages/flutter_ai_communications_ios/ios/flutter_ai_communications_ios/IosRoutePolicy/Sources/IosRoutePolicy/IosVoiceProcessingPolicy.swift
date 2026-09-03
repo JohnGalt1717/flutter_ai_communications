@@ -96,13 +96,16 @@ public enum IosVoiceProcessingPolicy {
         nextCaptureId: String?,
         nextRenderId: String?
     ) -> Bool {
+        if previousCaptureId == nextCaptureId, previousRenderId == nextRenderId {
+            return false
+        }
         let previousBuiltin =
             isBuiltinPortId(previousCaptureId) && isBuiltinPortId(previousRenderId)
         let nextBuiltin = isBuiltinPortId(nextCaptureId) && isBuiltinPortId(nextRenderId)
         return !(previousBuiltin && nextBuiltin)
     }
 
-    public static func isBuiltinPortId(_ id: String?) -> Bool {
+    static func isBuiltinPortId(_ id: String?) -> Bool {
         switch id {
         case "speaker-in", "speaker-out", "speakerphone-out", "handset-in", "handset-out":
             return true

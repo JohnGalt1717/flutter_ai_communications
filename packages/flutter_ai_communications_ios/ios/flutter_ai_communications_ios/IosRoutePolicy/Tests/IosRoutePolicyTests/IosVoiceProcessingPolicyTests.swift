@@ -222,3 +222,14 @@ import Testing
         )
     )
 }
+
+@Test func selectingTheSameAccessoryDoesNotRebuildTheGraph() {
+    #expect(
+        IosVoiceProcessingPolicy.shouldRebuildGraph(
+            previousCaptureId: "airpods-in",
+            previousRenderId: "airpods-out",
+            nextCaptureId: "airpods-in",
+            nextRenderId: "airpods-out"
+        ) == false
+    )
+}
