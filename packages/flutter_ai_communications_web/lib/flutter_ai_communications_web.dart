@@ -717,13 +717,14 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<bool> setIncludeSystemAudioNative(bool enabled) async {
-    if (!enabled) {
-      _screenStream?.getAudioTracks().toDart.forEach((track) {
-        track.enabled = false;
-      });
+    final tracks = _screenStream?.getAudioTracks().toDart ?? const [];
+    if (tracks.isEmpty) {
       return false;
     }
-    return _screenStream?.getAudioTracks().toDart.isNotEmpty ?? false;
+    for (final track in tracks) {
+      track.enabled = enabled;
+    }
+    return enabled;
   }
 
   @override

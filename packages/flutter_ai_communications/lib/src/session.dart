@@ -73,7 +73,10 @@ final class Session {
     _pathSub = platform.pathCoverage.listen(_onPathCoverage);
     _focusSub = platform.audioFocus.listen(_onAudioFocus);
     _routeSub = platform.osRouteChanges.listen(_onOsRoute);
-    _screenCatalogSub = platform.screenSourceCatalog.listen(_onScreenCatalog);
+    _screenCatalogSub = platform.screenSourceCatalog.listen(
+      _onScreenCatalog,
+      onError: (_) {},
+    );
     _onIsolation(platform.lastIsolation);
     if (!preferenceControlled) {
       _explicitCaptureId = preference.captureId;
@@ -530,6 +533,8 @@ final class Session {
     );
     if (start != NativeGraphStart.started) {
       _screenSending = false;
+      _screenSourceId = null;
+      _includeSystemAudio = false;
       _screenSurface = null;
       _screenNativeFormat = null;
       final reason = _platform.lastScreenUnavailableReason ?? 'none';

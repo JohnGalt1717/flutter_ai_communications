@@ -97,14 +97,15 @@ void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
   info.bmiHeader.biCompression = BI_RGB;
   void* bits = nullptr;
   HDC mem = CreateCompatibleDC(src);
+  if (mem == nullptr) {
+    return;
+  }
   HBITMAP bitmap = CreateDIBSection(mem, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
-  if (mem == nullptr || bitmap == nullptr || bits == nullptr) {
+  if (bitmap == nullptr || bits == nullptr) {
     if (bitmap) {
       DeleteObject(bitmap);
     }
-    if (mem) {
-      DeleteDC(mem);
-    }
+    DeleteDC(mem);
     return;
   }
   HGDIOBJ old = SelectObject(mem, bitmap);
@@ -235,8 +236,18 @@ flutter::EncodableList ScreenGraph::Enumerate() {
 
 std::string ScreenGraph::RequestPermission() { return "granted"; }
 
+void ScreenGraph::ClearPreviewsLocked() {
+  for (auto& [id, preview] : previews_) {
+    if (textures_ != nullptr && preview->texture_id >= 0) {
+      textures_->UnregisterTexture(preview->texture_id);
+    }
+  }
+  previews_.clear();
+}
+
 flutter::EncodableMap ScreenGraph::BeginPick() {
   std::lock_guard<std::mutex> lock(mutex_);
+  ClearPreviewsLocked();
   RefreshSources();
   flutter::EncodableMap previews;
   for (const auto& source : sources_) {
@@ -275,12 +286,7 @@ flutter::EncodableMap ScreenGraph::BeginPick() {
 
 void ScreenGraph::EndPick() {
   std::lock_guard<std::mutex> lock(mutex_);
-  for (auto& [id, preview] : previews_) {
-    if (textures_ != nullptr && preview->texture_id >= 0) {
-      textures_->UnregisterTexture(preview->texture_id);
-    }
-  }
-  previews_.clear();
+  ClearPreviewsLocked();
 }
 
 void ScreenGraph::Indicate(const std::string& source_id) {

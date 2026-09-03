@@ -84,6 +84,19 @@ void main() {
     expect(session.screenUnavailableReason, 'denied');
   });
 
+  test('failed replace clears selected Screen source', () async {
+    final session = ((await manager.start()) as StartReady).session;
+    await session.startScreenShare('display-0');
+    platform.screenShareStartReason = 'none';
+    expect(
+      await session.startScreenShare('window-notepad'),
+      isA<ScreenShareUnavailable>(),
+    );
+    expect(session.isScreenSending, isFalse);
+    expect(session.selectedScreenSourceId, isNull);
+    expect(session.includeSystemAudio, isFalse);
+  });
+
   test('replace startScreenShare does not require stop first', () async {
     final session = ((await manager.start()) as StartReady).session;
     await session.startScreenShare('display-0');

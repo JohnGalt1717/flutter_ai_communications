@@ -61,6 +61,7 @@ class ScreenGraph {
   };
 
   void RefreshSources();
+  void ClearPreviewsLocked();
   void EnsureSendTexture();
   void CaptureLoop();
   void CaptureSourceLocked(const Source& source, int out_w, int out_h,
