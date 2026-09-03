@@ -2,6 +2,7 @@
 
 ## 0.0.1
 
+* Speakerphone ↔ handset selection applies `overrideOutputAudioPort` on the live graph; the engine is not restarted. Accessory picks may still rebuild.
 * Initial iOS adapter stub.
 * Ships as Swift Package Manager only. There is no CocoaPods podspec.
 * Catalog advertises handset only when a receiver exists (iPad stays speaker).

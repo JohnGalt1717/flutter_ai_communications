@@ -88,6 +88,32 @@ public enum IosVoiceProcessingPolicy {
         selectedCaptureId == "speaker-in" || selectedCaptureId == "handset-in"
     }
 
+    /// Speakerphone ↔ handset is a port override on the live graph.
+    /// Accessory input/output changes may rebuild.
+    public static func shouldRebuildGraph(
+        previousCaptureId: String?,
+        previousRenderId: String?,
+        nextCaptureId: String?,
+        nextRenderId: String?
+    ) -> Bool {
+        if previousCaptureId == nextCaptureId, previousRenderId == nextRenderId {
+            return false
+        }
+        let previousBuiltin =
+            isBuiltinPortId(previousCaptureId) && isBuiltinPortId(previousRenderId)
+        let nextBuiltin = isBuiltinPortId(nextCaptureId) && isBuiltinPortId(nextRenderId)
+        return !(previousBuiltin && nextBuiltin)
+    }
+
+    static func isBuiltinPortId(_ id: String?) -> Bool {
+        switch id {
+        case "speaker-in", "speaker-out", "speakerphone-out", "handset-in", "handset-out":
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Pinning Front/Bottom/Back while VPIO is on fights Isolation's array
     /// processing and is the Scribe channel bug. Let the OS pick the array.
     public static func shouldPinBuiltinDataSource(noiseCancelling: Bool) -> Bool {

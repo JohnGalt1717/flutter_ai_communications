@@ -425,17 +425,28 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func selectEndpoints(captureId: String?, renderId: String?) {
+    let previousCapture = selectedCaptureId
+    let previousRender = selectedRenderId
     if let captureId { selectedCaptureId = captureId }
     if let renderId { selectedRenderId = renderId }
     applyRoute()
-    do {
-      try startEngine()
-      emitRoute()
-      emitIsolation()
-      scheduleSpeakerReassert()
-    } catch {
-      emitPath(alive: false)
+    let rebuild = IosVoiceProcessingPolicy.shouldRebuildGraph(
+      previousCaptureId: previousCapture,
+      previousRenderId: previousRender,
+      nextCaptureId: selectedCaptureId,
+      nextRenderId: selectedRenderId
+    )
+    if rebuild || engine == nil {
+      do {
+        try startEngine()
+      } catch {
+        emitPath(alive: false)
+        return
+      }
     }
+    emitRoute()
+    emitIsolation()
+    scheduleSpeakerReassert()
   }
 
   private func applyRoute() {
