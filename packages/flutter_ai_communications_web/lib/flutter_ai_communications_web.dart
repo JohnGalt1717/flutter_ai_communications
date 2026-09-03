@@ -389,6 +389,12 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   }
 
   Future<void> _closeContext() async {
+    try {
+      _player?.stop();
+    } on Object {
+      // Node may already be dead with the context.
+    }
+    _player = null;
     final context = _context;
     _context = null;
     _appliedSinkId = null;
