@@ -67,6 +67,8 @@ class FlutterAiCommunicationsPlugin :
     private var requestedPlaybackRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
     private var nativeCaptureRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
     private var nativePlaybackRate = AndroidCapturePolicy.DEFAULT_SAMPLE_RATE
+    private var captureFormatFailures = emptyList<Map<String, Any>>()
+    private var playbackFormatFailures = emptyList<Map<String, Any>>()
     private var appliedCaptureId: String? = null
     private var appliedRenderId: String? = null
     private var noiseCancelling = true
@@ -169,7 +171,7 @@ class FlutterAiCommunicationsPlugin :
                 applyRoute()
                 restartPlayback()
                 restartCapture()
-                result.success(null)
+                result.success(startedFormatMap())
             }
             "openIsolationSettings" -> {
                 emit("isolation", "unavailable")
@@ -342,11 +344,7 @@ class FlutterAiCommunicationsPlugin :
             emitRoute()
             emit("isolation", "unavailable")
             requestBluetoothIdentity()
-            mapOf(
-                "status" to "started",
-                "captureFormat" to AndroidCapturePolicy.formatMap(nativeCaptureRate),
-                "playbackFormat" to AndroidCapturePolicy.formatMap(nativePlaybackRate),
-            )
+            startedFormatMap()
         } catch (_: Exception) {
             running.set(false)
             "failed"
@@ -440,10 +438,22 @@ class FlutterAiCommunicationsPlugin :
             }
             applyPreferredCapture(rec)
             nativeCaptureRate = rec.sampleRate.takeIf { it > 0 } ?: rate
+            captureFormatFailures =
+                AndroidCapturePolicy.failures(attempted, nativeCaptureRate)
             return rec
         }
+        captureFormatFailures =
+            attempted.map { AndroidCapturePolicy.failureMap(it) }
         return null
     }
+
+    private fun startedFormatMap(): Map<String, Any> =
+        mapOf(
+            "status" to "started",
+            "captureFormat" to AndroidCapturePolicy.formatMap(nativeCaptureRate),
+            "playbackFormat" to AndroidCapturePolicy.formatMap(nativePlaybackRate),
+            "formatFailures" to captureFormatFailures + playbackFormatFailures,
+        )
 
     private fun applyPreferredCapture(rec: AudioRecord) {
         val device = resolveCaptureDevice() ?: return
@@ -506,10 +516,14 @@ class FlutterAiCommunicationsPlugin :
             }
             applyPreferredRender(next)
             nativePlaybackRate = next.sampleRate.takeIf { it > 0 } ?: rate
+            playbackFormatFailures =
+                AndroidCapturePolicy.failures(attempted, nativePlaybackRate)
             track = next
             next.play()
             return
         }
+        playbackFormatFailures =
+            attempted.map { AndroidCapturePolicy.failureMap(it) }
     }
 
     private fun play(bytes: ByteArray?) {

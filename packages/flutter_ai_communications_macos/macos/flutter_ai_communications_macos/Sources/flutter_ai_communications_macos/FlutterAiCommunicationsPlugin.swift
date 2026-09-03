@@ -73,7 +73,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         captureId: args?["captureId"] as? String,
         renderId: args?["renderId"] as? String
       )
-      result(nil)
+      result(startedFormatMap())
     case "openIsolationSettings":
       emitIsolation()
       result(nil)

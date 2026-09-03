@@ -41,6 +41,17 @@ internal object AndroidCapturePolicy {
             "channels" to 1,
         )
 
+    fun failureMap(
+        sampleRate: Int,
+        reason: String = "unsupported",
+    ): Map<String, Any> = formatMap(sampleRate) + mapOf("reason" to reason)
+
+    fun failures(
+        attempted: Collection<Int>,
+        accepted: Int,
+    ): List<Map<String, Any>> =
+        attempted.filter { it != accepted }.map { failureMap(it) }
+
     fun isBuiltinCapture(selectedId: String?): Boolean =
         selectedId == "handset-in" || selectedId == "speaker-in"
 

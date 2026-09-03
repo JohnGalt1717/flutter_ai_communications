@@ -22,4 +22,13 @@ final class FormatCandidateFailure {
 
   /// Machine-readable reason. Never user-facing copy.
   final String reason;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FormatCandidateFailure &&
+      other.format == format &&
+      other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(format, reason);
 }

@@ -149,6 +149,10 @@ final class FlutterAiCommunicationsLinux
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
+      _lastNativeFormats = const NativeFormatReport(
+        capture: AudioFormat.pcm16le24k,
+        playback: AudioFormat.pcm16le24k,
+      );
       _emitObserved(force: true);
     }
   }

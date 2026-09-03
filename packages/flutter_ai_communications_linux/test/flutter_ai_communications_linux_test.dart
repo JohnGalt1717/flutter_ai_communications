@@ -84,14 +84,8 @@ void main() {
       renderId: 'usb-out',
     );
     expect(started, NativeGraphStart.started);
-    expect(
-      adapter.lastNativeFormats.capture,
-      AudioFormat.pcm16le24k,
-    );
-    expect(
-      adapter.lastNativeFormats.playback,
-      AudioFormat.pcm16le24k,
-    );
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
     expect(adapter.lastObservedRoute.captureId, 'usb-in');
     expect(adapter.lastObservedRoute.renderId, 'usb-out');
     expect(seen, isNotEmpty);
@@ -105,6 +99,8 @@ void main() {
     );
     expect(adapter.lastObservedRoute.captureId, 'built-in-in');
     expect(adapter.lastObservedRoute.renderId, 'built-in-out');
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
     expect(seen.last.captureId, 'built-in-in');
     expect(seen.last.renderId, 'built-in-out');
   });
