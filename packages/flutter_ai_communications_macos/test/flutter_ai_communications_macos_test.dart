@@ -37,6 +37,16 @@ void main() {
     expect(MacosVoiceProcessingPolicy.isolationState, 'unavailable');
   });
 
+  test('capture-only does not attach playback', () {
+    expect(MacosVoiceProcessingPolicy.wantsCapture('usb-in', null), isTrue);
+    expect(MacosVoiceProcessingPolicy.wantsPlayback('usb-in', null), isFalse);
+  });
+
+  test('playback-only does not attach capture', () {
+    expect(MacosVoiceProcessingPolicy.wantsCapture(null, 'usb-out'), isFalse);
+    expect(MacosVoiceProcessingPolicy.wantsPlayback(null, 'usb-out'), isTrue);
+  });
+
   test('built-in speakers pair as speakerphone', () {
     expect(
       macosRouteClass(name: 'MacBook Pro Microphone', transport: 'bltn'),
@@ -121,6 +131,28 @@ void main() {
     expect(seen.last.renderId, 'usb-out');
   });
 
+  test('capture-only start does not bind render', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsMacos(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(captureId: 'usb-in');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastObservedRoute.renderId, isNull);
+  });
+
+  test('playback-only start does not bind capture', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsMacos(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(renderId: 'usb-out');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+  });
+
   test('bind failure does not report the requested UID', () async {
     final backend = _RecordingBackend()..failBind = true;
     final adapter = FlutterAiCommunicationsMacos(backend: backend);
@@ -185,9 +217,13 @@ final class _RecordingBackend implements AudioBackend {
       bound = const PairingSnapshot();
       return NativeGraphStart.failed;
     }
+    final capture = captureId == null || captureId.isEmpty ? null : captureId;
+    final render = renderId == null || renderId.isEmpty ? null : renderId;
+    final wantCapture = capture != null || render == null;
+    final wantRender = render != null || capture == null;
     bound = PairingSnapshot(
-      captureId: captureId ?? 'built-in-in',
-      renderId: renderId ?? 'built-in-out',
+      captureId: wantCapture ? capture ?? 'built-in-in' : null,
+      renderId: wantRender ? render ?? 'built-in-out' : null,
     );
     return NativeGraphStart.started;
   }

@@ -105,6 +105,32 @@ void main() {
     expect(seen.last.renderId, 'built-in-out');
   });
 
+  test('capture-only start does not bind render', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(captureId: 'usb-in');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, 'usb-in');
+    expect(adapter.lastObservedRoute.renderId, isNull);
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, isNull);
+  });
+
+  test('playback-only start does not bind capture', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+
+    final started = await adapter.startNative(renderId: 'usb-out');
+    expect(started, NativeGraphStart.started);
+    expect(adapter.lastObservedRoute.captureId, isNull);
+    expect(adapter.lastObservedRoute.renderId, 'usb-out');
+    expect(adapter.lastNativeFormats.capture, isNull);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
+  });
+
   test('WSLg RDP devices pair as speakerphone', () {
     expect(
       linuxRouteClass(name: 'RDP Source', bus: ''),
@@ -339,9 +365,13 @@ final class _RecordingBackend implements AudioBackend {
   @override
   NativeGraphStart start({String? captureId, String? renderId}) {
     started = true;
+    final capture = captureId == null || captureId.isEmpty ? null : captureId;
+    final render = renderId == null || renderId.isEmpty ? null : renderId;
+    final wantCapture = capture != null || render == null;
+    final wantRender = render != null || capture == null;
     bound = PairingSnapshot(
-      captureId: captureId ?? 'built-in-in',
-      renderId: renderId ?? 'built-in-out',
+      captureId: wantCapture ? capture ?? 'built-in-in' : null,
+      renderId: wantRender ? render ?? 'built-in-out' : null,
     );
     return NativeGraphStart.started;
   }

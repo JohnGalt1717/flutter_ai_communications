@@ -95,6 +95,19 @@ void main() {
     );
   });
 
+  test('withEdges does not fill an unused Session direction', () {
+    const report = NativeFormatReport();
+    final adopted = report.withEdges(
+      capture: AudioFormat.pcm16le24k,
+      playback: AudioFormat.pcm16le24k,
+      hasCapture: true,
+      hasPlayback: false,
+    );
+    expect(adopted.capture, AudioFormat.pcm16le24k);
+    expect(adopted.playback, isNull);
+    expect(adopted.playbackPath, ConversionPath.identity);
+  });
+
   test('rejected candidates stay structured', () {
     expect(
       negotiator.failures(

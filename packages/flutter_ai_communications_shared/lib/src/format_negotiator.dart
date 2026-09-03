@@ -157,18 +157,27 @@ final class NativeFormatReport {
   final List<FormatCandidateFailure> failures;
 
   /// Fills missing Native Formats from the Session edge Formats.
+  ///
+  /// Unused directions stay null so capture-only does not invent a playback
+  /// Native Format, and playback-only does not invent capture.
   NativeFormatReport withEdges({
     required AudioFormat capture,
     required AudioFormat playback,
+    bool hasCapture = true,
+    bool hasPlayback = true,
   }) {
     const negotiator = FormatNegotiator();
-    final nativeCapture = this.capture ?? capture;
-    final nativePlayback = this.playback ?? playback;
+    final nativeCapture = hasCapture ? (this.capture ?? capture) : null;
+    final nativePlayback = hasPlayback ? (this.playback ?? playback) : null;
     return NativeFormatReport(
       capture: nativeCapture,
       playback: nativePlayback,
-      capturePath: negotiator.path(nativeCapture, capture),
-      playbackPath: negotiator.path(nativePlayback, playback),
+      capturePath: nativeCapture == null
+          ? ConversionPath.identity
+          : negotiator.path(nativeCapture, capture),
+      playbackPath: nativePlayback == null
+          ? ConversionPath.identity
+          : negotiator.path(nativePlayback, playback),
       failures: failures,
     );
   }

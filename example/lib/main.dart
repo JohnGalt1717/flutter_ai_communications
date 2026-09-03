@@ -27,7 +27,7 @@ void main() {
   };
   _installAgentBindings();
   LoopbackCommunicationsPlatform.wrapRegistered();
-  runApp(const ExampleApp());
+  runApp(ExampleApp(manager: CommunicationsManager()));
 }
 
 /// Registers flutter-skill UI automation in debug `flutter run` only.
@@ -47,12 +47,23 @@ void _installAgentBindings() {
 enum _HarnessPhase { idle, lobby, meeting }
 
 /// AI-voice harness that looks like a communications client.
-final class ExampleApp extends StatelessWidget {
+///
+/// Owns one application-scoped [CommunicationsManager]. Tests may inject a
+/// manager; `main()` constructs one for the process lifetime.
+final class ExampleApp extends StatefulWidget {
   /// Creates the example app.
   const ExampleApp({super.key, this.manager});
 
   /// Optional injected Communications manager (tests / agent harness).
   final CommunicationsManager? manager;
+
+  @override
+  State<ExampleApp> createState() => _ExampleAppState();
+}
+
+final class _ExampleAppState extends State<ExampleApp> {
+  late final CommunicationsManager _manager =
+      widget.manager ?? CommunicationsManager();
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +76,7 @@ final class ExampleApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: SessionPage(manager: manager ?? CommunicationsManager()),
+      home: SessionPage(manager: _manager),
     );
   }
 }
@@ -75,7 +86,7 @@ final class SessionPage extends StatefulWidget {
   /// Creates the Session page.
   const SessionPage({super.key, required this.manager});
 
-  /// Audio manager driving the Session.
+  /// Communications manager driving the Session.
   final CommunicationsManager manager;
 
   @override
@@ -348,7 +359,9 @@ final class _SessionPageState extends State<SessionPage> {
                 ),
                 FilledButton(
                   key: const Key('lobby-join'),
-                  onPressed: _phase == _HarnessPhase.lobby ? _joinMeeting : null,
+                  onPressed: _phase == _HarnessPhase.lobby
+                      ? _joinMeeting
+                      : null,
                   child: const Text('Join'),
                 ),
                 OutlinedButton(

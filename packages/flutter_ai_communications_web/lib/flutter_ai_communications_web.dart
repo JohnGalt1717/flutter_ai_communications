@@ -103,13 +103,18 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _renderId = renderId;
     _lastNativeFormats = const NativeFormatReport();
     _listenForDeviceChanges();
-    final granted = await _acquireCapture(captureId);
-    if (granted != MicrophonePermission.granted) {
-      return NativeGraphStart.unavailable;
-    }
-    await _refreshCatalog();
-    if (_endpoints.where((e) => e.isCapture).isEmpty) {
-      return NativeGraphStart.unavailable;
+    final wantCapture = _policy.wantsCapture(captureId, renderId);
+    if (wantCapture) {
+      final granted = await _acquireCapture(captureId);
+      if (granted != MicrophonePermission.granted) {
+        return NativeGraphStart.unavailable;
+      }
+      await _refreshCatalog();
+      if (_endpoints.where((e) => e.isCapture).isEmpty) {
+        return NativeGraphStart.unavailable;
+      }
+    } else {
+      await _refreshCatalog();
     }
     _lastIsolation = const IsolationEvent(IsolationState.unavailable);
     _isolation.add(_lastIsolation);
@@ -195,8 +200,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     if (!_running && _stream == null) {
       return;
     }
+    final wantCapture = _policy.wantsCapture(_captureId, _renderId);
     if (captureChanged || renderChanged || _stream == null) {
-      if (captureChanged || _stream == null) {
+      if (wantCapture && (captureChanged || _stream == null)) {
         final granted = await _acquireCapture(_captureId);
         if (granted != MicrophonePermission.granted) {
           return;
@@ -291,8 +297,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   }
 
   Future<void> _startGraph() async {
+    final wantCapture = _policy.wantsCapture(_captureId, _renderId);
+    final wantPlayback = _policy.wantsPlayback(_captureId, _renderId);
     final stream = _stream;
-    if (stream == null) {
+    if (wantCapture && stream == null) {
       throw StateError('capture stream missing');
     }
     _processor?.disconnect();
@@ -325,36 +333,45 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
     _nextTime = context.currentTime;
     _generation++;
-    final source = context.createMediaStreamSource(stream);
-    _source = source;
-    final processor = context.createScriptProcessor(2048, 2, 1);
-    _processor = processor;
-    processor.onaudioprocess = ((web.AudioProcessingEvent event) {
-      if (_paused || !_running) {
-        return;
+    if (wantCapture && stream != null) {
+      final source = context.createMediaStreamSource(stream);
+      _source = source;
+      final processor = context.createScriptProcessor(2048, 2, 1);
+      _processor = processor;
+      processor.onaudioprocess = ((web.AudioProcessingEvent event) {
+        if (_paused || !_running) {
+          return;
+        }
+        final channels = event.inputBuffer.numberOfChannels;
+        final left = event.inputBuffer.getChannelData(0).toDart;
+        final right = channels > 1
+            ? event.inputBuffer.getChannelData(1).toDart
+            : left;
+        final out = Uint8List(left.length * 2);
+        final data = ByteData.sublistView(out);
+        for (var i = 0; i < left.length; i++) {
+          final mixed = channels > 1 ? (left[i] + right[i]) / 2 : left[i];
+          final sample = (mixed * 32767).round().clamp(-32767, 32767);
+          data.setInt16(i * 2, sample, Endian.little);
+        }
+        _capture.add(out);
+      }).toJS;
+      source.connect(processor);
+      if (wantPlayback) {
+        processor.connect(context.destination);
+      } else {
+        final mute = context.createGain();
+        mute.gain.value = 0;
+        processor.connect(mute);
+        mute.connect(context.destination);
       }
-      final channels = event.inputBuffer.numberOfChannels;
-      final left = event.inputBuffer.getChannelData(0).toDart;
-      final right = channels > 1
-          ? event.inputBuffer.getChannelData(1).toDart
-          : left;
-      final out = Uint8List(left.length * 2);
-      final data = ByteData.sublistView(out);
-      for (var i = 0; i < left.length; i++) {
-        final mixed = channels > 1 ? (left[i] + right[i]) / 2 : left[i];
-        final sample = (mixed * 32767).round().clamp(-32767, 32767);
-        data.setInt16(i * 2, sample, Endian.little);
-      }
-      _capture.add(out);
-    }).toJS;
-    source.connect(processor);
-    processor.connect(context.destination);
+    }
     _running = true;
     _paused = false;
     final native = _policy.nativeFormat(sampleRate: context.sampleRate);
     _lastNativeFormats = NativeFormatReport(
-      capture: native,
-      playback: native,
+      capture: wantCapture ? native : null,
+      playback: wantPlayback ? native : null,
     );
     _emitObserved(unsupported: render.unsupported);
   }
@@ -438,8 +455,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     return _captureId;
   }
 
-
-
   web.MediaStream? _videoStream;
   web.HTMLVideoElement? _videoEl;
   var _cameraViewId = 0;
@@ -474,9 +489,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   Future<CameraPermission> requestCameraPermission() async {
     try {
       final stream = await web.window.navigator.mediaDevices
-          .getUserMedia(
-            web.MediaStreamConstraints(video: true.toJS),
-          )
+          .getUserMedia(web.MediaStreamConstraints(video: true.toJS))
           .toDart
           .timeout(const Duration(seconds: 2));
       stream.getTracks().toDart.forEach((track) => track.stop());

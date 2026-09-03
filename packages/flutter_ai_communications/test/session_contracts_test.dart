@@ -268,6 +268,21 @@ void main() {
       expect(platform.played, isEmpty);
       expect(session.direction, SessionDirection.captureOnly);
     });
+
+    test('capture-only does not acquire unused playback', () async {
+      final session = await ready(direction: SessionDirection.captureOnly);
+      expect(platform.selectedRenderId, isNull);
+      expect(session.diagnostics.desired.renderId, isNull);
+      expect(session.diagnostics.nativePlaybackFormat, isNull);
+    });
+
+    test('playback-only does not acquire unused capture', () async {
+      final session = await ready(direction: SessionDirection.playbackOnly);
+      expect(platform.selectedCaptureId, isNull);
+      expect(session.diagnostics.desired.captureId, isNull);
+      expect(session.diagnostics.nativeCaptureFormat, isNull);
+      expect(platform.permissionRequests, 0);
+    });
   });
 
   group('status and diagnostics', () {

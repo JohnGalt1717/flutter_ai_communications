@@ -322,7 +322,12 @@ class FlutterAiCommunicationsPlugin :
 
     private fun startNative(): Any {
         val context = appContext ?: return "failed"
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+        val wantCapture =
+            AndroidCapturePolicy.wantsCapture(selectedCaptureId, selectedRenderId)
+        val wantPlayback =
+            AndroidCapturePolicy.wantsPlayback(selectedCaptureId, selectedRenderId)
+        if (wantCapture &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             return "failed"
@@ -335,16 +340,18 @@ class FlutterAiCommunicationsPlugin :
             captureGeneration++
             running.set(true)
             paused.set(false)
-            if (!startCapture(captureGeneration)) {
+            if (wantCapture && !startCapture(captureGeneration)) {
                 running.set(false)
                 return "failed"
             }
-            startPlayback()
+            if (wantPlayback) {
+                startPlayback()
+            }
             emitCatalog()
             emitRoute()
             emit("isolation", "unavailable")
             requestBluetoothIdentity()
-            startedFormatMap()
+            startedFormatMap(wantCapture = wantCapture, wantPlayback = wantPlayback)
         } catch (_: Exception) {
             running.set(false)
             "failed"
@@ -447,13 +454,25 @@ class FlutterAiCommunicationsPlugin :
         return null
     }
 
-    private fun startedFormatMap(): Map<String, Any> =
-        mapOf(
-            "status" to "started",
-            "captureFormat" to AndroidCapturePolicy.formatMap(nativeCaptureRate),
-            "playbackFormat" to AndroidCapturePolicy.formatMap(nativePlaybackRate),
-            "formatFailures" to captureFormatFailures + playbackFormatFailures,
-        )
+    private fun startedFormatMap(
+        wantCapture: Boolean =
+            AndroidCapturePolicy.wantsCapture(selectedCaptureId, selectedRenderId),
+        wantPlayback: Boolean =
+            AndroidCapturePolicy.wantsPlayback(selectedCaptureId, selectedRenderId),
+    ): Map<String, Any> {
+        val map =
+            mutableMapOf<String, Any>(
+                "status" to "started",
+                "formatFailures" to captureFormatFailures + playbackFormatFailures,
+            )
+        if (wantCapture) {
+            map["captureFormat"] = AndroidCapturePolicy.formatMap(nativeCaptureRate)
+        }
+        if (wantPlayback) {
+            map["playbackFormat"] = AndroidCapturePolicy.formatMap(nativePlaybackRate)
+        }
+        return map
+    }
 
     private fun applyPreferredCapture(rec: AudioRecord) {
         val device = resolveCaptureDevice() ?: return
@@ -466,7 +485,9 @@ class FlutterAiCommunicationsPlugin :
     }
 
     private fun restartCapture() {
-        if (!running.get()) {
+        if (!running.get() ||
+            !AndroidCapturePolicy.wantsCapture(selectedCaptureId, selectedRenderId)
+        ) {
             return
         }
         val next = ++captureGeneration
@@ -534,7 +555,9 @@ class FlutterAiCommunicationsPlugin :
     }
 
     private fun restartPlayback() {
-        if (!running.get()) {
+        if (!running.get() ||
+            !AndroidCapturePolicy.wantsPlayback(selectedCaptureId, selectedRenderId)
+        ) {
             return
         }
         track?.stop()

@@ -52,6 +52,20 @@ internal object AndroidCapturePolicy {
     ): List<Map<String, Any>> =
         attempted.filter { it != accepted }.map { failureMap(it) }
 
+    fun presentId(id: String?): String? = id?.takeIf { it.isNotEmpty() }
+
+    fun wantsCapture(captureId: String?, renderId: String?): Boolean {
+        val capture = presentId(captureId)
+        val render = presentId(renderId)
+        return capture != null || render == null
+    }
+
+    fun wantsPlayback(captureId: String?, renderId: String?): Boolean {
+        val capture = presentId(captureId)
+        val render = presentId(renderId)
+        return render != null || capture == null
+    }
+
     fun isBuiltinCapture(selectedId: String?): Boolean =
         selectedId == "handset-in" || selectedId == "speaker-in"
 
