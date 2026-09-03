@@ -169,6 +169,9 @@ final class Session {
   var _captureConversionPath = ConversionPath.identity;
   var _playbackConversionPath = ConversionPath.identity;
   List<FormatCandidateFailure> _formatFailures = const [];
+  final AudioTranscoder _captureTranscoder = AudioTranscoder();
+  final AudioTranscoder _playbackTranscoder = AudioTranscoder();
+  final AudioTranscoder _floorTranscoder = AudioTranscoder();
 
   /// Capture-out Format. Defaults to PCM16 LE mono 24 kHz.
   final AudioFormat captureFormat;
@@ -428,8 +431,7 @@ final class Session {
       return;
     }
     final cameras = await _platform.enumerateCameras();
-    final resolved =
-        cameraPreference.resolve(cameras) ?? cameras.firstOrNull;
+    final resolved = cameraPreference.resolve(cameras) ?? cameras.firstOrNull;
     final id = cameraId ?? _cameraId ?? resolved?.id;
     if (id == null) {
       _videoUnavailableReason = 'none';
@@ -594,7 +596,7 @@ final class Session {
     if (native == captureFormat) {
       return bytes;
     }
-    return const AudioTranscoder().transcode(bytes, native, captureFormat);
+    return _captureTranscoder.transcode(bytes, native, captureFormat);
   }
 
   Uint8List _toNativePlayback(Uint8List bytes) {
@@ -602,7 +604,7 @@ final class Session {
     if (native == playbackFormat) {
       return bytes;
     }
-    return const AudioTranscoder().transcode(bytes, playbackFormat, native);
+    return _playbackTranscoder.transcode(bytes, playbackFormat, native);
   }
 
   void _adoptAcousticProfile() {
@@ -627,6 +629,9 @@ final class Session {
       capture: captureFormat,
       playback: playbackFormat,
     );
+    _captureTranscoder.reset();
+    _playbackTranscoder.reset();
+    _floorTranscoder.reset();
     _nativeCaptureFormat = adopted.capture;
     _nativePlaybackFormat = adopted.playback;
     _captureConversionPath = adopted.capturePath;
@@ -643,7 +648,7 @@ final class Session {
   Uint8List _processCapture(Uint8List bytes) {
     final working = captureFormat.encoding == AudioEncoding.pcm16le
         ? bytes
-        : const AudioTranscoder().toWorking(bytes, captureFormat);
+        : _floorTranscoder.toWorking(bytes, captureFormat);
     final rate = captureFormat.encoding == AudioEncoding.pcm16le
         ? captureFormat.sampleRate
         : AudioTranscoder.working.sampleRate;
@@ -661,7 +666,7 @@ final class Session {
     );
     return captureFormat.encoding == AudioEncoding.pcm16le
         ? gated
-        : const AudioTranscoder().fromWorking(gated, captureFormat);
+        : _floorTranscoder.fromWorking(gated, captureFormat);
   }
 
   void _noteCapture(Uint8List bytes) {
@@ -702,7 +707,7 @@ final class Session {
         _captureController.add(
           captureFormat.encoding == AudioEncoding.pcm16le
               ? gated
-              : const AudioTranscoder().fromWorking(gated, captureFormat),
+              : _floorTranscoder.fromWorking(gated, captureFormat),
         );
       }
     }
@@ -856,6 +861,7 @@ final class Session {
         captureId: _applied.captureId,
         renderId: _applied.renderId,
       );
+      _adoptNativeFormats(_platform.lastNativeFormats);
     }
     _publishStatus(_computeStatus());
     if (!diagnostics.observedMatchesDesired && _hasObservedRoute) {
@@ -1153,6 +1159,7 @@ final class Session {
       captureId: _applied.captureId,
       renderId: _applied.renderId,
     );
+    _adoptNativeFormats(_platform.lastNativeFormats);
     _publishStatus(_computeStatus());
     if (!diagnostics.observedMatchesDesired) {
       _scheduleConvergence();

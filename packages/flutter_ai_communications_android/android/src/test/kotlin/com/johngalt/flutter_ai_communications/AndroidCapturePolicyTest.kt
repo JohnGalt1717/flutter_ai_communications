@@ -38,6 +38,21 @@ class AndroidCapturePolicyTest {
     }
 
     @Test
+    fun rejectedRatesStayStructured() {
+        assertEquals(
+            listOf(
+                mapOf(
+                    "encoding" to "pcm16le",
+                    "sampleRate" to 24_000,
+                    "channels" to 1,
+                    "reason" to "unsupported",
+                ),
+            ),
+            AndroidCapturePolicy.failures(setOf(24_000, 48_000), 48_000),
+        )
+    }
+
+    @Test
     fun requestedSampleRateReadsFormatMap() {
         assertEquals(
             16_000,

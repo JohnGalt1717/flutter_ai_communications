@@ -57,6 +57,51 @@ final class FormatNegotiator {
     return native == edge ? ConversionPath.identity : ConversionPath.dart;
   }
 
+  /// Formats to try, requested first when probing, otherwise capability rank.
+  ///
+  /// Empty [capabilities] is failure-first: the requested Format, then the
+  /// default PCM rank. A known exact match is tried alone. Otherwise the
+  /// ranked remaining capabilities are returned best-first.
+  List<AudioFormat> probeOrder({
+    required AudioFormat requested,
+    List<AudioFormat> capabilities = const [],
+  }) {
+    if (capabilities.isEmpty) {
+      final seen = <AudioFormat>{};
+      return [
+        requested,
+        for (final rate in _pcmRank) AudioFormat.pcm16le(sampleRate: rate),
+      ].where(seen.add).toList();
+    }
+    if (capabilities.contains(requested)) {
+      return [requested];
+    }
+    final ranked =
+        capabilities.where((candidate) {
+          return candidate.isSupported &&
+              candidate.encoding != AudioEncoding.opus;
+        }).toList()..sort(
+          (a, b) => _score(requested, b).compareTo(_score(requested, a)),
+        );
+    return ranked;
+  }
+
+  /// Structured reasons for candidates that did not become the Native Format.
+  List<FormatCandidateFailure> failures({
+    required AudioFormat selected,
+    List<AudioFormat> rejected = const [],
+    List<AudioFormat> rankedOut = const [],
+  }) {
+    return [
+      for (final format in rejected)
+        if (format != selected)
+          FormatCandidateFailure(format: format, reason: 'unsupported'),
+      for (final format in rankedOut)
+        if (format != selected)
+          FormatCandidateFailure(format: format, reason: 'ranked_out'),
+    ];
+  }
+
   int _score(AudioFormat requested, AudioFormat candidate) {
     if (candidate.encoding != AudioEncoding.pcm16le) {
       if (candidate.encoding == requested.encoding) {
