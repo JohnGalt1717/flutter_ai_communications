@@ -23,6 +23,22 @@ void main() {
     expect(out, input);
   });
 
+  test('same-rate µ-law is a copy, not a decode/encode round-trip', () {
+    final encoded = AudioTranscoder().transcode(
+      _sinePcm(sampleRate: 8000, hz: 440, seconds: 0.05),
+      const AudioFormat.pcm16le(sampleRate: 8000),
+      const AudioFormat.pcmu(),
+      end: true,
+    );
+    final out = transcoder.transcode(
+      encoded,
+      const AudioFormat.pcmu(),
+      const AudioFormat.pcmu(),
+    );
+    expect(out, isNot(same(encoded)));
+    expect(out, encoded);
+  });
+
   test('24 kHz sine keeps energy after 48 kHz working round-trip', () {
     final input = _sinePcm(sampleRate: 24000, hz: 440, seconds: 0.1);
     const edge = AudioFormat.pcm16le(sampleRate: 24000);

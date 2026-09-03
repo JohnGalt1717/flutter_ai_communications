@@ -629,12 +629,9 @@ final class Session {
       capture: captureFormat,
       playback: playbackFormat,
     );
-    if (adopted.capture != _nativeCaptureFormat) {
-      _captureTranscoder.reset();
-    }
-    if (adopted.playback != _nativePlaybackFormat) {
-      _playbackTranscoder.reset();
-    }
+    _captureTranscoder.reset();
+    _playbackTranscoder.reset();
+    _floorTranscoder.reset();
     _nativeCaptureFormat = adopted.capture;
     _nativePlaybackFormat = adopted.playback;
     _captureConversionPath = adopted.capturePath;

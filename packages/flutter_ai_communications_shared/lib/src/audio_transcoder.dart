@@ -61,7 +61,7 @@ final class AudioTranscoder {
         'Opus is not linked. Attach an OpusCodec before using audio/opus.',
       );
     }
-    if (source == target && source.encoding == AudioEncoding.pcm16le) {
+    if (source == target) {
       return Uint8List.fromList(bytes);
     }
     final sourceRate = source.encoding == AudioEncoding.pcm16le

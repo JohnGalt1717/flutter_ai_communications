@@ -165,9 +165,9 @@ class MethodChannelCommunicationsPlatform
     return [
       for (final item in raw)
         if (item is Map)
-          if (_formatFrom(item) != null)
+          if (_formatFrom(item) case final format?)
             FormatCandidateFailure(
-              format: _formatFrom(item)!,
+              format: format,
               reason: item['reason'] as String? ?? 'unsupported',
             ),
     ];
