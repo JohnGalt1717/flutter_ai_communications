@@ -94,6 +94,12 @@ final class _SessionPageState extends State<SessionPage> {
   final _levels = <double>[];
   List<Endpoint> _endpoints = const [];
   List<CameraEndpoint> _cameras = const [];
+  List<ScreenSource> _screenSources = const [];
+  String? _indicatedScreenId;
+  var _includeSound = false;
+  var _screenMotion = false;
+  var _screenCursor = true;
+  String? _screenStatus;
   SessionDiagnostics? _diagnostics;
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
@@ -129,10 +135,17 @@ final class _SessionPageState extends State<SessionPage> {
     } on Object {
       cameras = const [];
     }
+    List<ScreenSource> screens = const [];
+    try {
+      screens = await _manager.screenSources();
+    } on Object {
+      screens = const [];
+    }
     if (mounted) {
       setState(() {
         _endpoints = endpoints;
         _cameras = cameras;
+        _screenSources = screens;
       });
     }
   }
@@ -240,6 +253,14 @@ final class _SessionPageState extends State<SessionPage> {
         });
       }
     });
+    session.screenSourceCatalog.listen(
+      (sources) {
+        if (mounted) {
+          setState(() => _screenSources = sources);
+        }
+      },
+      onError: (_) {},
+    );
     session.capture.listen((bytes) {
       if (!mounted) {
         return;
@@ -271,7 +292,72 @@ final class _SessionPageState extends State<SessionPage> {
         _pipeline.clear();
         _levels.clear();
         _level = 0;
+        _indicatedScreenId = null;
+        _screenStatus = null;
       });
+    }
+  }
+
+  bool get _osPickerCatalog =>
+      _screenSources.length == 1 &&
+      _screenSources.first.kind == ScreenSourceKind.systemPicker;
+
+  Future<void> _startScreenSession() async {
+    if (_phase != _HarnessPhase.idle) {
+      return;
+    }
+    await _applyStart(
+      await _manager.start(purpose: 'meeting', cameraSend: true),
+      meeting: true,
+    );
+  }
+
+  Future<void> _shareScreen(Session session) async {
+    if (_phase != _HarnessPhase.meeting) {
+      setState(() => _screenStatus = 'blocked');
+      return;
+    }
+    final sourceId =
+        _indicatedScreenId ??
+        (_osPickerCatalog
+            ? _screenSources.first.id
+            : _screenSources
+                  .where((source) => source.kind != ScreenSourceKind.systemPicker)
+                  .firstOrNull
+                  ?.id);
+    if (sourceId == null) {
+      setState(() => _screenStatus = 'none');
+      return;
+    }
+    if (!_osPickerCatalog) {
+      await session.beginScreenPick();
+      await session.indicateScreenSource(sourceId);
+    }
+    final result = await session.startScreenShare(
+      sourceId,
+      includeSystemAudio: _includeSound,
+      cursor: _screenCursor,
+      motion: _screenMotion,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _screenStatus = switch (result) {
+        ScreenShareReady() => 'sharing',
+        ScreenShareDenied() => 'denied',
+        ScreenShareRestricted() => 'restricted',
+        ScreenShareBlocked() => 'blocked',
+        ScreenShareUnavailable() => 'unavailable',
+        ScreenShareFailed() => 'failed',
+      };
+    });
+  }
+
+  Future<void> _stopScreenShare(Session session) async {
+    await session.stopScreenShare();
+    if (mounted) {
+      setState(() => _screenStatus = 'stopped');
     }
   }
 
@@ -402,7 +488,18 @@ final class _SessionPageState extends State<SessionPage> {
             children: _pipelineKeys(session),
           ),
           const SizedBox(height: 16),
-          SizedBox(height: 220, child: _selfView(session)),
+          SizedBox(
+            height: 220,
+            child: Row(
+              children: [
+                Expanded(child: _selfView(session)),
+                if (session?.isScreenSending == true) ...[
+                  const SizedBox(width: 12),
+                  Expanded(child: _screenLoopback(session!)),
+                ],
+              ],
+            ),
+          ),
           const SizedBox(height: 12),
           SizedBox(
             height: 72,
@@ -489,6 +586,106 @@ final class _SessionPageState extends State<SessionPage> {
                       renderId: endpoint.isCapture ? null : endpoint.id,
                     ),
             ),
+          const SizedBox(height: 24),
+          Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            _phase == _HarnessPhase.lobby
+                ? 'Join first. Lobby cannot start screen send.'
+                : 'Start a meeting Session, pick a source, Share. Loopback is the send surface.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (_screenStatus != null)
+            Text(
+              _screenStatus!,
+              key: const Key('screen-status'),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                key: const Key('screen-session'),
+                onPressed: _phase == _HarnessPhase.idle
+                    ? _startScreenSession
+                    : null,
+                child: const Text('Start session'),
+              ),
+              FilledButton.tonal(
+                key: const Key('screen-share'),
+                onPressed: session != null && _phase == _HarnessPhase.meeting
+                    ? () => _shareScreen(session)
+                    : null,
+                child: const Text('Share'),
+              ),
+              OutlinedButton(
+                key: const Key('screen-stop'),
+                onPressed: session != null && session.isScreenSending
+                    ? () => _stopScreenShare(session)
+                    : null,
+                child: const Text('Stop share'),
+              ),
+              FilterChip(
+                key: const Key('screen-sound'),
+                label: const Text('Include sound'),
+                selected: _includeSound,
+                onSelected: (value) async {
+                  setState(() => _includeSound = value);
+                  if (session?.isScreenSending == true) {
+                    await session!.setIncludeSystemAudio(value);
+                    setState(() {});
+                  }
+                },
+              ),
+              FilterChip(
+                key: const Key('screen-motion'),
+                label: const Text('Optimize'),
+                selected: _screenMotion,
+                onSelected: (value) async {
+                  setState(() => _screenMotion = value);
+                  if (session?.isScreenSending == true) {
+                    await session!.setScreenMotion(value);
+                    setState(() {});
+                  }
+                },
+              ),
+              FilterChip(
+                key: const Key('screen-cursor'),
+                label: const Text('Cursor'),
+                selected: _screenCursor,
+                onSelected: (value) async {
+                  setState(() => _screenCursor = value);
+                  if (session?.isScreenSending == true) {
+                    await session!.setScreenCursor(value);
+                    setState(() {});
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final source in _screenSources)
+            ListTile(
+              key: Key('screen-source-${source.id}'),
+              title: Text(source.name),
+              subtitle: Text(
+                '${source.kind.name}'
+                '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
+              ),
+              selected: source.id == _indicatedScreenId,
+              trailing: _screenPreviewThumb(session, source),
+              onTap: session == null || _phase != _HarnessPhase.meeting
+                  ? null
+                  : () async {
+                      if (!_osPickerCatalog) {
+                        await session.beginScreenPick();
+                        await session.indicateScreenSource(source.id);
+                      }
+                      setState(() => _indicatedScreenId = source.id);
+                    },
+            ),
           if (session != null) ...[
             const SizedBox(height: 16),
             Card(
@@ -543,6 +740,56 @@ final class _SessionPageState extends State<SessionPage> {
       );
     }
     return Texture(key: const Key('self-view'), textureId: surface.handle);
+  }
+
+  Widget _screenLoopback(Session session) {
+    final surface = session.screenSurface;
+    if (!session.isScreenSending || surface == null) {
+      return ColoredBox(
+        color: const Color(0xFF111118),
+        child: Center(
+          child: Text(
+            session.screenUnavailableReason ?? 'Not sharing',
+            key: const Key('screen-loopback'),
+            style: const TextStyle(color: Color(0xFFB0B0C0)),
+          ),
+        ),
+      );
+    }
+    if (surface.kind == VideoSurfaceKind.htmlElement) {
+      return SizedBox(
+        width: 320,
+        height: 220,
+        child: ClipRect(
+          child: HtmlElementView(
+            key: const Key('screen-loopback'),
+            viewType: 'fac-screen-${surface.handle}',
+          ),
+        ),
+      );
+    }
+    return Texture(
+      key: const Key('screen-loopback'),
+      textureId: surface.handle,
+    );
+  }
+
+  Widget? _screenPreviewThumb(Session? session, ScreenSource source) {
+    if (session == null || _phase != _HarnessPhase.meeting) {
+      return null;
+    }
+    final preview = session.screenPreview(source.id);
+    if (preview == null || preview.kind != VideoSurfaceKind.texture) {
+      return null;
+    }
+    return SizedBox(
+      width: 72,
+      height: 40,
+      child: Texture(
+        key: Key('screen-preview-${source.id}'),
+        textureId: preview.handle,
+      ),
+    );
   }
 
   List<Widget> _pipelineKeys(Session? session) {

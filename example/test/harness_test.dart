@@ -164,4 +164,40 @@ void main() {
     await manager.session?.stop();
     await tester.pump(Duration.zero);
   });
+
+  testWidgets('Screen send subsection starts a Session, shares, and loopbacks', (
+    tester,
+  ) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('lobby-join')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const Key('meeting')), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('screen-share')), 120);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('screen-source-display-0')),
+      80,
+    );
+    await tester.tap(find.byKey(const Key('screen-source-display-0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('screen-share')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.isScreenSending, isTrue);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('screen-loopback')),
+      -200,
+    );
+    expect(find.byKey(const Key('screen-loopback')), findsOneWidget);
+    await manager.session?.stopScreenShare();
+    await tester.pump();
+    expect(manager.session?.isScreenSending, isFalse);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
 }

@@ -22,6 +22,6 @@ Status as of 2026-09-03.
 | 07 | Web getDisplayMedia | 02 | in progress |
 | 08 | Android MediaProjection | 02 | in progress |
 | 09 | iOS ReplayKit / Broadcast | 02 | not started |
-| 10 | Example in-session picker | 03 and one native graph | not started |
+| 10 | Example in-session picker | 03 and one native graph | done |
 | 11 | Host narrative + Orchestration keys | 10 | not started |
 | 12 | Transport second send path | 02 | not started |
