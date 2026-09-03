@@ -435,9 +435,10 @@ class MethodChannelCommunicationsPlatform
   String? get lastScreenUnavailableReason => _lastScreenUnavailableReason;
 
   @override
-  Stream<List<ScreenSource>> get screenSourceCatalog {
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
     _ensureListening();
-    return _screenCatalogOut.stream;
+    yield await enumerateScreenSources();
+    yield* _screenCatalogOut.stream;
   }
 
   @override

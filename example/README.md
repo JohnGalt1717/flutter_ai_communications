@@ -25,8 +25,16 @@ be compared byte for byte. Analog speaker → microphone is not that path;
 see `docs/echo-e2e.md`.
 
 Windows and Linux camera receipts: `docs/windows-linux-video-setup.md`.
+Screen send receipts: `.agents/workflows/screen-send-orchestration.md`.
+
+The **Screen send** subsection (after Join) is the Orchestration path for
+share: pick a source, Share, loopback of `session.screenSurface`, Stop share.
+Keys: `screen-session`, `screen-share`, `screen-stop`, `screen-loopback`,
+`screen-source-*`. Lobby cannot share.
 
 ```text
 flutter test integration_test/native_camera_test.dart -d windows
 flutter test integration_test/native_camera_test.dart -d linux
+flutter test integration_test/native_screen_test.dart -d windows
+flutter test integration_test/native_screen_test.dart -d linux
 ```

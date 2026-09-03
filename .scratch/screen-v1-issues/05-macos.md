@@ -7,7 +7,7 @@ windows, Screen pick yields thumbs, indicate draws a Share frame, and
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** not started — GitHub [#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)
 
 - [ ] Catalog from `SCShareableContent`; All-displays synthesized
 - [ ] Screen Recording TCC at beginScreenPick or startScreenShare

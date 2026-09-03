@@ -84,6 +84,21 @@ void main() {
     expect(session.screenUnavailableReason, 'denied');
   });
 
+  test('denied permission on replace stops the live screen send', () async {
+    final session = ((await manager.start()) as StartReady).session;
+    await session.startScreenShare('display-0');
+    expect(session.isScreenSending, isTrue);
+    platform.screenPermission = ScreenPermission.denied;
+    expect(
+      await session.startScreenShare('window-notepad'),
+      isA<ScreenShareDenied>(),
+    );
+    expect(session.isStopped, isFalse);
+    expect(session.isScreenSending, isFalse);
+    expect(session.screenSurface, isNull);
+    expect(session.selectedScreenSourceId, isNull);
+  });
+
   test('failed replace clears selected Screen source', () async {
     final session = ((await manager.start()) as StartReady).session;
     await session.startScreenShare('display-0');

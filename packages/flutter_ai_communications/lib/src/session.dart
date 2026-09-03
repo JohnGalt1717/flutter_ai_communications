@@ -516,13 +516,11 @@ final class Session {
     }
     final permission = await _platform.requestScreenPermission();
     if (permission == ScreenPermission.denied) {
-      _screenUnavailableReason = 'denied';
-      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      await _clearScreenSend(reason: 'denied');
       return const ScreenShareDenied();
     }
     if (permission == ScreenPermission.restricted) {
-      _screenUnavailableReason = 'restricted';
-      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      await _clearScreenSend(reason: 'restricted');
       return const ScreenShareRestricted();
     }
     final start = await _platform.startScreenShareNative(
@@ -532,14 +530,8 @@ final class Session {
       motion: motion,
     );
     if (start != NativeGraphStart.started) {
-      _screenSending = false;
-      _screenSourceId = null;
-      _includeSystemAudio = false;
-      _screenSurface = null;
-      _screenNativeFormat = null;
       final reason = _platform.lastScreenUnavailableReason ?? 'none';
-      _screenUnavailableReason = reason;
-      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      await _clearScreenSend(reason: reason);
       return switch (reason) {
         'denied' => const ScreenShareDenied(),
         'restricted' => const ScreenShareRestricted(),
@@ -572,11 +564,19 @@ final class Session {
     if (_stopped) {
       return;
     }
+    await _clearScreenSend();
+  }
+
+  Future<void> _clearScreenSend({String? reason}) async {
     _screenSending = false;
     _screenSourceId = null;
     _includeSystemAudio = false;
     _screenSurface = null;
     _screenNativeFormat = null;
+    _screenUnavailableReason = reason;
+    if (reason != null) {
+      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+    }
     await _platform.stopScreenShareNative();
   }
 
@@ -621,16 +621,7 @@ final class Session {
     }
   }
 
-  Future<void> _handleScreenSourceGone() async {
-    _screenSending = false;
-    _screenSourceId = null;
-    _includeSystemAudio = false;
-    _screenSurface = null;
-    _screenNativeFormat = null;
-    _screenUnavailableReason = 'gone';
-    await _platform.stopScreenShareNative();
-    _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
-  }
+  Future<void> _handleScreenSourceGone() => _clearScreenSend(reason: 'gone');
 
   /// Attach camera send later on the same Session. Does not replace [capture].
   Future<void> enableVideo({

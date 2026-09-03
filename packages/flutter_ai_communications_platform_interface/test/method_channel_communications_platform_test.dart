@@ -292,4 +292,26 @@ void main() {
       ScreenSourceKind.systemPicker,
     ]);
   });
+
+  test('screenSourceCatalog yields the enumerate snapshot first', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'enumerateScreenSources') {
+        return [
+          {
+            'id': 'display-0',
+            'name': 'Display 1',
+            'kind': 'display',
+            'canPreview': true,
+          },
+        ];
+      }
+      return null;
+    });
+    final seen = <List<ScreenSource>>[];
+    final sub = platform.screenSourceCatalog.listen(seen.add);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isNotEmpty);
+    expect(seen.first.single.id, 'display-0');
+    await sub.cancel();
+  });
 }

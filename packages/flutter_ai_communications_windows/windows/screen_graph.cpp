@@ -136,7 +136,10 @@ ScreenGraph::ScreenGraph(flutter::TextureRegistrar* textures, HWND flutter_windo
 ScreenGraph::~ScreenGraph() {
   Stop();
   EndPick();
-  HideFrame();
+  if (frame_window_ != nullptr) {
+    DestroyWindow(frame_window_);
+    frame_window_ = nullptr;
+  }
   if (frame_class_ != 0) {
     UnregisterClass(L"FacShareFrame", GetModuleHandle(nullptr));
     frame_class_ = 0;
@@ -380,6 +383,11 @@ void ScreenGraph::Stop() {
     capture_thread_.join();
   }
   HideFrame();
+  if (textures_ != nullptr && send_texture_id_ >= 0) {
+    textures_->UnregisterTexture(send_texture_id_);
+    send_texture_id_ = -1;
+  }
+  send_texture_.reset();
   send_id_.clear();
 }
 

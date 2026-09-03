@@ -204,6 +204,120 @@ final class LoopbackCommunicationsPlatform
   @override
   Stream<OsRouteChange> get osRouteChanges => inner.osRouteChanges;
 
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() => inner.enumerateCameras();
+
+  @override
+  Future<CameraPermission> requestCameraPermission() =>
+      inner.requestCameraPermission();
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) => inner.startCameraNative(
+    cameraId: cameraId,
+    videoFormat: videoFormat,
+    enabled: enabled,
+    muted: muted,
+  );
+
+  @override
+  Future<void> stopCameraNative() => inner.stopCameraNative();
+
+  @override
+  Future<void> selectCameraNative(String cameraId) =>
+      inner.selectCameraNative(cameraId);
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) =>
+      inner.setCameraEnabledNative(enabled);
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) =>
+      inner.setMuteVideoNative(muted);
+
+  @override
+  VideoSurface? get lastVideoSurface => inner.lastVideoSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => inner.lastNativeVideoFormat;
+
+  @override
+  int get lastCameraFrameCount => inner.lastCameraFrameCount;
+
+  @override
+  int get lastCameraLiveFrames => inner.lastCameraLiveFrames;
+
+  @override
+  Future<void> pollCameraNative() => inner.pollCameraNative();
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() =>
+      inner.enumerateScreenSources();
+
+  @override
+  Stream<List<ScreenSource>> get screenSourceCatalog =>
+      inner.screenSourceCatalog;
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() =>
+      inner.requestScreenPermission();
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() =>
+      inner.beginScreenPickNative();
+
+  @override
+  Future<void> endScreenPickNative() => inner.endScreenPickNative();
+
+  @override
+  Future<void> indicateScreenSourceNative(String? sourceId) =>
+      inner.indicateScreenSourceNative(sourceId);
+
+  @override
+  VideoSurface? screenPreviewNative(String sourceId) =>
+      inner.screenPreviewNative(sourceId);
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) => inner.startScreenShareNative(
+    sourceId: sourceId,
+    includeSystemAudio: includeSystemAudio,
+    cursor: cursor,
+    motion: motion,
+  );
+
+  @override
+  Future<void> stopScreenShareNative() => inner.stopScreenShareNative();
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) =>
+      inner.setIncludeSystemAudioNative(enabled);
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) =>
+      inner.setScreenMotionNative(motion);
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) =>
+      inner.setScreenCursorNative(cursor);
+
+  @override
+  VideoSurface? get lastScreenSurface => inner.lastScreenSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => inner.lastScreenNativeFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => inner.lastScreenUnavailableReason;
+
   /// Releases the inner capture subscription.
   Future<void> dispose() async {
     await _innerCapture?.cancel();

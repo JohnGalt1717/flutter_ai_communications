@@ -65,6 +65,7 @@ Load the skill before the work it covers:
 | Attach/debug via flutter_agent_lens; UI drive via flutter-skill | `device-agent-lens` |
 | Mic / OS permission sheets, `pm grant`, `simctl privacy`, first-start Allow | `device-permission-prompts` |
 | Physical iOS/Android native receipts | `.agents/workflows/real-device-orchestration.md` |
+| Screen send receipts (six platforms) | `.agents/workflows/screen-send-orchestration.md` |
 | Ship PR → CI → Copilot review → squash-merge | `/ship-pr-review-loop` |
 
 ## Non-negotiables
@@ -81,4 +82,4 @@ Load the skill before the work it covers:
 
 Test at public seams (`CommunicationsManager` / today's `CommunicationsManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the AI-voice agent harness for iOS, Android, web, macOS, Windows, and Linux — not a SignalR demo. Its lobby subsection is the Orchestration e2e path (permission, device picks, Join).
 
-Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-orchestration.md` (receipts) and `device-agent-lens` (flutter_agent_lens + flutter-skill). `flutter test` from a package dir. Loopback identity is not native proof.
+Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-orchestration.md` (audio receipts) and `device-agent-lens` (flutter_agent_lens + flutter-skill). Screen send receipts: `.agents/workflows/screen-send-orchestration.md`. `flutter test` from a package dir. Loopback identity is not native proof.

@@ -6,10 +6,12 @@ graphs land.
 
 **Blocked by:** 10 — Example in-session picker
 
-**Status:** not started
+**Status:** in progress — GitHub [#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44)
 
-- [ ] `docs/host-screen-share-narrative.md` matches the example
-- [ ] Orchestration keys exist and do not collide with lobby keys
+- [x] `docs/host-screen-share-narrative.md` matches the example
+- [x] Orchestration keys exist and do not collide with lobby keys
+- [x] Automated suite: `example/integration_test/native_screen_test.dart`
+- [x] Agent job: `.agents/workflows/screen-send-orchestration.md`
 - [ ] Receipts: permission at pick or share, thumbs/frame where
       enumerated, camera+screen, Include sound where possible, stop,
       cycles without leaking capture

@@ -34,6 +34,27 @@ After Join (meeting Session, Transport plugin attached), the user can:
 Leave / Join does not share. Lobby lists `manager.screenSources()` as
 names only. `beginScreenPick` and `startScreenShare` in lobby fail closed.
 
+## Orchestration keys
+
+Stable keys on the example Screen send subsection. flutter-skill and
+`example/test/harness_test.dart` drive these. Native graph proof is
+`example/integration_test/native_screen_test.dart` (no loopback wrap).
+
+| Key | Control |
+| --- | --- |
+| `screen-session` | Start a meeting Session from idle |
+| `screen-share` | `startScreenShare` on the indicated (or only) source |
+| `screen-stop` | `stopScreenShare` |
+| `screen-sound` | Include sound |
+| `screen-motion` | Screen motion (Optimize) |
+| `screen-cursor` | Cursor capture |
+| `screen-source-<id>` | Indicate that Screen source |
+| `screen-preview-<id>` | Screen preview thumb during pick |
+| `screen-loopback` | Local send Video surface |
+| `screen-status` | Last share result |
+
+Join still uses `lobby-enter` / `lobby-join`. Share is in-session only.
+
 ## Enumerable desktop (Windows, macOS, Linux X11)
 
 ```text

@@ -7,7 +7,7 @@ Thumbs and Share frame are no-ops.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** not started — GitHub [#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)
 
 - [ ] Catalog is one system-picker source
 - [ ] startScreenShare presents Start Broadcast / SCK picker
