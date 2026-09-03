@@ -77,7 +77,7 @@ The encoding, sample rate, and channel layout of a Session edge — capture out 
 _Avoid_: codec (alone), rate (alone)
 
 **Mute**:
-A Session mode where the user's voice is not sent, playback continues, and the Transport still receives silence frames so remote VAD does not stall. The Session is not ended. In-call camera settings do not Mute; audio device changes are a live switch with no audio preview.
+A Session mode where the user's voice is not sent, playback continues, and the Transport still receives silence frames so remote VAD does not stall. The Session is not ended. Mute does not stop system audio on screen send. In-call camera settings do not Mute; audio device changes are a live switch with no audio preview.
 _Avoid_: send gate, ghost recording, stop (that ends the Session)
 
 **Pause**:
@@ -153,7 +153,7 @@ The Session byte stream — floor-applied, mute as silence, capture Format. Tran
 _Avoid_: listen (as a distinct stream), visualizer stream (as a distinct stream)
 
 **Start result**:
-The outcome of starting a Session or a Camera preview — success, or typed failure. Expected microphone permission failures when audio capture was requested are values, not exceptions. Missing camera, camera permission denied, or no matching Video Format does not fail start(); Session status reports that video is not running and why. The host decides whether that is a product failure (for example proctoring).
+The outcome of starting a Session, a Camera preview, or screen send — success, or typed failure. Expected microphone permission failures when audio capture was requested are values, not exceptions. Missing camera, camera permission denied, or no matching Video Format does not fail start(); Session status reports that video is not running and why. Screen permission denial or a failed startScreenShare does not end the Session; Session status reports that screen send is not running and why. The host decides whether that is a product failure (for example proctoring).
 _Avoid_: exception (for expected start failures)
 
 **Orchestration**:
@@ -177,8 +177,28 @@ Stops the outbound video stream entirely. Remotes see no video (host thumbnail /
 _Avoid_: mute-video, stop (that ends the Session)
 
 **Screen source**:
-One screen, window, or display region the OS can capture. Distinct from a Camera Endpoint. A Session may send screen-only, camera-only, or both. An inbound presentation is an inbound video stream on a Video surface, not a Screen source in the local catalog.
-_Avoid_: camera, display camera, monitor (as the type name)
+One display, one window, or an All-displays viewport that can be captured. Distinct from a Camera Endpoint. A Session may send screen-only, camera-only, or both. Kinds a platform cannot offer are omitted, not faked. On platforms that refuse a catalog, the catalog is one system-picker Screen source; the OS picker runs when screen send starts. An inbound presentation is an inbound video stream on a Video surface, not a Screen source in the local catalog. `screenSources()` is a snapshot; a live catalog stream updates during Screen pick and during screen send.
+_Avoid_: camera, display camera, monitor (as the type name), application (as a kind), region, display region, tab (a browser tab is a window)
+
+**All-displays**:
+A Screen source that is the bounding viewport of every attached display, sent as one path. The OS does not expose this item; the Communications manager stitches per-display captures.
+_Avoid_: virtual desktop (OS virtual desktops), span, all screens (Zoom All Screens Mode is every participant sharing, not this)
+
+**Screen pick**:
+The host-open picker interval on a live Session. Metadata enumeration does not start it. Screen previews exist only during Screen pick. Screen pick does not send.
+_Avoid_: Screen preview (that is a thumb), startScreenShare
+
+**Screen preview**:
+A downscaled view of a Screen source for a host picker. Same handle shape as a Video surface (Texture id or view id). Not a Production video path, not a Video surface for send, and not screen send. Exists only during Screen pick. OS-picker platforms have none; the OS picker is the UI.
+_Avoid_: Video surface, thumbnail (as the type name), picker chrome (the host draws the picker)
+
+**Share frame**:
+A native rectangle the library draws on the real display or window to show which Screen source the host is indicating or the Session is sending. The host picker does not draw it. Library red in v1. No-op on OS-picker platforms.
+_Avoid_: yellow capture border (OS), picker chrome, highlight
+
+**Screen motion**:
+A screen-send option that prefers frame rate over spatial sharpness (Teams Optimize). Off by default so documents stay sharp at low fps. On requests 30 fps and may drop resolution. Not a Video processor. Toggleable on startScreenShare and while sending.
+_Avoid_: Optimize (as the type name), video clip mode
 
 **Video surface**:
 A Flutter-visible surface the library gives the host for local send preview, Camera preview, or one inbound video stream. One host type; the platform handle is a Texture id on most platforms and a view/element id on web. The host lays out tiles and switches widget implementation; callers do not import `RTCVideoView` or `dart:html` for local self-view. The library does not ship a meeting grid.
@@ -197,15 +217,15 @@ The native path for one send source (camera or screen): capture, Video processor
 _Avoid_: Dart frame pump, pretty tap
 
 **Video Format**:
-The requested pixel size and frame rate of a video send path. Default 1280×720 at 30 fps. The graph may run a Native Video Format instead.
+The requested pixel size and frame rate of a video send path. Camera default 1280×720 at 30 fps. Screen send captures the source’s physical pixels (a display is that display; a window is that window, not padded to the monitor; All-displays is the physical bounding viewport). The requested send size is that raster capped at 1920×1080 keeping aspect ratio; default 5 fps, or 30 fps when Screen motion is on. The graph may run a Native Video Format instead.
 _Avoid_: Format (that is audio), resolution (alone)
 
 **Native Video Format**:
-The Video Format a camera or screen graph actually runs. Negotiation picks the closest mode to the request: the next higher resolution if any exists, otherwise the next lower; frame rate closest to the request, preferring at least the requested fps when tied. No matching mode means video is not running, not a failed Session.
+The Video Format a camera or screen graph actually runs. For a camera, negotiation picks the closest mode to the request: the next higher resolution if any exists, otherwise the next lower; frame rate closest to the request, preferring at least the requested fps when tied. For screen send, the graph scales the physical raster to the requested send size (or smaller if the encoder cannot). No matching mode means that video path is not running, not a failed Session.
 _Avoid_: requested format, backend format (that is audio Native Format)
 
 **Session settings**:
-The start-able description of a Session: direction, Formats, Video Format, Endpoint and camera Explicit selection, preferences used, Video processor, Mute, Camera-off, purpose, and the other start arguments. Readable from a live Session and passable to a later start() after that Session is stopped. Does not include a Transport plugin, inbound Video surfaces, or live streams. The Session object is never reused.
+The start-able description of a Session: direction, Formats, Video Format, Endpoint and camera Explicit selection, preferences used, Video processor, Mute, Camera-off, purpose, and the other start arguments. Readable from a live Session and passable to a later start() after that Session is stopped. Does not include a Transport plugin, inbound Video surfaces, live streams, or screen send. Passing settings into start() never starts screen send; the host must startScreenShare again.
 _Avoid_: joinFromLobby, promote, clone session
 
 **Camera preview**:

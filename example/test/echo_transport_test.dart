@@ -181,6 +181,20 @@ void main() {
     expect(proof.bytes, fixture.length);
   });
 
+  test('loopback wrapper forwards screen send to the inner adapter', () async {
+    final loopback = LoopbackCommunicationsPlatform(platform);
+    addTearDown(loopback.dispose);
+    final catalog = await loopback.enumerateScreenSources();
+    expect(catalog.map((source) => source.id), contains('display-0'));
+    expect(
+      await loopback.startScreenShareNative(sourceId: 'display-0'),
+      NativeGraphStart.started,
+    );
+    expect(loopback.lastScreenSurface, isNotNull);
+    expect(platform.startScreenShareCalls, 1);
+    await loopback.stopScreenShareNative();
+  });
+
   test('clipped fixture is reported', () {
     final pcm = Uint8List(4);
     ByteData.sublistView(pcm)

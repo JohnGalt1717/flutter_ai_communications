@@ -28,3 +28,4 @@ Status as of 2026-09-03. Ticket 04 Video sink seam on `feat/04-video-sink-seam` 
 | 14 | Host guide accuracy pass | 13 | in progress |
 
 Plan: `.agents/plans/video-capture-and-sinks.md`.
+Screen send tickets: `.scratch/screen-v1-issues/`.

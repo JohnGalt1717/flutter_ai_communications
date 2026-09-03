@@ -9,6 +9,7 @@ import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
 import 'platform_events.dart';
+import 'screen_permission.dart';
 
 /// Method/EventChannel adapter shared by iOS and Android.
 ///
@@ -283,6 +284,12 @@ class MethodChannelCommunicationsPlatform
   VideoFormat? _lastNativeVideoFormat;
   var _lastCameraFrameCount = 0;
   var _lastCameraLiveFrames = 0;
+  VideoSurface? _lastScreenSurface;
+  VideoFormat? _lastScreenNativeFormat;
+  String? _lastScreenUnavailableReason;
+  final Map<String, VideoSurface> _screenPreviews = {};
+  final StreamController<List<ScreenSource>> _screenCatalogOut =
+      StreamController<List<ScreenSource>>.broadcast();
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
@@ -441,6 +448,256 @@ class MethodChannelCommunicationsPlatform
     }
   }
 
+  @override
+  VideoSurface? get lastScreenSurface => _lastScreenSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => _lastScreenNativeFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => _lastScreenUnavailableReason;
+
+  @override
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
+    _ensureListening();
+    yield await enumerateScreenSources();
+    yield* _screenCatalogOut.stream;
+  }
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() async {
+    _ensureListening();
+    try {
+      final raw = await _methods.invokeMethod<List<dynamic>>(
+        'enumerateScreenSources',
+      );
+      return _readScreenSources(raw);
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() async {
+    _ensureListening();
+    try {
+      final value = await _methods.invokeMethod<String>(
+        'requestScreenPermission',
+      );
+      return switch (value) {
+        'denied' => ScreenPermission.denied,
+        'restricted' => ScreenPermission.restricted,
+        _ => ScreenPermission.granted,
+      };
+    } on MissingPluginException {
+      return ScreenPermission.denied;
+    }
+  }
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() async {
+    _ensureListening();
+    try {
+      final value = await _methods.invokeMethod<Object?>(
+        'beginScreenPickNative',
+      );
+      _screenPreviews
+        ..clear()
+        ..addAll(_readPreviewMap(value));
+      return _screenPreviews.isEmpty
+          ? NativeGraphStart.unavailable
+          : NativeGraphStart.started;
+    } on MissingPluginException {
+      _screenPreviews.clear();
+      return NativeGraphStart.unavailable;
+    }
+  }
+
+  @override
+  Future<void> endScreenPickNative() async {
+    _screenPreviews.clear();
+    try {
+      await _methods.invokeMethod<void>('endScreenPickNative');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> indicateScreenSourceNative(String? sourceId) async {
+    try {
+      await _methods.invokeMethod<void>('indicateScreenSourceNative', {
+        'sourceId': sourceId,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  VideoSurface? screenPreviewNative(String sourceId) =>
+      _screenPreviews[sourceId];
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) async {
+    _ensureListening();
+    try {
+      final value = await _methods.invokeMethod<Object?>(
+        'startScreenShareNative',
+        {
+          'sourceId': sourceId,
+          'includeSystemAudio': includeSystemAudio,
+          'cursor': cursor,
+          'motion': motion,
+        },
+      );
+      if (value is Map) {
+        final status = value['status'] as String? ?? 'started';
+        if (status != 'started') {
+          _lastScreenSurface = null;
+          _lastScreenNativeFormat = null;
+          _lastScreenUnavailableReason = value['reason'] as String? ?? status;
+          return status == 'failed'
+              ? NativeGraphStart.failed
+              : NativeGraphStart.unavailable;
+        }
+        final handle = value['textureId'] as int? ?? value['handle'] as int?;
+        final kindName = value['kind'] as String?;
+        _lastScreenSurface = handle == null
+            ? null
+            : VideoSurface(
+                handle: handle,
+                kind: kindName == 'htmlElement'
+                    ? VideoSurfaceKind.htmlElement
+                    : VideoSurfaceKind.texture,
+              );
+        final width = value['width'] as int?;
+        final height = value['height'] as int?;
+        final frameRate = value['frameRate'] as int?;
+        _lastScreenNativeFormat = width != null && height != null
+            ? VideoFormat(
+                width: width,
+                height: height,
+                frameRate: frameRate ?? 5,
+              )
+            : null;
+        _lastScreenUnavailableReason = null;
+        return NativeGraphStart.started;
+      }
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = 'none';
+      return NativeGraphStart.unavailable;
+    } on MissingPluginException {
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = 'none';
+      return NativeGraphStart.unavailable;
+    }
+  }
+
+  @override
+  Future<void> stopScreenShareNative() async {
+    _lastScreenSurface = null;
+    _lastScreenNativeFormat = null;
+    try {
+      await _methods.invokeMethod<void>('stopScreenShareNative');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async {
+    try {
+      final value = await _methods.invokeMethod<Object?>(
+        'setIncludeSystemAudioNative',
+        {'enabled': enabled},
+      );
+      return value == true;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) async {
+    try {
+      await _methods.invokeMethod<void>('setScreenMotionNative', {
+        'motion': motion,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) async {
+    try {
+      await _methods.invokeMethod<void>('setScreenCursorNative', {
+        'cursor': cursor,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  Map<String, VideoSurface> _readPreviewMap(Object? value) {
+    if (value is! Map) {
+      return {};
+    }
+    final raw = value['previews'] ?? value;
+    if (raw is! Map) {
+      return {};
+    }
+    final previews = <String, VideoSurface>{};
+    for (final entry in raw.entries) {
+      final key = entry.key;
+      if (key is! String) {
+        continue;
+      }
+      final handle = switch (entry.value) {
+        int n => n,
+        Map map => map['textureId'] as int? ?? map['handle'] as int?,
+        _ => null,
+      };
+      if (handle != null) {
+        previews[key] = VideoSurface(handle: handle);
+      }
+    }
+    return previews;
+  }
+
+  List<ScreenSource> _readScreenSources(List<dynamic>? raw) {
+    if (raw == null) {
+      return const [];
+    }
+    return [
+      for (final item in raw)
+        if (item is Map)
+          ScreenSource(
+            id: item['id'] as String? ?? '',
+            name: item['name'] as String? ?? '',
+            kind: switch (item['kind'] as String?) {
+              'window' => ScreenSourceKind.window,
+              'allDisplays' => ScreenSourceKind.allDisplays,
+              'systemPicker' => ScreenSourceKind.systemPicker,
+              _ => ScreenSourceKind.display,
+            },
+            x: item['x'] as int?,
+            y: item['y'] as int?,
+            width: item['width'] as int?,
+            height: item['height'] as int?,
+            canPreview: item['canPreview'] == true,
+          ),
+    ];
+  }
+
   int? _readInt(Object? value) => switch (value) {
     int n => n,
     num n => n.toInt(),
@@ -499,6 +756,8 @@ class MethodChannelCommunicationsPlatform
     switch (type) {
       case 'catalog':
         _catalogOut.add(_readEndpoints(payload as List<dynamic>?));
+      case 'screenCatalog':
+        _screenCatalogOut.add(_readScreenSources(payload as List<dynamic>?));
       case 'isolation':
         _lastIsolation = IsolationEvent(
           _isolationState(payload as String? ?? 'unknown'),

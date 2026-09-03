@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 
 import 'src/camera_backend.dart';
 import 'src/camera_channel.dart';
+import 'src/screen_channel.dart';
 import 'src/wasapi_backend.dart';
 import 'src/wasapi_factory.dart';
 import 'src/windows_bluetooth_identity.dart';
@@ -25,11 +26,13 @@ final class FlutterAiCommunicationsWindows
     BluetoothIdentitySource? bluetooth,
     CameraBackend? camera,
     WindowsCameraConsent? cameraConsent,
+    MethodChannelScreenBackend? screen,
   }) : _backend = backend ?? createWasapiBackend(),
        _consent = consent ?? createWindowsMicrophoneConsent(),
        _bluetooth = bluetooth ?? createBluetoothIdentitySource(),
        _camera = camera ?? MethodChannelCameraBackend(),
-       _cameraConsent = cameraConsent ?? createWindowsCameraConsent();
+       _cameraConsent = cameraConsent ?? createWindowsCameraConsent(),
+       _screen = screen ?? MethodChannelScreenBackend();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -43,6 +46,7 @@ final class FlutterAiCommunicationsWindows
   final BluetoothIdentitySource _bluetooth;
   final CameraBackend _camera;
   final WindowsCameraConsent _cameraConsent;
+  final MethodChannelScreenBackend _screen;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -282,4 +286,62 @@ final class FlutterAiCommunicationsWindows
 
   @override
   Future<void> pollCameraNative() => _camera.pollStats();
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() => _screen.enumerate();
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() =>
+      _screen.requestPermission();
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() => _screen.beginPick();
+
+  @override
+  Future<void> endScreenPickNative() => _screen.endPick();
+
+  @override
+  Future<void> indicateScreenSourceNative(String? sourceId) =>
+      _screen.indicate(sourceId);
+
+  @override
+  VideoSurface? screenPreviewNative(String sourceId) =>
+      _screen.previews[sourceId];
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) {
+    return _screen.start(
+      sourceId: sourceId,
+      includeSystemAudio: includeSystemAudio,
+      cursor: cursor,
+      motion: motion,
+    );
+  }
+
+  @override
+  Future<void> stopScreenShareNative() => _screen.stop();
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) =>
+      _screen.setIncludeSystemAudio(enabled);
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) => _screen.setMotion(motion);
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) => _screen.setCursor(cursor);
+
+  @override
+  VideoSurface? get lastScreenSurface => _screen.lastSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => _screen.lastFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => _screen.lastUnavailableReason;
 }

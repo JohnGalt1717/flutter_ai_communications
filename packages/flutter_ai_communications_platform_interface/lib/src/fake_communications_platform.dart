@@ -9,6 +9,7 @@ import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
 import 'platform_events.dart';
+import 'screen_permission.dart';
 
 /// In-memory adapter for tests. Does not touch a real device.
 final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
@@ -16,11 +17,16 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   FakeCommunicationsPlatform({
     this.permission = MicrophonePermission.granted,
     this.cameraPermission = CameraPermission.granted,
+    this.screenPermission = ScreenPermission.granted,
     this.nativeStart = NativeGraphStart.started,
     List<Endpoint>? catalog,
     List<CameraEndpoint>? cameras,
+    List<ScreenSource>? screenSources,
   }) : catalog = List<Endpoint>.of(catalog ?? defaultCatalog),
-       cameras = List<CameraEndpoint>.of(cameras ?? defaultCameras);
+       cameras = List<CameraEndpoint>.of(cameras ?? defaultCameras),
+       screenSources = List<ScreenSource>.of(
+         screenSources ?? defaultScreenSources,
+       );
 
   /// Built-in handset and speakerphone Endpoints.
   static const List<Endpoint> defaultCatalog = [
@@ -61,6 +67,39 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       routeClass: RouteClass.bluetooth,
       isCapture: false,
       pairId: 'airpods',
+    ),
+  ];
+
+  /// Built-in display, window, All-displays, and system-picker sources.
+  static const List<ScreenSource> defaultScreenSources = [
+    ScreenSource(
+      id: 'display-0',
+      name: 'Display 1',
+      kind: ScreenSourceKind.display,
+      width: 1920,
+      height: 1080,
+      canPreview: true,
+    ),
+    ScreenSource(
+      id: 'window-notepad',
+      name: 'Notepad',
+      kind: ScreenSourceKind.window,
+      width: 800,
+      height: 600,
+      canPreview: true,
+    ),
+    ScreenSource(
+      id: 'all-displays',
+      name: 'All displays',
+      kind: ScreenSourceKind.allDisplays,
+      width: 1920,
+      height: 1080,
+      canPreview: true,
+    ),
+    ScreenSource(
+      id: 'system-picker',
+      name: 'System picker',
+      kind: ScreenSourceKind.systemPicker,
     ),
   ];
 
@@ -574,6 +613,209 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     }
   }
 
+  /// Screen permission [requestScreenPermission] returns.
+  ScreenPermission screenPermission;
+
+  /// Current Screen source catalog.
+  List<ScreenSource> screenSources;
+
+  /// How many times [requestScreenPermission] ran.
+  int screenPermissionRequests = 0;
+
+  /// Whether Screen pick is open.
+  bool screenPickOpen = false;
+
+  /// Indicated Screen source id, if any.
+  String? indicatedScreenSourceId;
+
+  /// Whether screen send is running.
+  bool screenSending = false;
+
+  /// Live Include-sound flag.
+  bool includeSystemAudio = false;
+
+  /// Whether the fake can actually loop back system audio.
+  bool systemAudioAvailable = true;
+
+  /// Screen motion flag.
+  bool screenMotion = false;
+
+  /// Cursor capture flag.
+  bool screenCursor = true;
+
+  /// Selected / sending Screen source id.
+  String? selectedScreenSourceId;
+
+  /// How many times [startScreenShareNative] ran.
+  int startScreenShareCalls = 0;
+
+  /// When set, [startScreenShareNative] fails with this reason.
+  String? screenShareStartReason;
+
+  /// When set, [startScreenShareNative] throws instead of returning a value.
+  Object? screenShareThrow;
+
+  final Map<String, VideoSurface> _screenPreviews = {};
+  VideoSurface? _lastScreenSurface;
+  VideoFormat? _lastScreenNativeFormat;
+  String? _lastScreenUnavailableReason;
+
+  /// Catalog updates tests inject.
+  final StreamController<List<ScreenSource>> screenCatalogController =
+      StreamController<List<ScreenSource>>.broadcast();
+
+  @override
+  VideoSurface? get lastScreenSurface => _lastScreenSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => _lastScreenNativeFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => _lastScreenUnavailableReason;
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() async =>
+      List<ScreenSource>.of(screenSources);
+
+  @override
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
+    yield List<ScreenSource>.of(screenSources);
+    yield* screenCatalogController.stream;
+  }
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() async {
+    screenPermissionRequests++;
+    return screenPermission;
+  }
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() async {
+    if (screenPermission != ScreenPermission.granted) {
+      screenPickOpen = true;
+      _screenPreviews.clear();
+      return NativeGraphStart.unavailable;
+    }
+    screenPickOpen = true;
+    _screenPreviews
+      ..clear()
+      ..addEntries(
+        screenSources.where((source) => source.canPreview).map(
+          (source) => MapEntry(
+            source.id,
+            VideoSurface(handle: 100 + source.id.hashCode.abs() % 50),
+          ),
+        ),
+      );
+    return NativeGraphStart.started;
+  }
+
+  @override
+  Future<void> endScreenPickNative() async {
+    screenPickOpen = false;
+    _screenPreviews.clear();
+    indicatedScreenSourceId = null;
+  }
+
+  @override
+  Future<void> indicateScreenSourceNative(String? sourceId) async {
+    indicatedScreenSourceId = sourceId;
+  }
+
+  @override
+  VideoSurface? screenPreviewNative(String sourceId) =>
+      _screenPreviews[sourceId];
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) async {
+    startScreenShareCalls++;
+    final thrown = screenShareThrow;
+    if (thrown != null) {
+      throw thrown;
+    }
+    final forced = screenShareStartReason;
+    if (forced != null) {
+      screenSending = false;
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = forced;
+      return NativeGraphStart.unavailable;
+    }
+    if (screenPermission != ScreenPermission.granted) {
+      screenSending = false;
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = screenPermission.name;
+      return NativeGraphStart.unavailable;
+    }
+    var id = sourceId;
+    if (id == 'system-picker') {
+      id = screenSources
+              .where((source) => source.kind == ScreenSourceKind.display)
+              .firstOrNull
+              ?.id ??
+          id;
+    }
+    final source = screenSources.where((item) => item.id == id).firstOrNull;
+    if (source == null) {
+      screenSending = false;
+      _lastScreenSurface = null;
+      _lastScreenNativeFormat = null;
+      _lastScreenUnavailableReason = 'none';
+      return NativeGraphStart.unavailable;
+    }
+    selectedScreenSourceId = source.id;
+    this.includeSystemAudio = includeSystemAudio && systemAudioAvailable;
+    screenCursor = cursor;
+    screenMotion = motion;
+    screenSending = true;
+    indicatedScreenSourceId = source.id;
+    final requested = ScreenVideoFormat.request(
+      width: source.width ?? 1920,
+      height: source.height ?? 1080,
+      motion: motion,
+    );
+    _lastScreenNativeFormat = requested;
+    _lastScreenSurface = const VideoSurface(handle: 2);
+    _lastScreenUnavailableReason = null;
+    return NativeGraphStart.started;
+  }
+
+  @override
+  Future<void> stopScreenShareNative() async {
+    screenSending = false;
+    selectedScreenSourceId = null;
+    includeSystemAudio = false;
+    _lastScreenSurface = null;
+    _lastScreenNativeFormat = null;
+    indicatedScreenSourceId = null;
+  }
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async {
+    if (!systemAudioAvailable) {
+      includeSystemAudio = false;
+      return false;
+    }
+    includeSystemAudio = enabled;
+    return enabled;
+  }
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) async {
+    screenMotion = motion;
+  }
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) async {
+    screenCursor = cursor;
+  }
+
   /// Closes injected controllers. Tests only.
   Future<void> dispose() async {
     await captureController.close();
@@ -582,5 +824,6 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     await pathCoverageController.close();
     await audioFocusController.close();
     await osRouteController.close();
+    await screenCatalogController.close();
   }
 }

@@ -44,7 +44,7 @@ fail `start()`.
 - Ticket 04 / 12: Transport plugin RTP seam and `flutter_webrtc` package
 - Tickets 10–11: blur / replace processors (see
   `.agents/plans/video-processors-blur-replace.md`)
-- Screen source catalog (ADR-0019)
+- Screen send native graphs: `.agents/plans/screen-capture-and-send.md` (ADR-0019 catalog; ADRs 0022–0027)
 - Physical iPhone Allow-dialog receipt
 - Web Join overlay: lobby works; Join must keep a 320×220 platform view, not
   unmount a 100% HtmlElementView
@@ -91,8 +91,8 @@ Do not treat video as done when a Texture shows a camera. Done means:
 - example lobby subsection + in-session AV on the six platforms, driven by Orchestration
 - host narrative can be followed without a second camera plugin
 
-Screen share stays a later plan (ADR-0019). Windows ticket 08 is done.
-Linux camera compile and physical receipt remain.
+Screen send is `.agents/plans/screen-capture-and-send.md`. Windows camera
+ticket 08 is done. Linux camera compile and physical receipt remain.
 
 ## Required architecture
 

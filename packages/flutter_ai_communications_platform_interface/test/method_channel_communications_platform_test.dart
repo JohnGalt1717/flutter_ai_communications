@@ -326,6 +326,66 @@ void main() {
     messenger.setMockStreamHandler(events, null);
   });
 
+  test('enumerateScreenSources maps kinds including All-displays', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'enumerateScreenSources') {
+        return [
+          {
+            'id': 'display-0',
+            'name': 'Display 1',
+            'kind': 'display',
+            'width': 1920,
+            'height': 1080,
+            'canPreview': true,
+          },
+          {
+            'id': 'all-displays',
+            'name': 'All displays',
+            'kind': 'allDisplays',
+            'width': 3840,
+            'height': 1080,
+            'canPreview': true,
+          },
+          {
+            'id': 'system-picker',
+            'name': 'System picker',
+            'kind': 'systemPicker',
+            'canPreview': false,
+          },
+        ];
+      }
+      return null;
+    });
+    final catalog = await platform.enumerateScreenSources();
+    expect(catalog.map((source) => source.kind), [
+      ScreenSourceKind.display,
+      ScreenSourceKind.allDisplays,
+      ScreenSourceKind.systemPicker,
+    ]);
+  });
+
+  test('screenSourceCatalog yields the enumerate snapshot first', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'enumerateScreenSources') {
+        return [
+          {
+            'id': 'display-0',
+            'name': 'Display 1',
+            'kind': 'display',
+            'canPreview': true,
+          },
+        ];
+      }
+      return null;
+    });
+    final seen = <List<ScreenSource>>[];
+    final sub = platform.screenSourceCatalog.listen(seen.add);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isNotEmpty);
+    expect(seen.first.single.id, 'display-0');
+    await sub.cancel();
+  });
+
   test(
     'Production video path attach is a no-op on the method channel',
     () async {

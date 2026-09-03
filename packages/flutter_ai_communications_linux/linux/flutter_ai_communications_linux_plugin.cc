@@ -1,6 +1,7 @@
 #include "include/flutter_ai_communications_linux/flutter_ai_communications_linux_plugin.h"
 
 #include "camera_graph.h"
+#include "screen_graph.h"
 
 #include <cstring>
 #include <memory>
@@ -14,6 +15,7 @@ struct _FlutterAiCommunicationsLinuxPlugin {
   GObject parent_instance;
   FlPluginRegistrar* registrar;
   CameraGraph* camera;
+  ScreenGraph* screen;
 };
 
 struct _FlutterAiCommunicationsLinuxPluginClass {
@@ -100,6 +102,41 @@ static void HandleMethodCall(FlMethodChannel* channel,
   } else if (strcmp(method, "cameraGraphStats") == 0) {
     g_autoptr(FlValue) value = self->camera->Stats();
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "enumerateScreenSources") == 0) {
+    g_autoptr(FlValue) value = self->screen->Enumerate();
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "requestScreenPermission") == 0) {
+    g_autoptr(FlValue) value =
+        fl_value_new_string(self->screen->RequestPermission().c_str());
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "beginScreenPickNative") == 0) {
+    g_autoptr(FlValue) value = self->screen->BeginPick();
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "endScreenPickNative") == 0) {
+    self->screen->EndPick();
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "indicateScreenSourceNative") == 0) {
+    self->screen->Indicate(ReadString(args, "sourceId"));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "startScreenShareNative") == 0) {
+    g_autoptr(FlValue) value = self->screen->Start(
+        ReadString(args, "sourceId"),
+        ReadBool(args, "includeSystemAudio", false),
+        ReadBool(args, "cursor", true), ReadBool(args, "motion", false));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "stopScreenShareNative") == 0) {
+    self->screen->Stop();
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "setIncludeSystemAudioNative") == 0) {
+    g_autoptr(FlValue) value = fl_value_new_bool(
+        self->screen->SetIncludeSystemAudio(ReadBool(args, "enabled", false)));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+  } else if (strcmp(method, "setScreenMotionNative") == 0) {
+    self->screen->SetMotion(ReadBool(args, "motion", false));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "setScreenCursorNative") == 0) {
+    self->screen->SetCursor(ReadBool(args, "cursor", true));
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }
@@ -112,6 +149,8 @@ static void flutter_ai_communications_linux_plugin_dispose(GObject* object) {
       FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(object);
   delete self->camera;
   self->camera = nullptr;
+  delete self->screen;
+  self->screen = nullptr;
   g_clear_object(&self->registrar);
   G_OBJECT_CLASS(flutter_ai_communications_linux_plugin_parent_class)
       ->dispose(object);
@@ -127,6 +166,7 @@ static void flutter_ai_communications_linux_plugin_init(
     FlutterAiCommunicationsLinuxPlugin* self) {
   self->registrar = nullptr;
   self->camera = nullptr;
+  self->screen = nullptr;
 }
 
 void flutter_ai_communications_linux_plugin_register_with_registrar(
@@ -136,6 +176,8 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
           flutter_ai_communications_linux_plugin_get_type(), nullptr));
   plugin->registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
   plugin->camera = new CameraGraph(
+      fl_plugin_registrar_get_texture_registrar(registrar));
+  plugin->screen = new ScreenGraph(
       fl_plugin_registrar_get_texture_registrar(registrar));
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(

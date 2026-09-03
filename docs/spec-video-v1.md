@@ -64,7 +64,7 @@ in the federated packages.
   Session or replace the Capture stream. Native consumers bind with
   `attachProductionVideoPathNative`; frames stay native (ADR-0013). Camera
   preview has no Video sink seam. Session has no PeerConnection types.
-- Screen source is specified; native capture later.
+- Screen send native graphs: `docs/spec-screen-v1.md`.
 - Linux camera graph is V4L2 → Texture (in tree, PR #34 / `e6b37b4`);
   physical receipts are later. Windows Media Foundation graph is proven on
   LifeCam Studio.
@@ -88,7 +88,5 @@ in the federated packages.
 - PeerConnection, signaling, roster, or meeting grid in Session.
 - Blur, replace, gamma, beauty, avatars, background video (later processor
   plan).
-- Screen-share native graphs (catalog is specified).
-- Multi-camera simultaneous publish (camera + screen is two send paths, later).
 - Library-owned landing chrome. The example is the harness, not a shipped
-  product widget.
+  product widget. Screen send is a separate spec (`docs/spec-screen-v1.md`).

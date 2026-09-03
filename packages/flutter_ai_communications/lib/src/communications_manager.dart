@@ -33,6 +33,10 @@ final class CommunicationsManager {
   /// Idle camera catalog.
   Future<List<CameraEndpoint>> cameras() => _platform.enumerateCameras();
 
+  /// Idle or live Screen source catalog snapshot.
+  Future<List<ScreenSource>> screenSources() =>
+      _platform.enumerateScreenSources();
+
   /// Host-persisted Camera preference. Does not end a live Session.
   CameraPreference get boundCameraPreference => _boundCameraPreference;
 

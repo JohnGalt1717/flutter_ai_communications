@@ -79,3 +79,78 @@ final class PreviewFailed extends PreviewStartResult {
   /// Optional cause.
   final Object? cause;
 }
+
+/// Outcome of [Session.beginScreenPick].
+sealed class ScreenPickResult {
+  /// Creates a pick result.
+  const ScreenPickResult();
+}
+
+/// Screen pick is open. Thumbs may be empty when permission was denied.
+final class ScreenPickReady extends ScreenPickResult {
+  /// Creates a ready pick.
+  const ScreenPickReady({this.previewsGranted = true});
+
+  /// Whether Screen previews are available.
+  final bool previewsGranted;
+}
+
+/// Lobby Session cannot open Screen pick.
+final class ScreenPickBlocked extends ScreenPickResult {
+  /// Creates a blocked pick.
+  const ScreenPickBlocked();
+}
+
+/// Screen pick could not start.
+final class ScreenPickFailed extends ScreenPickResult {
+  /// Creates a failed pick.
+  const ScreenPickFailed([this.cause]);
+
+  /// Optional cause.
+  final Object? cause;
+}
+
+/// Outcome of [Session.startScreenShare].
+sealed class ScreenShareResult {
+  /// Creates a share result.
+  const ScreenShareResult();
+}
+
+/// Screen send is live.
+final class ScreenShareReady extends ScreenShareResult {
+  /// Creates a ready share.
+  const ScreenShareReady();
+}
+
+/// The user declined screen recording.
+final class ScreenShareDenied extends ScreenShareResult {
+  /// Creates a denied result.
+  const ScreenShareDenied();
+}
+
+/// The OS will not allow screen capture.
+final class ScreenShareRestricted extends ScreenShareResult {
+  /// Creates a restricted result.
+  const ScreenShareRestricted();
+}
+
+/// No matching Screen source, or the graph could not start.
+final class ScreenShareUnavailable extends ScreenShareResult {
+  /// Creates an unavailable result.
+  const ScreenShareUnavailable();
+}
+
+/// Lobby Session cannot start screen send.
+final class ScreenShareBlocked extends ScreenShareResult {
+  /// Creates a blocked result.
+  const ScreenShareBlocked();
+}
+
+/// Screen send failed unexpectedly.
+final class ScreenShareFailed extends ScreenShareResult {
+  /// Creates a failed result.
+  const ScreenShareFailed([this.cause]);
+
+  /// Optional cause.
+  final Object? cause;
+}

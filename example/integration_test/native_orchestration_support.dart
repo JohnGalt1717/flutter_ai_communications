@@ -228,6 +228,14 @@ Map<String, Object?> snapshot(Session session, {required String caseName}) {
     'nativeVideoFormat': session.nativeVideoFormat?.toString(),
     'videoUnavailableReason': session.videoUnavailableReason,
     'selectedCameraId': session.selectedCameraId,
+    'screenSending': session.isScreenSending,
+    'screenSurface': session.screenSurface?.handle,
+    'screenNativeFormat': session.screenNativeFormat?.toString(),
+    'screenUnavailableReason': session.screenUnavailableReason,
+    'selectedScreenSourceId': session.selectedScreenSourceId,
+    'includeSystemAudio': session.includeSystemAudio,
+    'screenMotion': session.isScreenMotion,
+    'screenCursor': session.isScreenCursor,
   };
 }
 

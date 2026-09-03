@@ -125,8 +125,9 @@ Working in this repo with an agent? Start at [`AGENTS.md`](./AGENTS.md). Claude 
 
 ## Development Prerequisites
 
-1. dart pub global activate flutter-skill
-2. Make sure that your dart pub cache is on your path: Mac/Linux: $HOME/.pub-cache/bin, Windows: %LOCALAPPDATA%\Pub\Cache\bin
+1. `dart pub global activate flutter_skill`
+2. `dart pub global activate flutter_agent_lens`
+3. Put the pub cache bin on PATH: Mac/Linux `$HOME/.pub-cache/bin`, Windows `%LOCALAPPDATA%\Pub\Cache\bin`
 
 ## License
 

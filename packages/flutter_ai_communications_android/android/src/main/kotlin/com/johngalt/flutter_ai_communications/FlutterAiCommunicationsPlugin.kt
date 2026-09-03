@@ -36,7 +36,8 @@ class FlutterAiCommunicationsPlugin :
     FlutterPlugin,
     MethodCallHandler,
     ActivityAware,
-    PluginRegistry.RequestPermissionsResultListener {
+    PluginRegistry.RequestPermissionsResultListener,
+    PluginRegistry.ActivityResultListener {
     private lateinit var methods: MethodChannel
     private lateinit var captureChannel: EventChannel
     private lateinit var eventsChannel: EventChannel
@@ -48,6 +49,7 @@ class FlutterAiCommunicationsPlugin :
     private val cameraPermissionCode = 0xFAC3
     private var textures: TextureRegistry? = null
     private var cameraGraph: AndroidCameraGraph? = null
+    private var screenGraph: AndroidScreenGraph? = null
     private val bluetoothCode = 0xFAC2
     private var bluetoothAsked = false
     private var captureSink: EventChannel.EventSink? = null
@@ -94,6 +96,10 @@ class FlutterAiCommunicationsPlugin :
         appContext = binding.applicationContext
         textures = binding.textureRegistry
         cameraGraph = AndroidCameraGraph(binding.applicationContext, binding.textureRegistry)
+        screenGraph =
+            AndroidScreenGraph(binding.applicationContext, binding.textureRegistry) {
+                emit("screenCatalog", emptyList<Any>())
+            }
         audioManager =
             binding.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         methods = MethodChannel(binding.binaryMessenger, "flutter_ai_communications/methods")
@@ -215,6 +221,31 @@ class FlutterAiCommunicationsPlugin :
                 cameraGraph?.setMuted(call.argument<Boolean>("muted") ?: false)
                 result.success(null)
             }
+            "enumerateScreenSources" ->
+                result.success(screenGraph?.enumerate() ?: emptyList<Any>())
+            "requestScreenPermission" -> result.success("granted")
+            "beginScreenPickNative" -> result.success(mapOf("previews" to emptyMap<String, Any>()))
+            "endScreenPickNative" -> result.success(null)
+            "indicateScreenSourceNative" -> result.success(null)
+            "startScreenShareNative" -> {
+                val graph = screenGraph
+                if (graph == null) {
+                    result.success(mapOf("status" to "failed", "reason" to "none"))
+                } else {
+                    graph.start(
+                        call.argument<Boolean>("includeSystemAudio") ?: false,
+                        call.argument<Boolean>("motion") ?: false,
+                        result,
+                    )
+                }
+            }
+            "stopScreenShareNative" -> {
+                screenGraph?.stop()
+                result.success(null)
+            }
+            "setIncludeSystemAudioNative" -> result.success(false)
+            "setScreenMotionNative" -> result.success(null)
+            "setScreenCursorNative" -> result.success(null)
             else -> result.notImplemented()
         }
     }
@@ -232,10 +263,14 @@ class FlutterAiCommunicationsPlugin :
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activityBinding = binding
         binding.addRequestPermissionsResultListener(this)
+        binding.addActivityResultListener(this)
+        screenGraph?.attachActivity(binding.activity)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding?.removeActivityResultListener(this)
+        screenGraph?.attachActivity(null)
         activityBinding = null
     }
 
@@ -245,8 +280,16 @@ class FlutterAiCommunicationsPlugin :
 
     override fun onDetachedFromActivity() {
         activityBinding?.removeRequestPermissionsResultListener(this)
+        activityBinding?.removeActivityResultListener(this)
+        screenGraph?.attachActivity(null)
         activityBinding = null
     }
+
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: android.content.Intent?,
+    ): Boolean = screenGraph?.onActivityResult(requestCode, resultCode, data) == true
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
