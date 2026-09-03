@@ -29,6 +29,8 @@ dependencies:
   flutter_ai_communications: ^0.1.0
 ```
 
+WebRTC send is a companion package: `flutter_ai_communications_webrtc`. Attach `WebrtcVideoSink` after Join; the host owns PeerConnection. Local self-view stays `Session.videoSurface`. See `docs/host-webrtc-narrative.md`.
+
 The federated iOS / Android / Web / macOS / Windows / Linux implementations are pulled in by the app package. `start()` requests microphone permission with first-party OS APIs (not `permission_handler`) and waits for the OS. The host still has to declare usage where the OS reads it from the app package — plugins cannot inject a Windows `Package.appxmanifest`.
 
 - **iOS:** `NSMicrophoneUsageDescription`. Add `NSBluetoothAlwaysUsageDescription` if you route to headsets. HFP and `carAudio` ports are native identity; CoreBluetooth is not used. Denial or a generic A2DP name falls back to display-name matching.

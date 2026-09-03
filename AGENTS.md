@@ -41,6 +41,7 @@ packages/flutter_ai_communications_web/
 packages/flutter_ai_communications_macos/
 packages/flutter_ai_communications_windows/
 packages/flutter_ai_communications_linux/
+packages/flutter_ai_communications_webrtc/             # Transport plugin: Send tracks, host owns PeerConnection
 example/                                               # AI-voice agent harness (flutter-skill + agent_lens)
 ```
 

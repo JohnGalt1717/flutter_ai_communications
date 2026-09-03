@@ -1,0 +1,21 @@
+name: flutter_ai_communications_webrtc
+description: WebRTC Transport plugin for flutter_ai_communications. Yields Send tracks; the host owns PeerConnection and signaling.
+version: 0.0.1
+homepage: https://github.com/JohnGalt1717/flutter_ai_communications
+repository: https://github.com/JohnGalt1717/flutter_ai_communications
+issue_tracker: https://github.com/JohnGalt1717/flutter_ai_communications/issues
+
+environment:
+  sdk: ^3.12.2
+  flutter: '>=3.44.0'
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_ai_communications: ^0.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

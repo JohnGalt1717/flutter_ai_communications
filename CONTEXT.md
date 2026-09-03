@@ -66,11 +66,15 @@ _Avoid_: offline, bad connection, airplane mode (those are Coverage reasons, not
 
 **Transport**:
 Whatever moves media between Session edges and the network — a host-pumped PCM path or a Transport plugin. Signaling stays host-owned.
-_Avoid_: websocket, hub, connection, PeerConnection (that lives inside a Transport plugin)
+_Avoid_: websocket, hub, connection, PeerConnection (the host owns that object)
 
 **Transport plugin**:
-A companion package that binds Session edges to a wire protocol. First is WebRTC (it owns PeerConnection and RTP); later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session; the plugin package is not the Video sink type.
-_Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package)
+A companion package that binds Session edges to a wire protocol. First is WebRTC; later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session and yields Send tracks the host addTracks on a PeerConnection the host constructs. The plugin package is not the Video sink type and does not create PeerConnection types.
+_Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package), PeerConnection (host-owned)
+
+**Send track**:
+The outbound video handle a Transport plugin yields from one Production video path so the host can addTrack on its own PeerConnection. Null while Camera-off. Mute-video keeps the handle. Not a PeerConnection, not a MediaStream, and not the local Video surface.
+_Avoid_: MediaStreamTrack (host flutter_webrtc type), MediaStream, PeerConnection, Video surface (local preview)
 
 **Format**:
 The encoding, sample rate, and channel layout of a Session edge — capture out or playback in. Capture and playback Formats may differ.

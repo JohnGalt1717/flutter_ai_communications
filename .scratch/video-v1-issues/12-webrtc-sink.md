@@ -4,9 +4,11 @@
 
 **Blocked by:** 04 — Video sink provider seam; 05 — iOS camera graph (or any one native graph)
 
-**Status:** not started (2026-09-01). Blocked by ticket 04.
+**Status:** done (2026-09-03). GitHub #47. Package
+`flutter_ai_communications_webrtc`; documented sample in
+`docs/host-webrtc-narrative.md`.
 
-- [ ] Host can attach the sink after StartReady or enableVideo
-- [ ] Local Texture preview works without this package
-- [ ] Example loopback or documented sample shows processed frames on an RTCVideoView
-- [ ] Package does not create PeerConnections
+- [x] Host can attach the sink after StartReady or enableVideo
+- [x] Local Texture preview works without this package
+- [x] Example loopback or documented sample shows processed frames on an RTCVideoView
+- [x] Package does not create PeerConnections
