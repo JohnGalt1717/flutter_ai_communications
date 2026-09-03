@@ -492,9 +492,9 @@ final class Session {
     }
     _screenPickOpen = false;
     await _platform.endScreenPickNative();
-    if (_screenSending && _screenSourceId != null) {
-      await _platform.indicateScreenSourceNative(_screenSourceId);
-    }
+    await _platform.indicateScreenSourceNative(
+      _screenSending ? _screenSourceId : null,
+    );
   }
 
   /// Points the Share frame at [sourceId] without starting send.

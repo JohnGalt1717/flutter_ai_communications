@@ -228,7 +228,7 @@ class FlutterAiCommunicationsPlugin :
             "startScreenShareNative" -> {
                 val graph = screenGraph
                 if (graph == null) {
-                    result.success(mapOf("status" to "failed"))
+                    result.success(mapOf("status" to "failed", "reason" to "none"))
                 } else {
                     graph.start(
                         call.argument<Boolean>("includeSystemAudio") ?: false,

@@ -601,7 +601,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   web.MediaStream? _screenStream;
   web.HTMLVideoElement? _screenEl;
-  var _screenViewId = 0;
+  var _screenFactoryRegistered = false;
   VideoSurface? _screenSurface;
   VideoFormat? _screenFormat;
   String? _screenUnavailableReason;
@@ -667,24 +667,25 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           .toDart
           .timeout(const Duration(seconds: 60));
       _screenStream = stream;
-      _screenViewId++;
-      final viewType = 'fac-screen-$_screenViewId';
-      ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) {
-        final element = web.HTMLVideoElement()
-          ..autoplay = true
-          ..muted = true
-          ..srcObject = stream;
-        element.setAttribute('playsinline', 'true');
-        element.style
-          ..setProperty('width', '100%')
-          ..setProperty('height', '100%')
-          ..setProperty('object-fit', 'contain')
-          ..setProperty('display', 'block');
-        _screenEl = element;
-        return element;
-      });
-      _screenSurface = VideoSurface(
-        handle: _screenViewId,
+      if (!_screenFactoryRegistered) {
+        ui_web.platformViewRegistry.registerViewFactory('fac-screen-1', (int _) {
+          final element = web.HTMLVideoElement()
+            ..autoplay = true
+            ..muted = true
+            ..srcObject = _screenStream;
+          element.setAttribute('playsinline', 'true');
+          element.style
+            ..setProperty('width', '100%')
+            ..setProperty('height', '100%')
+            ..setProperty('object-fit', 'contain')
+            ..setProperty('display', 'block');
+          _screenEl = element;
+          return element;
+        });
+        _screenFactoryRegistered = true;
+      }
+      _screenSurface = const VideoSurface(
+        handle: 1,
         kind: VideoSurfaceKind.htmlElement,
       );
       final track = stream.getVideoTracks().toDart.firstOrNull;
