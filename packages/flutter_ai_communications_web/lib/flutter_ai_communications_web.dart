@@ -392,7 +392,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     final context = _context;
     _context = null;
     _appliedSinkId = null;
-    _nextTime = 0;
+    _nextTime = 0.0;
     if (context == null) {
       return;
     }
@@ -407,7 +407,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     final capture = _observedCaptureId();
     final render = _policy.observedRenderId(
       appliedSinkId: _appliedSinkId,
-      requestedId: _renderId,
       unsupported: unsupported,
     );
     _observed = PairingSnapshot(captureId: capture, renderId: render);

@@ -87,7 +87,6 @@ final class WebEndpointPolicy {
   /// requested id. A missing or unsupported sink stays null.
   String? observedRenderId({
     required String? appliedSinkId,
-    String? requestedId,
     WebSinkUnsupported? unsupported,
   }) {
     if (unsupported != null) {

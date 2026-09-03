@@ -29,25 +29,15 @@ void main() {
   });
 
   test('Observed render is the applied sink, never the requested id', () {
-    expect(
-      policy.observedRenderId(appliedSinkId: 'usb-out', requestedId: 'airpods-out'),
-      'usb-out',
-    );
-    expect(
-      policy.observedRenderId(appliedSinkId: null, requestedId: 'airpods-out'),
-      isNull,
-    );
-    expect(
-      policy.observedRenderId(appliedSinkId: '', requestedId: 'airpods-out'),
-      isNull,
-    );
+    expect(policy.observedRenderId(appliedSinkId: 'usb-out'), 'usb-out');
+    expect(policy.observedRenderId(appliedSinkId: null), isNull);
+    expect(policy.observedRenderId(appliedSinkId: ''), isNull);
   });
 
   test('unsupported sink leaves Observed render null', () {
     expect(
       policy.observedRenderId(
         appliedSinkId: 'usb-out',
-        requestedId: 'usb-out',
         unsupported: const WebSinkUnsupported(
           path: 'AudioContext.sinkId',
           statusCode: 'unsupported',
