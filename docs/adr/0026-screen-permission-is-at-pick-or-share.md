@@ -1,0 +1,3 @@
+# Screen permission is requested at Screen pick or startScreenShare, not Session start
+
+AGENTS.md and camera send request permission inside start() because the Session is about to use the mic or camera. Screen recording is a picker action. Requesting it at Session start would show a share sheet before Share. The first operation that needs screen recording — beginScreenPick if the host opens thumbs, otherwise startScreenShare — requests permission and blocks until the OS answers. Denial is a Start result on that call; the Session stays up. Windows Screen previews must not use Graphics Capture (yellow border on every window); production screen send does.

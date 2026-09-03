@@ -9,6 +9,8 @@ set(PLUGIN_NAME "${PROJECT_NAME}_plugin")
 list(APPEND PLUGIN_SOURCES
   "camera_graph.cc"
   "camera_graph.h"
+  "screen_graph.cc"
+  "screen_graph.h"
   "flutter_ai_communications_linux_plugin.cc"
 )
 
@@ -23,10 +25,12 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
+target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::X11)
 target_link_libraries(${PLUGIN_NAME} PRIVATE Threads::Threads)
 
 set(flutter_ai_communications_linux_bundled_libraries

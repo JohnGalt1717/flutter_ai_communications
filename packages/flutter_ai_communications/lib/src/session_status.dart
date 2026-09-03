@@ -89,6 +89,12 @@ enum SessionStatusCode {
 
   /// Video is not running (denied, restricted, none, or no mode).
   videoNotRunning,
+
+  /// Screen send is not running (denied, gone, or failed).
+  screenNotRunning,
+
+  /// Include-sound was requested but loopback is unavailable.
+  screenAudioUnavailable,
 }
 
 /// What the host or user must do, if anything. No user-facing copy.
@@ -156,6 +162,28 @@ final class SessionStatus {
       action = SessionAction.none,
       attempt = 0,
       maxAttempts = 0;
+
+  /// Screen send is not running; the Session stays up.
+  const SessionStatus.screenNotRunning({this.purpose, this.generation = 0})
+    : severity = StatusSeverity.warning,
+      code = SessionStatusCode.screenNotRunning,
+      recoverability = StatusRecoverability.hostAction,
+      usability = StatusUsability.usable,
+      action = SessionAction.none,
+      attempt = 0,
+      maxAttempts = 0;
+
+  /// System audio could not start; screen video continues.
+  const SessionStatus.screenAudioUnavailable({
+    this.purpose,
+    this.generation = 0,
+  }) : severity = StatusSeverity.warning,
+       code = SessionStatusCode.screenAudioUnavailable,
+       recoverability = StatusRecoverability.none,
+       usability = StatusUsability.usable,
+       action = SessionAction.none,
+       attempt = 0,
+       maxAttempts = 0;
 
   /// No usable Pair remains.
   const SessionStatus.noUsablePair({this.purpose, this.generation = 0})

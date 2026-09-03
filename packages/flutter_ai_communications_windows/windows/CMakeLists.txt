@@ -9,6 +9,8 @@ set(PLUGIN_NAME "${PROJECT_NAME}_plugin")
 list(APPEND PLUGIN_SOURCES
   "camera_graph.cpp"
   "camera_graph.h"
+  "screen_graph.cpp"
+  "screen_graph.h"
   "flutter_ai_communications_windows_plugin.cpp"
 )
 
@@ -24,7 +26,8 @@ target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
-target_link_libraries(${PLUGIN_NAME} PRIVATE mf mfplat mfreadwrite mfuuid ole32)
+target_link_libraries(${PLUGIN_NAME} PRIVATE mf mfplat mfreadwrite mfuuid ole32
+  gdi32 user32 dwmapi)
 
 set(flutter_ai_communications_windows_bundled_libraries
   ""

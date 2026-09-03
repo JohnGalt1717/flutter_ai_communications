@@ -73,6 +73,7 @@ final class Session {
     _pathSub = platform.pathCoverage.listen(_onPathCoverage);
     _focusSub = platform.audioFocus.listen(_onAudioFocus);
     _routeSub = platform.osRouteChanges.listen(_onOsRoute);
+    _screenCatalogSub = platform.screenSourceCatalog.listen(_onScreenCatalog);
     _onIsolation(platform.lastIsolation);
     if (!preferenceControlled) {
       _explicitCaptureId = preference.captureId;
@@ -316,6 +317,41 @@ final class Session {
       !_stopped &&
       !_paused;
 
+  /// Whether screen send is live.
+  bool get isScreenSending => _screenSending && !_stopped;
+
+  /// Local screen send Video surface, if running.
+  VideoSurface? get screenSurface => _screenSurface;
+
+  /// Negotiated Native Video Format for screen send, if running.
+  VideoFormat? get screenNativeFormat => _screenNativeFormat;
+
+  /// Why screen send is not running, if known.
+  String? get screenUnavailableReason => _screenUnavailableReason;
+
+  /// Live Screen source id, if sending.
+  String? get selectedScreenSourceId => _screenSourceId;
+
+  /// Whether Include-sound is on for the live screen send.
+  bool get includeSystemAudio => _includeSystemAudio;
+
+  /// Whether Screen motion is on.
+  bool get isScreenMotion => _screenMotion;
+
+  /// Whether cursor is captured.
+  bool get isScreenCursor => _screenCursor;
+
+  /// Whether Screen pick is open.
+  bool get isScreenPickOpen => _screenPickOpen;
+
+  /// Screen preview handle for [sourceId] during Screen pick.
+  VideoSurface? screenPreview(String sourceId) =>
+      _platform.screenPreviewNative(sourceId);
+
+  /// Live Screen source catalog during pick or send.
+  Stream<List<ScreenSource>> get screenSourceCatalog =>
+      _platform.screenSourceCatalog;
+
   /// Start-able snapshot of this Session. Does not include Transport or streams.
   SessionSettings get settings => SessionSettings(
     direction: direction,
@@ -346,6 +382,18 @@ final class Session {
   VideoSurface? _videoSurface;
   VideoFormat? _nativeVideoFormat;
   String? _videoUnavailableReason;
+  StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
+  var _screenPickOpen = false;
+  var _screenSending = false;
+  var _includeSystemAudio = false;
+  var _screenMotion = false;
+  var _screenCursor = true;
+  String? _screenSourceId;
+  VideoSurface? _screenSurface;
+  VideoFormat? _screenNativeFormat;
+  String? _screenUnavailableReason;
+
+  bool get _isLobby => purpose == 'lobby';
 
   /// Renders [bytes] in [playbackFormat]. No-op while paused, stopped, or
   /// capture-only.
@@ -410,6 +458,169 @@ final class Session {
     if (enabled) {
       _videoSurface = _platform.lastVideoSurface;
     }
+  }
+
+  /// Opens Screen pick. Does not send. Lobby is a typed failure.
+  Future<ScreenPickResult> beginScreenPick() async {
+    if (_stopped) {
+      return const ScreenPickFailed();
+    }
+    if (_isLobby) {
+      return const ScreenPickBlocked();
+    }
+    final permission = await _platform.requestScreenPermission();
+    final start = await _platform.beginScreenPickNative();
+    _screenPickOpen = true;
+    if (permission != ScreenPermission.granted ||
+        start != NativeGraphStart.started) {
+      return const ScreenPickReady(previewsGranted: false);
+    }
+    return const ScreenPickReady();
+  }
+
+  /// Tears down Screen pick thumbs. Share frame stays if screen send is live.
+  Future<void> endScreenPick() async {
+    if (_stopped) {
+      return;
+    }
+    _screenPickOpen = false;
+    await _platform.endScreenPickNative();
+    if (_screenSending && _screenSourceId != null) {
+      await _platform.indicateScreenSourceNative(_screenSourceId);
+    }
+  }
+
+  /// Points the Share frame at [sourceId] without starting send.
+  Future<void> indicateScreenSource(String? sourceId) async {
+    if (_stopped || _isLobby) {
+      return;
+    }
+    await _platform.indicateScreenSourceNative(sourceId);
+  }
+
+  /// Starts or replaces screen send. Lobby is a typed failure.
+  Future<ScreenShareResult> startScreenShare(
+    String sourceId, {
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) async {
+    if (_stopped) {
+      return const ScreenShareFailed();
+    }
+    if (_isLobby) {
+      return const ScreenShareBlocked();
+    }
+    final permission = await _platform.requestScreenPermission();
+    if (permission == ScreenPermission.denied) {
+      _screenUnavailableReason = 'denied';
+      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      return const ScreenShareDenied();
+    }
+    if (permission == ScreenPermission.restricted) {
+      _screenUnavailableReason = 'restricted';
+      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      return const ScreenShareRestricted();
+    }
+    final start = await _platform.startScreenShareNative(
+      sourceId: sourceId,
+      includeSystemAudio: includeSystemAudio,
+      cursor: cursor,
+      motion: motion,
+    );
+    if (start != NativeGraphStart.started) {
+      _screenSending = false;
+      _screenSurface = null;
+      _screenNativeFormat = null;
+      _screenUnavailableReason =
+          _platform.lastScreenUnavailableReason ?? 'none';
+      _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
+      return const ScreenShareUnavailable();
+    }
+    _screenSending = true;
+    _screenSourceId = sourceId;
+    _includeSystemAudio = includeSystemAudio;
+    _screenCursor = cursor;
+    _screenMotion = motion;
+    _screenSurface = _platform.lastScreenSurface;
+    _screenNativeFormat = _platform.lastScreenNativeFormat;
+    _screenUnavailableReason = null;
+    if (includeSystemAudio) {
+      final audio = await _platform.setIncludeSystemAudioNative(true);
+      _includeSystemAudio = audio;
+      if (!audio) {
+        _publishStatus(SessionStatus.screenAudioUnavailable(purpose: purpose));
+      }
+    }
+    if (_screenPickOpen) {
+      await endScreenPick();
+    }
+    return const ScreenShareReady();
+  }
+
+  /// Stops screen send. Camera send is unchanged.
+  Future<void> stopScreenShare() async {
+    if (_stopped) {
+      return;
+    }
+    _screenSending = false;
+    _screenSourceId = null;
+    _includeSystemAudio = false;
+    _screenSurface = null;
+    _screenNativeFormat = null;
+    await _platform.stopScreenShareNative();
+  }
+
+  /// Live Include-sound toggle. Mute does not change this.
+  Future<void> setIncludeSystemAudio(bool enabled) async {
+    if (_stopped || !_screenSending) {
+      return;
+    }
+    final applied = await _platform.setIncludeSystemAudioNative(enabled);
+    _includeSystemAudio = applied;
+    if (enabled && !applied) {
+      _publishStatus(SessionStatus.screenAudioUnavailable(purpose: purpose));
+    }
+  }
+
+  /// Live Screen motion toggle.
+  Future<void> setScreenMotion(bool motion) async {
+    if (_stopped || !_screenSending) {
+      return;
+    }
+    _screenMotion = motion;
+    await _platform.setScreenMotionNative(motion);
+  }
+
+  /// Live cursor capture toggle.
+  Future<void> setScreenCursor(bool cursor) async {
+    if (_stopped || !_screenSending) {
+      return;
+    }
+    _screenCursor = cursor;
+    await _platform.setScreenCursorNative(cursor);
+  }
+
+  void _onScreenCatalog(List<ScreenSource> sources) {
+    if (_stopped) {
+      return;
+    }
+    if (_screenSending &&
+        _screenSourceId != null &&
+        sources.every((source) => source.id != _screenSourceId)) {
+      unawaited(_handleScreenSourceGone());
+    }
+  }
+
+  Future<void> _handleScreenSourceGone() async {
+    _screenSending = false;
+    _screenSourceId = null;
+    _includeSystemAudio = false;
+    _screenSurface = null;
+    _screenNativeFormat = null;
+    _screenUnavailableReason = 'gone';
+    await _platform.stopScreenShareNative();
+    _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
   }
 
   /// Attach camera send later on the same Session. Does not replace [capture].
@@ -542,6 +753,7 @@ final class Session {
       _lifecycle = SessionLifecycle.stopped;
       try {
         await _platform.stopCameraNative();
+        await _platform.stopScreenShareNative();
         await _stopNativeBounded();
       } on Object catch (error, stack) {
         _logger.warning(
@@ -559,6 +771,7 @@ final class Session {
       unawaited(_pathSub?.cancel());
       unawaited(_focusSub?.cancel());
       unawaited(_routeSub?.cancel());
+      unawaited(_screenCatalogSub?.cancel());
       _captureSub = null;
       _isolationSub = null;
       _coverageSub = null;
@@ -566,6 +779,7 @@ final class Session {
       _pathSub = null;
       _focusSub = null;
       _routeSub = null;
+      _screenCatalogSub = null;
       unawaited(_captureController.close());
       unawaited(_isolationController.close());
       unawaited(_coverageController.close());

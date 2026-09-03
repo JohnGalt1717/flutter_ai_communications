@@ -24,6 +24,8 @@ export 'src/video_format.dart';
 export 'src/video_format_negotiator.dart';
 export 'src/video_processor.dart';
 export 'src/video_surface.dart';
+export 'src/screen_source.dart';
+export 'src/screen_video_format.dart';
 
 /// Placeholder so older workspace tests still resolve.
 const String sharedPackageName = 'flutter_ai_communications_shared';

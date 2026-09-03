@@ -8,6 +8,7 @@ import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
 import 'platform_events.dart';
+import 'screen_permission.dart';
 
 /// The platform seam for the Audio manager.
 ///
@@ -225,4 +226,72 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
 
   /// Refreshes [lastCameraFrameCount] and [lastCameraLiveFrames] from native.
   Future<void> pollCameraNative() async {}
+
+  /// Snapshot of Screen sources. Defaults unimplemented so older adapters load.
+  Future<List<ScreenSource>> enumerateScreenSources() {
+    throw UnimplementedError(
+      'enumerateScreenSources() has not been implemented.',
+    );
+  }
+
+  /// Live Screen source catalog. Defaults to a single snapshot.
+  Stream<List<ScreenSource>> get screenSourceCatalog async* {
+    yield await enumerateScreenSources();
+  }
+
+  /// Requests screen recording and waits for the OS answer.
+  Future<ScreenPermission> requestScreenPermission() {
+    throw UnimplementedError(
+      'requestScreenPermission() has not been implemented.',
+    );
+  }
+
+  /// Opens Screen pick thumbs. Does not send.
+  Future<NativeGraphStart> beginScreenPickNative() {
+    throw UnimplementedError(
+      'beginScreenPickNative() has not been implemented.',
+    );
+  }
+
+  /// Tears down Screen pick thumbs.
+  Future<void> endScreenPickNative() async {}
+
+  /// Draws or clears the Share frame. Does not send.
+  Future<void> indicateScreenSourceNative(String? sourceId) async {}
+
+  /// Screen preview handle for [sourceId] during Screen pick, if any.
+  VideoSurface? screenPreviewNative(String sourceId) => null;
+
+  /// Starts the screen Production video path. Does not fail the Session.
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) {
+    throw UnimplementedError(
+      'startScreenShareNative() has not been implemented.',
+    );
+  }
+
+  /// Stops screen send without ending the Session.
+  Future<void> stopScreenShareNative() async {}
+
+  /// Live Include-sound toggle.
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async => false;
+
+  /// Live Screen motion toggle.
+  Future<void> setScreenMotionNative(bool motion) async {}
+
+  /// Live cursor capture toggle.
+  Future<void> setScreenCursorNative(bool cursor) async {}
+
+  /// Last local send Video surface from screen start, if any.
+  VideoSurface? get lastScreenSurface => null;
+
+  /// Negotiated Native Video Format from the last screen start.
+  VideoFormat? get lastScreenNativeFormat => null;
+
+  /// Why the last screen start did not run, if known.
+  String? get lastScreenUnavailableReason => null;
 }

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "camera_graph.h"
+#include "screen_graph.h"
 
 namespace {
 
@@ -57,7 +58,11 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
 
   explicit FlutterAiCommunicationsWindowsPlugin(
       flutter::PluginRegistrarWindows* registrar)
-      : camera_(registrar->texture_registrar()) {
+      : camera_(registrar->texture_registrar()),
+        screen_(registrar->texture_registrar(),
+                registrar->GetView() == nullptr
+                    ? nullptr
+                    : registrar->GetView()->GetNativeWindow()) {
     channel_ =
         std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
             registrar->messenger(), "flutter_ai_communications/methods",
@@ -122,11 +127,61 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
       result->Success(flutter::EncodableValue(camera_.Stats()));
       return;
     }
+    if (method == "enumerateScreenSources") {
+      result->Success(flutter::EncodableValue(screen_.Enumerate()));
+      return;
+    }
+    if (method == "requestScreenPermission") {
+      result->Success(flutter::EncodableValue(screen_.RequestPermission()));
+      return;
+    }
+    if (method == "beginScreenPickNative") {
+      result->Success(flutter::EncodableValue(screen_.BeginPick()));
+      return;
+    }
+    if (method == "endScreenPickNative") {
+      screen_.EndPick();
+      result->Success();
+      return;
+    }
+    if (method == "indicateScreenSourceNative") {
+      screen_.Indicate(ReadString(map, "sourceId"));
+      result->Success();
+      return;
+    }
+    if (method == "startScreenShareNative") {
+      result->Success(flutter::EncodableValue(screen_.Start(
+          ReadString(map, "sourceId"),
+          ReadBool(map, "includeSystemAudio", false),
+          ReadBool(map, "cursor", true), ReadBool(map, "motion", false))));
+      return;
+    }
+    if (method == "stopScreenShareNative") {
+      screen_.Stop();
+      result->Success();
+      return;
+    }
+    if (method == "setIncludeSystemAudioNative") {
+      result->Success(flutter::EncodableValue(
+          screen_.SetIncludeSystemAudio(ReadBool(map, "enabled", false))));
+      return;
+    }
+    if (method == "setScreenMotionNative") {
+      screen_.SetMotion(ReadBool(map, "motion", false));
+      result->Success();
+      return;
+    }
+    if (method == "setScreenCursorNative") {
+      screen_.SetCursor(ReadBool(map, "cursor", true));
+      result->Success();
+      return;
+    }
     result->NotImplemented();
   }
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   CameraGraph camera_;
+  ScreenGraph screen_;
 };
 
 }  // namespace

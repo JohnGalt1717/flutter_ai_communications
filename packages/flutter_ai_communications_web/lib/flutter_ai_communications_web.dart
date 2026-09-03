@@ -596,4 +596,143 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       track.enabled = !muted;
     });
   }
+
+  web.MediaStream? _screenStream;
+  web.HTMLVideoElement? _screenEl;
+  var _screenViewId = 0;
+  VideoSurface? _screenSurface;
+  VideoFormat? _screenFormat;
+  String? _screenUnavailableReason;
+  var _screenCursor = true;
+  var _screenMotion = false;
+
+  @override
+  VideoSurface? get lastScreenSurface => _screenSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => _screenFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => _screenUnavailableReason;
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() async {
+    return const [
+      ScreenSource(
+        id: 'system-picker',
+        name: 'System picker',
+        kind: ScreenSourceKind.systemPicker,
+      ),
+    ];
+  }
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() async {
+    return ScreenPermission.granted;
+  }
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() async {
+    return NativeGraphStart.unavailable;
+  }
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) async {
+    await stopScreenShareNative();
+    _screenCursor = cursor;
+    _screenMotion = motion;
+    try {
+      final constraints = <String, Object>{
+        'video': {'cursor': cursor ? 'always' : 'never'},
+        'audio': includeSystemAudio,
+      };
+      final stream = await web.window.navigator.mediaDevices
+          .callMethod<JSPromise<web.MediaStream>>(
+            'getDisplayMedia'.toJS,
+            constraints.jsify(),
+          )
+          .toDart
+          .timeout(const Duration(seconds: 60));
+      _screenStream = stream;
+      _screenViewId++;
+      final viewType = 'fac-screen-$_screenViewId';
+      ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) {
+        final element = web.HTMLVideoElement()
+          ..autoplay = true
+          ..muted = true
+          ..srcObject = stream;
+        element.setAttribute('playsinline', 'true');
+        element.style
+          ..setProperty('width', '100%')
+          ..setProperty('height', '100%')
+          ..setProperty('object-fit', 'contain')
+          ..setProperty('display', 'block');
+        _screenEl = element;
+        return element;
+      });
+      _screenSurface = VideoSurface(
+        handle: _screenViewId,
+        kind: VideoSurfaceKind.htmlElement,
+      );
+      final track = stream.getVideoTracks().toDart.firstOrNull;
+      final settings = track?.getSettings();
+      final width = (settings?.width ?? 1920).toInt();
+      final height = (settings?.height ?? 1080).toInt();
+      _screenFormat = ScreenVideoFormat.request(
+        width: width,
+        height: height,
+        motion: motion,
+      );
+      _screenUnavailableReason = null;
+      track?.addEventListener(
+        'ended',
+        (web.Event _) {
+          _screenSurface = null;
+          _screenFormat = null;
+          _screenUnavailableReason = 'gone';
+        }.toJS,
+      );
+      return NativeGraphStart.started;
+    } on Object {
+      _screenSurface = null;
+      _screenFormat = null;
+      _screenUnavailableReason = 'denied';
+      return NativeGraphStart.unavailable;
+    }
+  }
+
+  @override
+  Future<void> stopScreenShareNative() async {
+    _screenStream?.getTracks().toDart.forEach((track) => track.stop());
+    _screenStream = null;
+    _screenEl = null;
+    _screenSurface = null;
+    _screenFormat = null;
+  }
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async {
+    if (!enabled) {
+      _screenStream?.getAudioTracks().toDart.forEach((track) {
+        track.enabled = false;
+      });
+      return false;
+    }
+    return _screenStream?.getAudioTracks().toDart.isNotEmpty ?? false;
+  }
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) async {
+    _screenMotion = motion;
+  }
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) async {
+    _screenCursor = cursor;
+  }
 }

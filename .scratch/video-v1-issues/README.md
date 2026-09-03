@@ -28,3 +28,4 @@ Status as of 2026-09-01, HEAD `e6b37b4` (PR #34 on `main`).
 | 14 | Host guide accuracy pass | 13 | in progress |
 
 Plan: `.agents/plans/video-capture-and-sinks.md`.
+Screen send tickets: `.scratch/screen-v1-issues/`.

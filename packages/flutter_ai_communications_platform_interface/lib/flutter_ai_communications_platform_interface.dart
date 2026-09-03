@@ -9,3 +9,4 @@ export 'src/method_channel_communications_platform.dart';
 export 'src/microphone_permission.dart';
 export 'src/native_graph_start.dart';
 export 'src/platform_events.dart';
+export 'src/screen_permission.dart';
