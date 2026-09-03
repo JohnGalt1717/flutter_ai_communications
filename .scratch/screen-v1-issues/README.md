@@ -17,11 +17,11 @@ Status as of 2026-09-03. PR #39 squash-merged as `588618d`.
 | 02 | Session and platform-interface screen contracts | 01 | done |
 | 03 | Fake Screen pick, indicate, catalog stream | 02 | done |
 | 04 | Windows screen graph | 02 | in progress (GDI + Share frame shipped in #39; WGC/WASAPI later) |
-| 05 | macOS screen graph | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
+| 05 | macOS screen graph | 02 | done (`feat/apple-screen-send-43`; `native_screen_test` `skipped=false`) |
 | 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 send in #39; thumbs/Share frame/portal later) |
 | 07 | Web getDisplayMedia | 02 | in progress (graph in #39; Chrome receipt on #44) |
-| 08 | Android MediaProjection | 02 | in progress (graph in #39; AudioPlaybackCapture + SM receipt later) |
-| 09 | iOS ReplayKit / Broadcast | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
+| 08 | Android MediaProjection | 02 | in progress (graph in #39; SM `native_screen_test` `skipped=os-picker`; AudioPlaybackCapture later) |
+| 09 | iOS ReplayKit / Broadcast | 02 | graph on `feat/apple-screen-send-43`; physical Broadcast receipt still open |
 | 10 | Example in-session picker | 03 and one native graph | done |
-| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows `native_screen_test` `skipped=false`) |
+| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows + macOS `skipped=false`; Android `os-picker`) |
 | 12 | Transport second send path | 02 | not started (camera WebRTC Send track is #48; screen path still open) |

@@ -42,8 +42,8 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 | Linux Wayland | system-picker catalog | portal ScreenCast + PipeWire |
 | Web | system-picker + `getDisplayMedia` | Chrome/Edge receipt (#44) |
 | Android | MediaProjection Texture | AudioPlaybackCapture, SM-class receipt (#44) |
-| macOS | fail-closed | ScreenCaptureKit (#43) |
-| iOS | fail-closed | ReplayKit Broadcast (#43) |
+| macOS | ScreenCaptureKit catalog, thumbs, Share frame, send | `native_screen_test` `skipped=false` |
+| iOS | system-picker + ReplayKit Broadcast | physical Broadcast receipt (#44) |
 
 ### Not in this slice
 

@@ -7,12 +7,12 @@ windows, Screen pick yields thumbs, indicate draws a Share frame, and
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started — GitHub [#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)
+**Status:** done on `feat/apple-screen-send-43` — GitHub [#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)
 
-- [ ] Catalog from `SCShareableContent`; All-displays synthesized
-- [ ] Screen Recording TCC at beginScreenPick or startScreenShare
-- [ ] Thumbs during Screen pick; Share frame overlay
-- [ ] Production `SCStream`; exclude own application from display capture
-- [ ] `capturesAudio` + `excludesCurrentProcessAudio` for Include sound
-- [ ] Physical receipt: TCC prompt, thumbs, Share frame, camera+screen,
-      Include sound, stop
+- [x] Catalog from `SCShareableContent`; All-displays synthesized
+- [x] Screen Recording TCC at beginScreenPick or startScreenShare
+- [x] Thumbs during Screen pick; Share frame overlay
+- [x] Production `SCStream`; exclude own application from display capture
+- [x] `capturesAudio` + `excludesCurrentProcessAudio` for Include sound
+- [x] Physical receipt: `native_screen_test` vs `macos`, `skipped=false`,
+      20 cycles, camera+screen, Include sound applied

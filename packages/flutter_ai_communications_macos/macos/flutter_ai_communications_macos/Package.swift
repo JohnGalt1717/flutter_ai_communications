@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "flutter_ai_communications_macos",
     platforms: [
-        .macOS("12.0")
+        .macOS("12.3")
     ],
     products: [
         .library(name: "flutter-ai-communications-macos", targets: ["flutter_ai_communications_macos"]),
