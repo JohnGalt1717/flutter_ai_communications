@@ -40,3 +40,6 @@ packages/**/pubspec.lock
 # Swift Package Manager
 **/.build/
 **/.swiftpm/
+
+# Local Orchestration screenshots (may contain desktop contents)
+.scratch/screen-proof/

@@ -1,22 +1,47 @@
 # Screen Capture and Send Plan
 
-**Status (2026-09-03):** Domain locked. Spec `docs/spec-screen-v1.md`.
-Glossary terms and ADRs 0022–0027 are in tree. Native graphs not started.
-**Tickets:** `.scratch/screen-v1-issues/` (markdown, not GitHub issues).
+**Status (2026-09-03):** v1 Session API and native graphs shipped on
+Windows, Linux X11, Android, and web. Squash-merged as PR #39 / `588618d`.
+iOS/macOS stay fail-closed ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)).
+Receipts on remaining heads:
+[#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44).
+**Tickets:** `.scratch/screen-v1-issues/`.
 **Host narrative:** `docs/host-screen-share-narrative.md`.
 **Camera track:** `.agents/plans/video-capture-and-sinks.md` (do not regress).
 
 ## Current slice (2026-09-03)
 
-Video v1 camera graphs shipped on six platforms. Screen source was catalog
-only (ADR-0019). This slice ships native screen send, Screen pick, Share
-frame, All-displays stitch, and system audio on the screen path.
+HEAD: `588618d` on `main` (PR #39). Domain, Session contracts, fake adapter,
+example Screen send subsection, and native graphs for Windows GDI, Linux
+X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 
 ### Done
 
 - Domain: Screen source, All-displays, Screen pick, Screen preview, Share
   frame, Screen motion; ADRs 0019, 0022–0027; `docs/spec-screen-v1.md`
+- Session / platform-interface / fake adapter; typed Start results
+- Example in-session Screen send + loopback (`screen-share`, `screen-stop`,
+  `screen-loopback`, `screen-source-*`)
+- Orchestration job: `.agents/workflows/screen-send-orchestration.md`,
+  `example/integration_test/native_screen_test.dart`, `/screen-send-proof`
+- Windows GDI catalog, thumbs, Share frame, send Texture; JamieDesktop
+  `native_screen_test` `skipped=false` (20 cycles, camera+screen, 1920×1080@5)
+- Linux X11 catalog + send; Wayland catalog is one system-picker source
+- Android MediaProjection + FGS; OS-stop via `MediaProjection.Callback`
+- Web `getDisplayMedia` + HtmlElementView; track `ended` is source-gone
 - Camera Production video path per platform (do not reuse as a screen graph)
+
+### Shipped vs remaining (native)
+
+| Platform | Shipped | Remaining |
+| --- | --- | --- |
+| Windows | GDI catalog, thumbs, Share frame, send, exclude-self | WGC production, WASAPI Include sound, WGC-border receipt note |
+| Linux X11 | catalog + send | thumbs, Share frame, Pulse/PipeWire loopback, receipt |
+| Linux Wayland | system-picker catalog | portal ScreenCast + PipeWire |
+| Web | system-picker + `getDisplayMedia` | Chrome/Edge receipt (#44) |
+| Android | MediaProjection Texture | AudioPlaybackCapture, SM-class receipt (#44) |
+| macOS | fail-closed | ScreenCaptureKit (#43) |
+| iOS | fail-closed | ReplayKit Broadcast (#43) |
 
 ### Not in this slice
 
@@ -183,20 +208,20 @@ does not silence system audio.
 
 ## Ticket map
 
-| # | Title | Blocked by |
-| --- | --- | --- |
-| 00 | Spec, glossary, ADRs | — |
-| 01 | Shared screen types | 00 |
-| 02 | Session and platform-interface contracts | 01 |
-| 03 | Fake Screen pick, indicate, catalog stream | 02 |
-| 04 | Windows screen graph | 02 |
-| 05 | macOS screen graph | 02 |
-| 06 | Linux screen graph (X11 + Wayland) | 02 |
-| 07 | Web getDisplayMedia | 02 |
-| 08 | Android MediaProjection | 02 |
-| 09 | iOS ReplayKit / Broadcast | 02 |
-| 10 | Example in-session picker | 03 and one native graph |
-| 11 | Host narrative + Orchestration keys | 10 |
-| 12 | Transport second send path | 02 |
+| # | Title | Blocked by | Status |
+| --- | --- | --- | --- |
+| 00 | Spec, glossary, ADRs | — | done |
+| 01 | Shared screen types | 00 | done |
+| 02 | Session and platform-interface contracts | 01 | done |
+| 03 | Fake Screen pick, indicate, catalog stream | 02 | done |
+| 04 | Windows screen graph | 02 | in progress (GDI; WGC/WASAPI later) |
+| 05 | macOS screen graph | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
+| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 send; thumbs/portal later) |
+| 07 | Web getDisplayMedia | 02 | in progress (graph shipped; Chrome receipt on #44) |
+| 08 | Android MediaProjection | 02 | in progress (graph shipped; AudioPlaybackCapture + receipt later) |
+| 09 | iOS ReplayKit / Broadcast | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
+| 10 | Example in-session picker | 03 and one native graph | done |
+| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows automated receipt collected) |
+| 12 | Transport second send path | 02 | not started (camera WebRTC Send track is #48; screen path still open) |
 
-Work the frontier: 01–02, then 03 in parallel with 04–09, then 10–12.
+Frontier: 05/09 (#43) need a Mac. 04/06 remaining native gaps. 11 receipts on #44. 12 attaches screen send as a second Send track on the WebRTC plugin.

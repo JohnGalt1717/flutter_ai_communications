@@ -7,13 +7,13 @@ the browser sheet is authoritative.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** in progress (PR #39). Graph shipped. Chrome receipt on #44.
 
-- [ ] `screenSources()` returns one system-picker source
-- [ ] beginScreenPick / indicate are no-ops
-- [ ] startScreenShare presents the browser picker; local Video surface
+- [x] `screenSources()` returns one system-picker source
+- [x] beginScreenPick / indicate are no-ops
+- [x] startScreenShare presents the browser picker; local Video surface
       is an HtmlElementView / view id
-- [ ] includeSystemAudio maps to `systemAudio` / tab-audio hints
-- [ ] iOS Safari has no getDisplayMedia; catalog empty or share fails
-      typed, Session stays up
-- [ ] Receipt: Chrome/Edge picker → surface → stop
+- [x] includeSystemAudio maps to `audio` on getDisplayMedia; live toggle
+      re-enables tracks
+- [x] Browser stop (`ended`) is source-gone, not Session stop
+- [ ] Receipt: Chrome/Edge picker → surface → stop (#44)

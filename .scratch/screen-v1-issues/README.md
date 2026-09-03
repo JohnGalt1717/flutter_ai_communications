@@ -8,7 +8,7 @@ Plan: `.agents/plans/screen-capture-and-send.md`.
 Host narrative: `docs/host-screen-share-narrative.md`.
 Camera tickets stay in `.scratch/video-v1-issues/`.
 
-Status as of 2026-09-03.
+Status as of 2026-09-03. PR #39 squash-merged as `588618d`.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
@@ -16,12 +16,12 @@ Status as of 2026-09-03.
 | 01 | Shared screen types | 00 | done |
 | 02 | Session and platform-interface screen contracts | 01 | done |
 | 03 | Fake Screen pick, indicate, catalog stream | 02 | done |
-| 04 | Windows screen graph | 02 | in progress (GDI capture + Share frame; WASAPI loopback later) |
+| 04 | Windows screen graph | 02 | in progress (GDI + Share frame shipped in #39; WGC/WASAPI later) |
 | 05 | macOS screen graph | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
-| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 capture; Wayland system-picker) |
-| 07 | Web getDisplayMedia | 02 | in progress |
-| 08 | Android MediaProjection | 02 | in progress |
+| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 send in #39; thumbs/Share frame/portal later) |
+| 07 | Web getDisplayMedia | 02 | in progress (graph in #39; Chrome receipt on #44) |
+| 08 | Android MediaProjection | 02 | in progress (graph in #39; AudioPlaybackCapture + SM receipt later) |
 | 09 | iOS ReplayKit / Broadcast | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
 | 10 | Example in-session picker | 03 and one native graph | done |
-| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44)) |
-| 12 | Transport second send path | 02 | not started |
+| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows `native_screen_test` `skipped=false`) |
+| 12 | Transport second send path | 02 | not started (camera WebRTC Send track is #48; screen path still open) |

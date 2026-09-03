@@ -8,11 +8,11 @@ system-picker behavior so Session tests do not need a real display.
 
 **Status:** done (2026-09-03). Fake adapter + `session_screen_test.dart`.
 
-- [ ] Fake catalog of display, window, All-displays, and system-picker
-- [ ] beginScreenPick yields Screen preview handles; endScreenPick tears
+- [x] Fake catalog of display, window, All-displays, and system-picker
+- [x] beginScreenPick yields Screen preview handles; endScreenPick tears
       them down
-- [ ] indicateScreenSource records the indicated id without starting send
-- [ ] startScreenShare on system-picker binds a returned display/window
+- [x] indicateScreenSource records the indicated id without starting send
+- [x] startScreenShare on system-picker binds a returned display/window
 - [ ] Catalog stream emits add/remove; vanished send source stops screen
       send and publishes Session status
 - [ ] includeSystemAudio does not appear on the mic Capture stream
