@@ -330,7 +330,9 @@ final class _SessionPageState extends State<SessionPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _phase == _HarnessPhase.meeting ? 'Meeting' : 'Pick devices, then Join. Permission is requested on Enter lobby.',
+            _phase == _HarnessPhase.meeting
+                ? 'Meeting'
+                : 'Pick devices, then Join. Permission is requested on Enter lobby.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 8),
