@@ -101,6 +101,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   }) async {
     _captureId = captureId;
     _renderId = renderId;
+    _lastNativeFormats = const NativeFormatReport();
     _listenForDeviceChanges();
     final granted = await _acquireCapture(captureId);
     if (granted != MicrophonePermission.granted) {
@@ -115,12 +116,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     try {
       await _startGraph();
     } on Object {
+      _lastNativeFormats = const NativeFormatReport();
       return NativeGraphStart.failed;
     }
-    _lastNativeFormats = NativeFormatReport(
-      capture: captureFormat,
-      playback: playbackFormat,
-    );
     return NativeGraphStart.started;
   }
 
@@ -135,6 +133,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _player = null;
     _stopTracks();
     await _closeContext();
+    _lastNativeFormats = const NativeFormatReport();
   }
 
   @override
@@ -352,6 +351,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     processor.connect(context.destination);
     _running = true;
     _paused = false;
+    final native = _policy.nativeFormat(sampleRate: context.sampleRate);
+    _lastNativeFormats = NativeFormatReport(
+      capture: native,
+      playback: native,
+    );
     _emitObserved(unsupported: render.unsupported);
   }
 

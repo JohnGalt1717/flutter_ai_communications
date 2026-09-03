@@ -1,3 +1,4 @@
+import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 import 'package:flutter_ai_communications_web/src/web_endpoint_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -19,6 +20,14 @@ void main() {
     final plan = policy.renderPlan('speaker-out', sinkSupported: true);
     expect(plan.sinkId, 'speaker-out');
     expect(plan.unsupported, isNull);
+  });
+
+  test('native Format is PCM16 at the AudioContext sample rate', () {
+    expect(
+      policy.nativeFormat(sampleRate: 48000),
+      const AudioFormat.pcm16le(sampleRate: 48000),
+    );
+    expect(policy.nativeFormat(sampleRate: 44100.4).sampleRate, 44100);
   });
 
   test('unsupported sink is a typed path and status', () {

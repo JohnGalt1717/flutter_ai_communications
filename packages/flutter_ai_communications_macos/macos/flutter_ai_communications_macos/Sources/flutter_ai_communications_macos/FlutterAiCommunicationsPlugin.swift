@@ -157,7 +157,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       emitCatalog()
       emitIsolation()
       emitRoute()
-      result("started")
+      result(startedFormatMap())
     } catch {
       result("failed")
     }
@@ -242,6 +242,26 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       channels: AVAudioChannelCount(channels),
       interleaved: inputFormat.isInterleaved
     )
+  }
+
+  private func startedFormatMap() -> [String: Any] {
+    let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
+    let playRate = playbackFormat?.sampleRate ?? captureRate
+    return [
+      "status": "started",
+      "nativeCaptureFormat": formatMap(sampleRate: captureRate),
+      "nativePlaybackFormat": formatMap(sampleRate: playRate),
+    ]
+  }
+
+  private func formatMap(sampleRate: Double, channels: Int = 1) -> [String: Any] {
+    let rate = sampleRate > 0 ? Int(sampleRate.rounded()) : 24_000
+    let ch = channels > 0 ? channels : 1
+    return [
+      "encoding": "pcm16le",
+      "sampleRate": rate,
+      "channels": ch,
+    ]
   }
 
   private static func makePlaybackFormat(

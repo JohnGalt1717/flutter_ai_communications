@@ -84,6 +84,14 @@ void main() {
       renderId: 'usb-out',
     );
     expect(started, NativeGraphStart.started);
+    expect(
+      adapter.lastNativeFormats.capture,
+      AudioFormat.pcm16le24k,
+    );
+    expect(
+      adapter.lastNativeFormats.playback,
+      AudioFormat.pcm16le24k,
+    );
     expect(adapter.lastObservedRoute.captureId, 'usb-in');
     expect(adapter.lastObservedRoute.renderId, 'usb-out');
     expect(seen, isNotEmpty);
