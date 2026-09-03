@@ -3,9 +3,27 @@ import 'package:flutter_test/flutter_test.dart';
 
 final class _RecordingVideoSink implements VideoSink {
   final snapshots = <VideoPathSnapshot>[];
+  void Function(VideoPathSnapshot snapshot)? onNotify;
+
+  @override
+  void onVideoPath(VideoPathSnapshot snapshot) {
+    snapshots.add(snapshot);
+    onNotify?.call(snapshot);
+  }
+}
+
+/// Overrides == so a Set/Map that is not identity-based would collapse them.
+final class _EqualVideoSink implements VideoSink {
+  final snapshots = <VideoPathSnapshot>[];
 
   @override
   void onVideoPath(VideoPathSnapshot snapshot) => snapshots.add(snapshot);
+
+  @override
+  bool operator ==(Object other) => other is _EqualVideoSink;
+
+  @override
+  int get hashCode => 0;
 }
 
 void main() {
@@ -110,4 +128,31 @@ void main() {
       expect(sink.snapshots.last.surface, isNotNull);
     },
   );
+
+  test('Video sinks are tracked by identity when they override ==', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    final first = _EqualVideoSink();
+    final second = _EqualVideoSink();
+    session.attachVideoSink(first);
+    session.attachVideoSink(second);
+    expect(platform.attachedProductionVideoPathTokens, hasLength(2));
+    session.detachVideoSink(first);
+    await session.muteVideo();
+    expect(first.snapshots, hasLength(1));
+    expect(second.snapshots.last.muteVideo, isTrue);
+  });
+
+  test('onVideoPath may detach during notify', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    final first = _RecordingVideoSink();
+    final second = _RecordingVideoSink();
+    first.onNotify = (_) => session.detachVideoSink(first);
+    session.attachVideoSink(first);
+    session.attachVideoSink(second);
+    await session.muteVideo();
+    expect(second.snapshots.last.muteVideo, isTrue);
+    expect(session.isStopped, isFalse);
+  });
 }

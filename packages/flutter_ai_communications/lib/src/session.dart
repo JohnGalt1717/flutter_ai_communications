@@ -353,8 +353,9 @@ final class Session {
   VideoFormat? _nativeVideoFormat;
   String? _videoUnavailableReason;
   var _videoPathGeneration = 0;
-  final Set<VideoSink> _videoSinks = <VideoSink>{};
-  final Map<VideoSink, String> _videoSinkTokens = <VideoSink, String>{};
+  final Set<VideoSink> _videoSinks = Set<VideoSink>.identity();
+  final Map<VideoSink, String> _videoSinkTokens =
+      Map<VideoSink, String>.identity();
   var _nextVideoSinkToken = 0;
 
   /// Renders [bytes] in [playbackFormat]. No-op while paused, stopped, or
@@ -489,7 +490,7 @@ final class Session {
       final token = 'video-sink-$_nextVideoSinkToken';
       _nextVideoSinkToken++;
       _videoSinkTokens[sink] = token;
-      unawaited(_platform.attachProductionVideoPathNative(token: token));
+      _unawaitedNative(_platform.attachProductionVideoPathNative(token: token));
     }
     sink.onVideoPath(_videoPathSnapshot());
   }
@@ -502,7 +503,7 @@ final class Session {
     }
     final token = _videoSinkTokens.remove(sink);
     if (token != null) {
-      unawaited(_platform.detachProductionVideoPathNative(token: token));
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
     }
   }
 
@@ -521,7 +522,7 @@ final class Session {
       return;
     }
     final snapshot = _videoPathSnapshot();
-    for (final sink in _videoSinks) {
+    for (final sink in List<VideoSink>.of(_videoSinks)) {
       sink.onVideoPath(snapshot);
     }
   }
@@ -531,11 +532,21 @@ final class Session {
     _videoMuted = false;
     _videoSurface = null;
     _notifyVideoSinks();
-    for (final token in _videoSinkTokens.values) {
-      unawaited(_platform.detachProductionVideoPathNative(token: token));
+    for (final token in List<String>.of(_videoSinkTokens.values)) {
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
     }
     _videoSinks.clear();
     _videoSinkTokens.clear();
+  }
+
+  void _unawaitedNative(Future<void> future) {
+    unawaited(() async {
+      try {
+        await future;
+      } on Object catch (error, stack) {
+        _logger.warning(error, error, stack);
+      }
+    }());
   }
 
   /// Mute keeps the same capture subscription and emits silence frames.
