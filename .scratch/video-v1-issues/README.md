@@ -6,7 +6,7 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
-Status as of 2026-09-03. Ticket 04 Video sink seam on `feat/04-video-sink-seam` (#45).
+Status as of 2026-09-03. Ticket 12 WebRTC Send tracks on `feat/12-webrtc-video-sink` (#47).
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ Status as of 2026-09-03. Ticket 04 Video sink seam on `feat/04-video-sink-seam` 
 | 09 | Web camera graph | 02 | done (lobby via flutter-skill) |
 | 10 | Video processors on iOS and Android | 03, 05, 06 | deferred |
 | 11 | Video processors on macOS, Windows, and Web | 07, 08, 09, 10 | deferred |
-| 12 | flutter_webrtc sink package | 04 and one native graph | not started |
+| 12 | flutter_webrtc sink package | 04 and one native graph | done (#47) |
 | 13 | Example lobby and in-session AV harness | 03 and one native graph | done |
 | 14 | Host guide accuracy pass | 13 | in progress |
 

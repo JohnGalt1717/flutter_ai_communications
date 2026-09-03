@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
+import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
@@ -97,6 +98,8 @@ final class _SessionPageState extends State<SessionPage> {
   var _phase = _HarnessPhase.idle;
   Session? _session;
   EchoTransport? _echo;
+  WebrtcVideoSink? _webrtc;
+  StreamSubscription<WebrtcSendTrack?>? _webrtcSub;
   EchoProof? _proof;
   String? _status;
   IsolationEvent? _isolation;
@@ -134,6 +137,8 @@ final class _SessionPageState extends State<SessionPage> {
   @override
   void dispose() {
     unawaited(_logSub?.cancel());
+    unawaited(_webrtcSub?.cancel());
+    _webrtc?.detach();
     unawaited(_session?.stop());
     super.dispose();
   }
@@ -245,6 +250,14 @@ final class _SessionPageState extends State<SessionPage> {
       final echo = EchoTransport(session, replay: false);
       _echo = echo;
       unawaited(echo.attach());
+      final webrtc = WebrtcVideoSink();
+      _webrtc = webrtc;
+      webrtc.attach(session);
+      _webrtcSub = webrtc.localVideos.listen((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
     }
     session.isolation.listen((event) {
       if (mounted) {
@@ -291,11 +304,15 @@ final class _SessionPageState extends State<SessionPage> {
 
   Future<void> _stop() async {
     await _echo?.dispose();
+    await _webrtcSub?.cancel();
+    _webrtcSub = null;
+    _webrtc?.detach();
     await _session?.stop();
     if (mounted) {
       setState(() {
         _session = null;
         _echo = null;
+        _webrtc = null;
         _proof = null;
         _status = null;
         _diagnostics = null;
@@ -416,9 +433,7 @@ final class _SessionPageState extends State<SessionPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            _phase == _HarnessPhase.meeting
-                ? 'Meeting'
-                : 'Pick devices, then Join. Permission is requested on Enter lobby.',
+            _phase == _HarnessPhase.meeting ? 'Meeting' : 'Pick devices, then Join. Permission is requested on Enter lobby.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 8),
@@ -563,6 +578,14 @@ final class _SessionPageState extends State<SessionPage> {
                     ),
                   ),
               ],
+            ),
+          if (_phase == _HarnessPhase.meeting)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _webrtc?.localVideo?.id ?? 'none',
+                key: const Key('webrtc-send-track'),
+              ),
             ),
           const SizedBox(height: 16),
           Text('Cameras', style: Theme.of(context).textTheme.titleMedium),

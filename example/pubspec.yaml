@@ -35,6 +35,7 @@ dependencies:
     sdk: flutter
 
   flutter_ai_communications: ^0.0.1
+  flutter_ai_communications_webrtc: ^0.0.1
   flutter_skill: ^0.9.36
   logging: ^1.3.0
 

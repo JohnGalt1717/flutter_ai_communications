@@ -64,6 +64,9 @@ in the federated packages.
   Session or replace the Capture stream. Native consumers bind with
   `attachProductionVideoPathNative`; frames stay native (ADR-0013). Camera
   preview has no Video sink seam. Session has no PeerConnection types.
+- Companion package `flutter_ai_communications_webrtc` is the WebRTC Transport
+  plugin: `WebrtcVideoSink` yields Send tracks. The host owns PeerConnection
+  and signaling. Local self-view stays Video surface.
 - Screen send native graphs: `docs/spec-screen-v1.md`.
 - Linux camera graph is V4L2 → Texture (in tree, PR #34 / `e6b37b4`);
   physical receipts are later. Windows Media Foundation graph is proven on

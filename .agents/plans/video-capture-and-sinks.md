@@ -194,14 +194,15 @@ Complete when lobby and in-session preview show the same effect and sinks receiv
 
 ### 6. flutter_webrtc sink package
 
-Ticket 12.
+Ticket 12. **Done (2026-09-03, #47).**
 
-- Companion workspace package
-- Binds Production video path to a MediaStreamTrack / capturer
+- Companion workspace package `flutter_ai_communications_webrtc`
+- `WebrtcVideoSink` yields Send tracks from the Production video path
 - Host adds the track to its own PeerConnection
-- No signaling in this repo
+- No signaling and no PeerConnection in this package
+- Documented sample: `docs/host-webrtc-narrative.md`
 
-Complete when the example can attach the sink and a loopback PeerConnection shows the processed preview.
+Complete when the example can attach the sink and a loopback PeerConnection shows the processed preview. Host ticket 08 still owns example RTCVideoView loopback.
 
 ### 7. Example harness and host narrative
 

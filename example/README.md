@@ -19,6 +19,10 @@ The visualizer plots the same capture stream the Transport would send. There is
 no SignalR. Web, macOS, Windows, and Linux have no Isolation and no handset
 Endpoint — those are documented limits, not bugs.
 
+Meeting Join attaches `WebrtcVideoSink` (Send track id on `webrtc-send-track`).
+Local self-view stays the Session Video surface. See
+`docs/host-webrtc-narrative.md`.
+
 Echo Transport (`lib/echo/`) is the host stand-in. A Loopback Pair taps
 `Session.play` after the real adapter accepts the fixture so capture can
 be compared byte for byte. Analog speaker → microphone is not that path;

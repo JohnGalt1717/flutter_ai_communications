@@ -65,7 +65,8 @@ result = await manager.start(
   purpose: 'meeting',
   settings: settings,             // or equivalent start args copied from lobby
 )
-session.attachVideoSink(transportVideoSink)  // Video sink from the Transport plugin; not in lobby
+sink = WebrtcVideoSink()
+sink.attach(session)  // Transport plugin Send tracks; not in lobby
 ```
 
 Objects are not shared. A brief exclusive-device gap is allowed. Do not freeze
