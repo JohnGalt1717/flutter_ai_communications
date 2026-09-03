@@ -12,8 +12,8 @@ graphs land.
 - [x] Orchestration keys exist and do not collide with lobby keys
 - [x] Automated suite: `example/integration_test/native_screen_test.dart`
 - [x] Agent job: `.agents/workflows/screen-send-orchestration.md`
-- [ ] Receipts: permission at pick or share, thumbs/frame where
-      enumerated, camera+screen, Include sound where possible, stop,
-      cycles without leaking capture
-- [ ] Windows receipt explicitly notes no yellow WGC border on picker
-      thumbs
+- [x] Windows automated receipt: JamieDesktop `native_screen_test`
+      `skipped=false` (20 cycles, camera+screen)
+- [ ] Linux X11 / Wayland, Chrome, Android, macOS, iOS receipts on #44
+- [ ] Windows flutter-skill note: picker thumbs without yellow WGC
+      borders (GDI path; still record on #44)

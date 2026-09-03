@@ -6,7 +6,8 @@ failures are values. Lobby and `start()` never start screen send.
 
 **Blocked by:** 01 — Shared screen types
 
-**Status:** done (2026-09-03) — fake + Session API. Native graphs follow.
+**Status:** done (2026-09-03). Session API + fake in #39. Native graphs
+for Windows/Linux/Android/web shipped in the same PR.
 
 - [x] `manager.screenSources()` snapshot (idle or live)
 - [x] `session.beginScreenPick` / `endScreenPick` / `indicateScreenSource`

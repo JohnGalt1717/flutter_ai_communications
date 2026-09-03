@@ -6,13 +6,14 @@ xdg-desktop-portal ScreenCast + PipeWire. Same Session API.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** in progress (PR #39). X11 catalog + send. Thumbs, Share
+frame, Wayland portal, and loopback later.
 
-- [ ] X11: RandR + window list, All-displays from the virtual screen,
-      thumbs, Share frame, XComposite/XShm send
-- [ ] Wayland: catalog is one system-picker source; Start() shows the
-      portal; thumbs and indicate are no-ops
+- [x] X11: RandR + window list, All-displays, XGetImage send
+- [ ] X11 thumbs and Share frame
+- [x] Wayland: catalog is one system-picker source; thumbs and indicate
+      are no-ops
+- [ ] Wayland portal ScreenCast + PipeWire
 - [ ] System audio from Pulse/PipeWire monitor, not mixed into mic
       Capture stream
-- [ ] Receipt: X11 host picker path and/or Wayland portal path documented
-      for the machine under test
+- [ ] Receipt: X11 host picker path and/or Wayland portal path on #44

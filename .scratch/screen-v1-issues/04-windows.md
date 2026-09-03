@@ -7,14 +7,17 @@ path (WGC) with optional WASAPI loopback.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** in progress (PR #39). GDI BitBlt + Share frame + thumbs.
+WGC production and WASAPI loopback later.
 
-- [ ] Catalog from monitors + top-level windows; All-displays synthesized
-- [ ] Screen previews via DWM/PrintWindow, not WGC
-- [ ] Share frame overlay; suppress OS capture border where allowed
-- [ ] Production: WGC CreateForMonitor / CreateForWindow; stitch
-      All-displays
-- [ ] Exclude host Flutter windows from display / All-displays capture
-- [ ] Cursor default on; WASAPI loopback for includeSystemAudio
-- [ ] Physical receipt: thumbs without yellow borders, Share frame,
-      camera+screen together, stop, cycles without leaking capture
+- [x] Catalog from monitors + top-level windows; All-displays synthesized
+- [x] Screen previews via GDI (not WGC; no yellow border on every window)
+- [x] Share frame overlay; excluded from BitBlt
+- [ ] Production: WGC CreateForMonitor / CreateForWindow (v1 ships GDI)
+- [x] Exclude host Flutter windows from display / All-displays capture
+- [x] Cursor default on
+- [ ] WASAPI loopback for includeSystemAudio
+- [x] Automated receipt: JamieDesktop `native_screen_test` `skipped=false`
+      (20 cycles, camera+screen, 1920×1080@5)
+- [ ] Physical note: picker thumbs without yellow WGC borders (GDI path;
+      still record on #44)

@@ -6,7 +6,8 @@ system audio into the mic Capture stream.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** not started. Camera WebRTC Send track shipped in #48.
+Screen send is still a second local Production path to attach.
 
 - [ ] Fake Transport observes camera Video surface and screen Video
       surface independently

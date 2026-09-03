@@ -7,11 +7,12 @@ required. AudioPlaybackCapture for Include sound.
 
 **Blocked by:** 02 — Session and platform-interface screen contracts
 
-**Status:** not started
+**Status:** in progress (PR #39). MediaProjection + FGS shipped.
+AudioPlaybackCapture and SM receipt later.
 
-- [ ] Catalog is one system-picker source
-- [ ] Consent every session (token is single-use on API 34+)
-- [ ] Production VirtualDisplay → Texture; FLAG_SECURE is black frames
+- [x] Catalog is one system-picker source
+- [x] Consent every start (MediaProjection intent)
+- [x] Production VirtualDisplay → Texture
 - [ ] AudioPlaybackCapture when includeSystemAudio is on
-- [ ] User stop from the status chip is source-gone, not Session stop
-- [ ] Physical receipt: SM-class device, consent sheet, send, stop
+- [x] User stop from the system UI is source-gone (`MediaProjection.Callback`)
+- [ ] Physical receipt: SM-class device, consent sheet, send, stop (#44)
