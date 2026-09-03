@@ -6,6 +6,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 import 'src/audio_backend.dart';
 import 'src/macos_voice_processing_policy.dart';
+import 'src/screen_channel.dart';
 
 /// macOS adapter.
 ///
@@ -17,12 +18,16 @@ final class FlutterAiCommunicationsMacos
   /// Creates the macOS adapter.
   ///
   /// When [backend] is omitted, production MethodChannel / native duplex is
-  /// used. Tests inject a fake [AudioBackend].
-  FlutterAiCommunicationsMacos({AudioBackend? backend})
-    : _backend = backend,
-      _channel = backend == null
-          ? MethodChannelCommunicationsPlatform(platformName: 'macos')
-          : null {
+  /// used. Tests inject a fake [AudioBackend]. Screen uses a MethodChannel
+  /// graph; tests inject [screen].
+  FlutterAiCommunicationsMacos({
+    AudioBackend? backend,
+    MethodChannelScreenBackend? screen,
+  }) : _backend = backend,
+       _channel = backend == null
+           ? MethodChannelCommunicationsPlatform(platformName: 'macos')
+           : null,
+       _screen = screen ?? MethodChannelScreenBackend() {
     assert(
       MacosVoiceProcessingPolicy.usesSingleDuplexEngine,
       'macOS must keep capture and playback on one duplex engine',
@@ -36,6 +41,7 @@ final class FlutterAiCommunicationsMacos
 
   final AudioBackend? _backend;
   final MethodChannelCommunicationsPlatform? _channel;
+  final MethodChannelScreenBackend _screen;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -269,4 +275,125 @@ final class FlutterAiCommunicationsMacos
     }
     return const Stream.empty();
   }
+
+  @override
+  Future<List<CameraEndpoint>> enumerateCameras() async {
+    return _channel?.enumerateCameras() ?? const [];
+  }
+
+  @override
+  Future<CameraPermission> requestCameraPermission() async {
+    return _channel?.requestCameraPermission() ?? CameraPermission.denied;
+  }
+
+  @override
+  Future<NativeGraphStart> startCameraNative({
+    String? cameraId,
+    VideoFormat? videoFormat,
+    bool enabled = true,
+    bool muted = false,
+  }) async {
+    return _channel?.startCameraNative(
+          cameraId: cameraId,
+          videoFormat: videoFormat,
+          enabled: enabled,
+          muted: muted,
+        ) ??
+        NativeGraphStart.unavailable;
+  }
+
+  @override
+  Future<void> stopCameraNative() async {
+    await _channel?.stopCameraNative();
+  }
+
+  @override
+  Future<void> selectCameraNative(String cameraId) async {
+    await _channel?.selectCameraNative(cameraId);
+  }
+
+  @override
+  Future<void> setCameraEnabledNative(bool enabled) async {
+    await _channel?.setCameraEnabledNative(enabled);
+  }
+
+  @override
+  Future<void> setMuteVideoNative(bool muted) async {
+    await _channel?.setMuteVideoNative(muted);
+  }
+
+  @override
+  VideoSurface? get lastVideoSurface => _channel?.lastVideoSurface;
+
+  @override
+  VideoFormat? get lastNativeVideoFormat => _channel?.lastNativeVideoFormat;
+
+  @override
+  int get lastCameraFrameCount => _channel?.lastCameraFrameCount ?? 0;
+
+  @override
+  int get lastCameraLiveFrames => _channel?.lastCameraLiveFrames ?? 0;
+
+  @override
+  Future<void> pollCameraNative() async {
+    await _channel?.pollCameraNative();
+  }
+
+  @override
+  Future<List<ScreenSource>> enumerateScreenSources() => _screen.enumerate();
+
+  @override
+  Future<ScreenPermission> requestScreenPermission() =>
+      _screen.requestPermission();
+
+  @override
+  Future<NativeGraphStart> beginScreenPickNative() => _screen.beginPick();
+
+  @override
+  Future<void> endScreenPickNative() => _screen.endPick();
+
+  @override
+  Future<void> indicateScreenSourceNative(String? sourceId) =>
+      _screen.indicate(sourceId);
+
+  @override
+  VideoSurface? screenPreviewNative(String sourceId) =>
+      _screen.previews[sourceId];
+
+  @override
+  Future<NativeGraphStart> startScreenShareNative({
+    required String sourceId,
+    bool includeSystemAudio = false,
+    bool cursor = true,
+    bool motion = false,
+  }) {
+    return _screen.start(
+      sourceId: sourceId,
+      includeSystemAudio: includeSystemAudio,
+      cursor: cursor,
+      motion: motion,
+    );
+  }
+
+  @override
+  Future<void> stopScreenShareNative() => _screen.stop();
+
+  @override
+  Future<bool> setIncludeSystemAudioNative(bool enabled) =>
+      _screen.setIncludeSystemAudio(enabled);
+
+  @override
+  Future<void> setScreenMotionNative(bool motion) => _screen.setMotion(motion);
+
+  @override
+  Future<void> setScreenCursorNative(bool cursor) => _screen.setCursor(cursor);
+
+  @override
+  VideoSurface? get lastScreenSurface => _screen.lastSurface;
+
+  @override
+  VideoFormat? get lastScreenNativeFormat => _screen.lastFormat;
+
+  @override
+  String? get lastScreenUnavailableReason => _screen.lastUnavailableReason;
 }
