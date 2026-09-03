@@ -6,7 +6,8 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
-Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#46) and 12 (#48) on `main`.
+Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#45 / PR #46) and 12
+(#47 / PR #48) on `main`.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
@@ -14,7 +15,7 @@ Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#46) and 12 (#48) on `main`
 | 01 | Shared video types | 00 | done |
 | 02 | Session and platform-interface video contracts | 01 | done |
 | 03 | Lobby Session | 02 | done |
-| 04 | Video sink provider seam | 02 | done (#45) |
+| 04 | Video sink provider seam | 02 | done (#45 / PR #46) |
 | 05 | iOS camera graph | 02 | done (sim receipt) |
 | 06 | Android camera graph | 02 | done (SM A176U1 receipt) |
 | 07 | macOS camera graph | 02 | done (graph + audio Orchestration) |
@@ -23,7 +24,7 @@ Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#46) and 12 (#48) on `main`
 | 09 | Web camera graph | 02 | done (lobby via flutter-skill) |
 | 10 | Video processors on iOS and Android | 03, 05, 06 | deferred |
 | 11 | Video processors on macOS, Windows, and Web | 07, 08, 09, 10 | deferred |
-| 12 | flutter_webrtc sink package | 04 and one native graph | done (#47) |
+| 12 | flutter_webrtc sink package | 04 and one native graph | done (#47 / PR #48) |
 | 13 | Example lobby and in-session AV harness | 03 and one native graph | done |
 | 14 | Host guide accuracy pass | 13 | in progress |
 
