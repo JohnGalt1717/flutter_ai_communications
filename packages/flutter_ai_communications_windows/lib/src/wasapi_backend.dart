@@ -43,6 +43,18 @@ abstract class WasapiBackend {
   /// Raw capture frames, including silence on restart.
   Stream<Uint8List> get capture;
 
+  /// Starts WASAPI loopback on the default render Endpoint.
+  ///
+  /// Include sound for screen send. Never mixed into [capture]. Mute does
+  /// not stop this graph. Returns false when loopback cannot start.
+  bool startLoopback() => false;
+
+  /// Tears down loopback. Mic capture is unchanged.
+  void stopLoopback() {}
+
+  /// Loopback PCM, independent of [capture]. Empty when unused.
+  Stream<Uint8List> get loopback => const Stream.empty();
+
   /// Releases COM objects.
   void dispose();
 }

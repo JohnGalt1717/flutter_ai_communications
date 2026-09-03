@@ -12,6 +12,8 @@
 #include <flutter/encodable_value.h>
 #include <flutter/texture_registrar.h>
 
+#include "wgc_capture.h"
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -65,7 +67,8 @@ class ScreenGraph {
   void EnsureSendTexture();
   void CaptureLoop();
   void CaptureSourceLocked(const Source& source, int out_w, int out_h,
-                           std::vector<uint8_t>* dest);
+                           std::vector<uint8_t>* dest, bool cursor);
+  bool StartWgcLocked(const Source& source, bool cursor);
   void ShowFrame(const RECT& bounds);
   void HideFrame();
   static LRESULT CALLBACK FrameWndProc(HWND hwnd, UINT msg, WPARAM wparam,
@@ -91,6 +94,7 @@ class ScreenGraph {
   std::atomic<bool> motion_{false};
   std::thread capture_thread_;
   std::string send_id_;
+  WgcCapture wgc_;
 };
 
 #endif  // FLUTTER_PLUGIN_WINDOWS_SCREEN_GRAPH_H_

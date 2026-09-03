@@ -8,6 +8,10 @@
 #include <cmath>
 #include <cstring>
 
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
+
 namespace {
 
 std::string WideToUtf8(const wchar_t* wide) {
@@ -81,8 +85,35 @@ void FillExcludedWindow(HDC mem, HWND hwnd, const RECT& src_rect, int src_w,
   DeleteObject(brush);
 }
 
+void DrawCursorOnto(HDC mem, const RECT& src_rect, int src_w, int src_h,
+                    int out_w, int out_h) {
+  CURSORINFO info{};
+  info.cbSize = sizeof(info);
+  if (!GetCursorInfo(&info) || (info.flags & CURSOR_SHOWING) == 0) {
+    return;
+  }
+  ICONINFO icon{};
+  if (!GetIconInfo(info.hCursor, &icon)) {
+    return;
+  }
+  const int hot_x = static_cast<int>(icon.xHotspot);
+  const int hot_y = static_cast<int>(icon.yHotspot);
+  if (icon.hbmMask != nullptr) {
+    DeleteObject(icon.hbmMask);
+  }
+  if (icon.hbmColor != nullptr) {
+    DeleteObject(icon.hbmColor);
+  }
+  const int x =
+      (info.ptScreenPos.x - src_rect.left - hot_x) * out_w / MaxInt(1, src_w);
+  const int y =
+      (info.ptScreenPos.y - src_rect.top - hot_y) * out_h / MaxInt(1, src_h);
+  DrawIconEx(mem, x, y, info.hCursor, 0, 0, 0, nullptr, DI_NORMAL);
+}
+
 void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
-                   std::vector<uint8_t>* dest, HWND exclude_a, HWND exclude_b) {
+                   std::vector<uint8_t>* dest, HWND exclude_a, HWND exclude_b,
+                   bool cursor) {
   if (out_w <= 0 || out_h <= 0) {
     dest->clear();
     return;
@@ -116,6 +147,9 @@ void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
              src_h, SRCCOPY);
   FillExcludedWindow(mem, exclude_a, src_rect, src_w, src_h, out_w, out_h);
   FillExcludedWindow(mem, exclude_b, src_rect, src_w, src_h, out_w, out_h);
+  if (cursor) {
+    DrawCursorOnto(mem, src_rect, src_w, src_h, out_w, out_h);
+  }
   auto* bgra = static_cast<uint8_t*>(bits);
   for (int i = 0; i < out_w * out_h; i++) {
     (*dest)[static_cast<size_t>(i) * 4 + 0] = bgra[static_cast<size_t>(i) * 4 + 2];
@@ -131,7 +165,11 @@ void BltRectToRgba(HDC src, const RECT& src_rect, int out_w, int out_h,
 }  // namespace
 
 ScreenGraph::ScreenGraph(flutter::TextureRegistrar* textures, HWND flutter_window)
-    : textures_(textures), flutter_window_(flutter_window) {}
+    : textures_(textures), flutter_window_(flutter_window) {
+  if (flutter_window_ != nullptr) {
+    SetWindowDisplayAffinity(flutter_window_, WDA_EXCLUDEFROMCAPTURE);
+  }
+}
 
 ScreenGraph::~ScreenGraph() {
   Stop();
@@ -276,7 +314,7 @@ flutter::EncodableMap ScreenGraph::BeginPick() {
             }));
     preview->texture_id = textures_->RegisterTexture(preview->texture.get());
     CaptureSourceLocked(source, preview->width, preview->height,
-                        &preview->pixels);
+                        &preview->pixels, false);
     textures_->MarkTextureFrameAvailable(preview->texture_id);
     previews[flutter::EncodableValue(source.id)] =
         flutter::EncodableValue(static_cast<int32_t>(preview->texture_id));
@@ -361,6 +399,7 @@ flutter::EncodableMap ScreenGraph::Start(const std::string& source_id,
   }
   EnsureSendTexture();
   ShowFrame(found->bounds);
+  StartWgcLocked(*found, cursor);
   running_ = true;
   capture_thread_ = std::thread([this] { CaptureLoop(); });
   result[flutter::EncodableValue("status")] = flutter::EncodableValue("started");
@@ -382,6 +421,7 @@ void ScreenGraph::Stop() {
   if (capture_thread_.joinable()) {
     capture_thread_.join();
   }
+  wgc_.Stop();
   HideFrame();
   if (textures_ != nullptr && send_texture_id_ >= 0) {
     textures_->UnregisterTexture(send_texture_id_);
@@ -398,7 +438,10 @@ bool ScreenGraph::SetIncludeSystemAudio(bool enabled) {
 
 void ScreenGraph::SetMotion(bool motion) { motion_ = motion; }
 
-void ScreenGraph::SetCursor(bool cursor) { cursor_ = cursor; }
+void ScreenGraph::SetCursor(bool cursor) {
+  cursor_ = cursor;
+  wgc_.SetCursor(cursor);
+}
 
 void ScreenGraph::CaptureLoop() {
   while (running_) {
@@ -420,9 +463,13 @@ void ScreenGraph::CaptureLoop() {
       }
     }
     std::vector<uint8_t> frame;
+    const bool cursor = cursor_;
+    if (!wgc_.CopyLatest(out_w, out_h, &frame)) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      CaptureSourceLocked(snapshot, out_w, out_h, &frame, cursor);
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      CaptureSourceLocked(snapshot, out_w, out_h, &frame);
       send_front_.swap(frame);
     }
     if (textures_ != nullptr && send_texture_id_ >= 0) {
@@ -434,12 +481,31 @@ void ScreenGraph::CaptureLoop() {
 }
 
 void ScreenGraph::CaptureSourceLocked(const Source& source, int out_w, int out_h,
-                                      std::vector<uint8_t>* dest) {
+                                      std::vector<uint8_t>* dest, bool cursor) {
   HDC screen = GetDC(nullptr);
   RECT bounds = source.bounds;
   HWND exclude = source.kind == "window" ? nullptr : flutter_window_;
-  BltRectToRgba(screen, bounds, out_w, out_h, dest, exclude, frame_window_);
+  BltRectToRgba(screen, bounds, out_w, out_h, dest, exclude, frame_window_,
+                cursor);
   ReleaseDC(nullptr, screen);
+}
+
+bool ScreenGraph::StartWgcLocked(const Source& source, bool cursor) {
+  if (source.kind == "window") {
+    return wgc_.StartWindow(source.hwnd, cursor);
+  }
+  if (source.kind == "allDisplays") {
+    std::vector<HMONITOR> monitors;
+    std::vector<RECT> bounds;
+    for (const auto& item : sources_) {
+      if (item.kind == "display" && item.monitor != nullptr) {
+        monitors.push_back(item.monitor);
+        bounds.push_back(item.bounds);
+      }
+    }
+    return wgc_.StartDisplays(monitors, bounds, source.bounds, cursor);
+  }
+  return wgc_.StartMonitor(source.monitor, cursor);
 }
 
 void ScreenGraph::ShowFrame(const RECT& bounds) {
@@ -463,6 +529,7 @@ void ScreenGraph::ShowFrame(const RECT& bounds) {
         bounds.bottom - bounds.top, nullptr, nullptr, GetModuleHandle(nullptr),
         this);
     SetLayeredWindowAttributes(frame_window_, 0, 255, LWA_ALPHA);
+    SetWindowDisplayAffinity(frame_window_, WDA_EXCLUDEFROMCAPTURE);
   } else {
     SetWindowPos(frame_window_, HWND_TOPMOST, bounds.left, bounds.top,
                  bounds.right - bounds.left, bounds.bottom - bounds.top,

@@ -1,9 +1,8 @@
 # Screen Capture and Send Plan
 
 **Status (2026-09-03):** v1 Session API and native graphs shipped on
-Windows, Linux X11, Android, and web. Squash-merged as PR #39 / `588618d`.
-iOS/macOS stay fail-closed ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)).
-Receipts on remaining heads:
+Windows, Linux X11, Android, web, macOS, and iOS. Squash-merged as PR #39
+/ `588618d`. Apple graphs on #43. Receipts on remaining heads:
 [#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44).
 **Tickets:** `.scratch/screen-v1-issues/`.
 **Host narrative:** `docs/host-screen-share-narrative.md`.
@@ -37,11 +36,11 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 
 | Platform | Shipped | Remaining |
 | --- | --- | --- |
-| Windows | GDI catalog, thumbs, Share frame, send, exclude-self | WGC production, WASAPI Include sound, WGC-border receipt note |
-| Linux X11 | catalog + send | thumbs, Share frame, Pulse/PipeWire loopback, receipt |
-| Linux Wayland | system-picker catalog | portal ScreenCast + PipeWire |
+| Windows | GDI thumbs + Share frame; WGC production; WASAPI FFI Include sound | WGC-border receipt note on #44 |
+| Linux X11 | catalog, send, thumbs, Share frame | Pulse/PipeWire loopback, receipt |
+| Linux Wayland | system-picker catalog + portal ScreenCast | PipeWire frame pull when libpipewire is present; receipt |
 | Web | system-picker + `getDisplayMedia` | Chrome/Edge receipt (#44) |
-| Android | MediaProjection Texture | AudioPlaybackCapture, SM-class receipt (#44) |
+| Android | MediaProjection Texture | AudioPlaybackCapture ([#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51)), SM-class receipt (#44) |
 | macOS | ScreenCaptureKit catalog, thumbs, Share frame, send | `native_screen_test` `skipped=false` |
 | iOS | system-picker + ReplayKit Broadcast | physical Broadcast receipt (#44) |
 
@@ -214,14 +213,14 @@ does not silence system audio.
 | 01 | Shared screen types | 00 | done |
 | 02 | Session and platform-interface contracts | 01 | done |
 | 03 | Fake Screen pick, indicate, catalog stream | 02 | done |
-| 04 | Windows screen graph | 02 | in progress (GDI; WGC/WASAPI later) |
-| 05 | macOS screen graph | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
-| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 send; thumbs/portal later) |
+| 04 | Windows screen graph | 02 | in progress (WGC + WASAPI FFI; GDI thumbs) |
+| 05 | macOS screen graph | 02 | done (`feat/apple-screen-send-43`; `native_screen_test` `skipped=false`) |
+| 06 | Linux screen graph (X11 + Wayland) | 02 | in progress (X11 thumbs/Share frame + portal) |
 | 07 | Web getDisplayMedia | 02 | in progress (graph shipped; Chrome receipt on #44) |
-| 08 | Android MediaProjection | 02 | in progress (graph shipped; AudioPlaybackCapture + receipt later) |
-| 09 | iOS ReplayKit / Broadcast | 02 | not started ([#43](https://github.com/JohnGalt1717/flutter_ai_communications/issues/43)) |
+| 08 | Android MediaProjection | 02 | in progress (graph shipped; AudioPlaybackCapture [#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51)) |
+| 09 | iOS ReplayKit / Broadcast | 02 | graph on `feat/apple-screen-send-43`; physical Broadcast receipt still open |
 | 10 | Example in-session picker | 03 and one native graph | done |
-| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows automated receipt collected) |
+| 11 | Host narrative + Orchestration keys | 10 | in progress ([#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44); Windows + macOS `skipped=false`; Android `os-picker`) |
 | 12 | Transport second send path | 02 | not started (camera WebRTC Send track is #48; screen path still open) |
 
-Frontier: 05/09 (#43) need a Mac. 04/06 remaining native gaps. 11 receipts on #44. 12 attaches screen send as a second Send track on the WebRTC plugin.
+Frontier: 04/06 remaining native gaps. 09 physical iOS receipt. 11 receipts on #44. 12 attaches screen send as a second Send track on the WebRTC plugin.

@@ -122,7 +122,11 @@ static void HandleMethodCall(FlMethodChannel* channel,
     g_autoptr(FlValue) value = self->screen->Start(
         ReadString(args, "sourceId"),
         ReadBool(args, "includeSystemAudio", false),
-        ReadBool(args, "cursor", true), ReadBool(args, "motion", false));
+        ReadBool(args, "cursor", true), ReadBool(args, "motion", false),
+        method_call);
+    if (value == nullptr) {
+      return;
+    }
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
   } else if (strcmp(method, "stopScreenShareNative") == 0) {
     self->screen->Stop();
