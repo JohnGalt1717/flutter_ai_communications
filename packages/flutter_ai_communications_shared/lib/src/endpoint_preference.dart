@@ -197,8 +197,8 @@ final class PreferenceResolver {
       }
       return PreferenceResolution(
         desired: PairingSnapshot(
-          captureId: pair.capture?.id,
-          renderId: pair.render?.id,
+          captureId: requireCapture ? pair.capture?.id : null,
+          renderId: requireRender ? pair.render?.id : null,
         ),
         preferenceControlled: true,
         unresolvedIds: unresolved,
@@ -244,11 +244,11 @@ final class PreferenceResolver {
         renderId = endpoint.id;
         renderPairId = endpoint.pairId;
       }
-      if (captureId == null && pair?.capture != null) {
+      if (requireCapture && captureId == null && pair?.capture != null) {
         captureId = pair!.capture!.id;
         capturePairId = pair.capture!.pairId;
       }
-      if (renderId == null && pair?.render != null) {
+      if (requireRender && renderId == null && pair?.render != null) {
         renderId = pair!.render!.id;
         renderPairId = pair.render!.pairId;
       }
@@ -303,9 +303,13 @@ final class PreferenceResolver {
     var captureOverride = false;
     var renderOverride = false;
     if (capture != null && render == null) {
-      renderId = _pairer.pairFor(capture, catalog)?.render?.id;
+      if (requireRender) {
+        renderId = _pairer.pairFor(capture, catalog)?.render?.id;
+      }
     } else if (render != null && capture == null) {
-      captureId = _pairer.pairFor(render, catalog)?.capture?.id;
+      if (requireCapture) {
+        captureId = _pairer.pairFor(render, catalog)?.capture?.id;
+      }
     } else if (capture != null && render != null) {
       final mates = capture.pairId == render.pairId;
       captureOverride = !mates;

@@ -21,6 +21,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var voiceProcessingEnabled = false
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
+  private var captureTapInstalled = false
   private var textures: FlutterTextureRegistry?
   private let camera = IosCameraGraph()
 
@@ -165,6 +166,15 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func configureSession() throws {
     let session = AVAudioSession.sharedInstance()
+    if !IosGraphPolicy.wantsCapture(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId
+    ) {
+      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      try session.setPreferredSampleRate(24_000)
+      try session.setActive(true)
+      return
+    }
     var options: AVAudioSession.CategoryOptions = [.allowBluetooth, .allowBluetoothA2DP]
     if IosVoiceProcessingPolicy.sessionCategoryIncludesDefaultToSpeaker {
       options.insert(.defaultToSpeaker)
@@ -204,60 +214,80 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func startEngine() throws {
-    emitSilenceFrame()
+    let wantCapture = IosGraphPolicy.wantsCapture(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId
+    )
+    let wantPlayback = IosGraphPolicy.wantsPlayback(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId
+    )
+    if wantCapture {
+      emitSilenceFrame()
+    }
     teardownEngine(keepSessionActive: true)
     let next = AVAudioEngine()
-    let playerNode = AVAudioPlayerNode()
-    next.attach(playerNode)
     let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
     let inputFormat = next.inputNode.outputFormat(forBus: 0)
-    let playerFormat = try Self.makePlaybackFormat(
-      inputFormat: inputFormat,
-      mixerFormat: mixerFormat
-    )
-    next.connect(playerNode, to: next.mainMixerNode, format: playerFormat)
+    var playerNode: AVAudioPlayerNode?
+    var playerFormat: AVAudioFormat?
+    if wantPlayback {
+      let node = AVAudioPlayerNode()
+      next.attach(node)
+      let format = try Self.makePlaybackFormat(
+        inputFormat: inputFormat,
+        mixerFormat: mixerFormat
+      )
+      next.connect(node, to: next.mainMixerNode, format: format)
+      playerNode = node
+      playerFormat = format
+    }
     if IosVoiceProcessingPolicy.mixerMustConnectToOutputOnSameEngine {
       next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
     }
 
-    let enableVoiceProcessing = IosVoiceProcessingPolicy.shouldEnableVoiceProcessing(
-      noiseCancelling: noiseCancelling,
-      routeClass: selectedRouteClass()
-    )
-    if enableVoiceProcessing {
-      do {
-        try next.inputNode.setVoiceProcessingEnabled(true)
-        if next.inputNode.isVoiceProcessingBypassed {
-          next.inputNode.isVoiceProcessingBypassed = false
+    if wantCapture {
+      let enableVoiceProcessing = IosVoiceProcessingPolicy.shouldEnableVoiceProcessing(
+        noiseCancelling: noiseCancelling,
+        routeClass: selectedRouteClass()
+      )
+      if enableVoiceProcessing {
+        do {
+          try next.inputNode.setVoiceProcessingEnabled(true)
+          if next.inputNode.isVoiceProcessingBypassed {
+            next.inputNode.isVoiceProcessingBypassed = false
+          }
+          voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
+        } catch {
+          voiceProcessingEnabled = false
         }
-        voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
-      } catch {
+      } else if next.inputNode.isVoiceProcessingEnabled {
+        try? next.inputNode.setVoiceProcessingEnabled(false)
+        voiceProcessingEnabled = false
+      } else {
         voiceProcessingEnabled = false
       }
-    } else if next.inputNode.isVoiceProcessingEnabled {
-      try? next.inputNode.setVoiceProcessingEnabled(false)
-      voiceProcessingEnabled = false
-    } else {
-      voiceProcessingEnabled = false
-    }
-    if IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
-      applyRoute()
+      if IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
+        applyRoute()
+      }
+
+      let processedInput = next.inputNode.outputFormat(forBus: 0)
+      let tapChannels = IosVoiceProcessingPolicy.captureTapChannelCount(
+        voiceProcessingEnabled: voiceProcessingEnabled,
+        inputNodeChannels: Int(processedInput.channelCount)
+      )
+      let tapFormat = captureTapFormat(
+        inputFormat: processedInput,
+        channels: tapChannels
+      )
+      next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
+        self?.emitCapture(buffer)
+      }
+      captureTapInstalled = true
     }
 
-    let processedInput = next.inputNode.outputFormat(forBus: 0)
-    let tapChannels = IosVoiceProcessingPolicy.captureTapChannelCount(
-      voiceProcessingEnabled: voiceProcessingEnabled,
-      inputNodeChannels: Int(processedInput.channelCount)
-    )
-    let tapFormat = captureTapFormat(
-      inputFormat: processedInput,
-      channels: tapChannels
-    )
-    next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-      self?.emitCapture(buffer)
-    }
     try next.start()
-    if IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
+    if wantCapture, IosVoiceProcessingPolicy.mustReapplyRouteAfterVoiceProcessing {
       applyRoute()
       scheduleSpeakerReassert()
     }
@@ -265,7 +295,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     player = playerNode
     playbackFormat = playerFormat
     queuedPlaybackFrames = 0
-    playerNode.play()
+    playerNode?.play()
   }
 
   private func teardownEngine(keepSessionActive: Bool) {
@@ -275,13 +305,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       {
         try? engine.inputNode.setVoiceProcessingEnabled(false)
       }
-      engine.inputNode.removeTap(onBus: 0)
+      if captureTapInstalled {
+        engine.inputNode.removeTap(onBus: 0)
+      }
       player?.stop()
       engine.stop()
     }
     engine = nil
     player = nil
     playbackFormat = nil
+    captureTapInstalled = false
     voiceProcessingEnabled = false
     if !keepSessionActive {
       try? AVAudioSession.sharedInstance().setActive(
@@ -450,13 +483,26 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func startedFormatMap() -> [String: Any] {
-    let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
-    let playRate = playbackFormat?.sampleRate ?? captureRate
-    return [
-      "status": "started",
-      "nativeCaptureFormat": IosGraphPolicy.nativeFormatMap(sampleRate: captureRate),
-      "nativePlaybackFormat": IosGraphPolicy.nativeFormatMap(sampleRate: playRate),
-    ]
+    var map: [String: Any] = ["status": "started"]
+    let wantCapture = IosGraphPolicy.wantsCapture(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId
+    )
+    let wantPlayback = IosGraphPolicy.wantsPlayback(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId
+    )
+    if wantCapture {
+      let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
+      map["nativeCaptureFormat"] = IosGraphPolicy.nativeFormatMap(sampleRate: captureRate)
+    }
+    if wantPlayback {
+      let playRate = playbackFormat?.sampleRate
+        ?? engine?.inputNode.outputFormat(forBus: 0).sampleRate
+        ?? 24_000
+      map["nativePlaybackFormat"] = IosGraphPolicy.nativeFormatMap(sampleRate: playRate)
+    }
+    return map
   }
 
   private func applyRoute() {

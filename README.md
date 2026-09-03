@@ -1,12 +1,10 @@
 # flutter_ai_communications
 
-A Flutter **Audio manager** for live duplex communications — the audio stack you would need to build a Teams- or Zoom-class client, starting with AI voice.
+A Flutter **Communications manager** for live duplex communications — the stack you would need to build a Teams- or Zoom-class client, starting with AI voice.
 
-The host app owns the Transport (SignalR, WebRTC, or anything else), device-order preference, and product UI. This package owns capture, render, pairing, sound floor, barge-in, mute, pause, and coverage events.
+The host app owns the Transport (SignalR, WebRTC, or anything else), Endpoint-preference persistence, and product UI. This package owns capture, render, pairing, sound floor, barge-in, mute, pause, and coverage events. Construct **one** Communications manager for the application lifetime (not per page). At most one live Session.
 
 **v1 platforms:** iOS, Android, Web, macOS, Windows, Linux.
-**Later still:** camera.
-**Out of scope:** device-priority lists (apps implement that).
 
 This repository is being built from a grilled spec ([#1](https://github.com/JohnGalt1717/flutter_ai_communications/issues/1)). The public API below is the contract.
 
@@ -45,11 +43,17 @@ The federated iOS / Android / Web / macOS / Windows / Linux implementations are 
 
 ## Quick start
 
+Application-scoped construction — create the manager once in `main()` / DI, not in a page `build()`:
+
 ```dart
-final manager = CommunicationsManager(
-  coverageSource: myCoverageSource, // optional; default reports airplane / path death
-  logger: Logger('comms'),          // optional; attach to ISpect like Scribe does
-);
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  final manager = CommunicationsManager(
+    coverageSource: myCoverageSource, // optional; default reports airplane / path death
+    logger: Logger('comms'),          // optional; attach to ISpect like Scribe does
+  );
+  runApp(MyApp(manager: manager));
+}
 
 final result = await manager.start(
   captureFormat: AudioFormat.pcm16le(sampleRate: 24000),

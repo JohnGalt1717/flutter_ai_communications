@@ -56,6 +56,18 @@ final class WebEndpointPolicy {
   /// Creates the policy.
   const WebEndpointPolicy();
 
+  static String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
+
+  /// Capture-only omits render. Both missing keeps duplex.
+  bool wantsCapture(String? captureId, String? renderId) {
+    return _presentId(captureId) != null || _presentId(renderId) == null;
+  }
+
+  /// Playback-only omits capture. Both missing keeps duplex.
+  bool wantsPlayback(String? captureId, String? renderId) {
+    return _presentId(renderId) != null || _presentId(captureId) == null;
+  }
+
   /// Builds getUserMedia constraints for [deviceId].
   WebCapturePlan capturePlan(String? deviceId) {
     final id = switch (deviceId) {

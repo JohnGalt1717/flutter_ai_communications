@@ -53,6 +53,19 @@ class AndroidCapturePolicyTest {
     }
 
     @Test
+    fun captureOnlyDoesNotWantPlayback() {
+        assertTrue(AndroidCapturePolicy.wantsCapture("handset-in", null))
+        assertFalse(AndroidCapturePolicy.wantsPlayback("handset-in", null))
+    }
+
+    @Test
+    fun playbackOnlyDoesNotWantCapture() {
+        assertFalse(AndroidCapturePolicy.wantsCapture(null, "speaker-out"))
+        assertTrue(AndroidCapturePolicy.wantsPlayback(null, "speaker-out"))
+        assertFalse(AndroidCapturePolicy.wantsCapture("", "speaker-out"))
+    }
+
+    @Test
     fun requestedSampleRateReadsFormatMap() {
         assertEquals(
             16_000,

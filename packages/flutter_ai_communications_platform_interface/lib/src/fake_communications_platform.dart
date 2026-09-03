@@ -248,12 +248,18 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     }
     _requestedCaptureFormat = captureFormat;
     _requestedPlaybackFormat = playbackFormat;
-    selectedCaptureId =
-        captureId ??
-        catalog.where((endpoint) => endpoint.isCapture).firstOrNull?.id;
-    selectedRenderId =
-        renderId ??
-        catalog.where((endpoint) => !endpoint.isCapture).firstOrNull?.id;
+    final capture = _presentId(captureId);
+    final render = _presentId(renderId);
+    final wantCapture = capture != null || render == null;
+    final wantRender = render != null || capture == null;
+    selectedCaptureId = wantCapture
+        ? capture ??
+              catalog.where((endpoint) => endpoint.isCapture).firstOrNull?.id
+        : null;
+    selectedRenderId = wantRender
+        ? render ??
+              catalog.where((endpoint) => !endpoint.isCapture).firstOrNull?.id
+        : null;
     _lastNativeFormats = _formatsFor(
       captureId: selectedCaptureId,
       renderId: selectedRenderId,
@@ -344,16 +350,19 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
         _requestedCaptureFormat ?? AudioTranscoder.defaultEdge;
     final requestedPlayback =
         _requestedPlaybackFormat ?? AudioTranscoder.defaultEdge;
-    var capture =
-        nativeCaptureByEndpointId[captureId] ??
-        nativeCaptureFormat ??
-        requestedCapture;
-    final playback =
-        nativePlaybackByEndpointId[renderId] ??
-        nativePlaybackFormat ??
-        requestedPlayback;
+    AudioFormat? capture = captureId == null
+        ? null
+        : nativeCaptureByEndpointId[captureId] ??
+              nativeCaptureFormat ??
+              requestedCapture;
+    AudioFormat? playback = renderId == null
+        ? null
+        : nativePlaybackByEndpointId[renderId] ??
+              nativePlaybackFormat ??
+              requestedPlayback;
     final rejected = <AudioFormat>[];
-    if (unsupportedCaptureRates.contains(requestedCapture.sampleRate)) {
+    if (capture != null &&
+        unsupportedCaptureRates.contains(requestedCapture.sampleRate)) {
       rejected.add(requestedCapture);
       if (unsupportedCaptureRates.contains(capture.sampleRate)) {
         capture = negotiator
@@ -367,9 +376,13 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     return NativeFormatReport(
       capture: capture,
       playback: playback,
-      failures: negotiator.failures(selected: capture, rejected: rejected),
+      failures: capture == null
+          ? const []
+          : negotiator.failures(selected: capture, rejected: rejected),
     );
   }
+
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
 
   void _maybeObserveApplied() {
     if (!observeOnApply) {

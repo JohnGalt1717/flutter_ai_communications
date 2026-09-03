@@ -20,6 +20,22 @@ public enum IosGraphPolicy {
         playerConnectionChannels > 0 ? playerConnectionChannels : 1
     }
 
+    /// Empty or missing id means that edge is not attached.
+    public static func presentId(_ id: String?) -> String? {
+        guard let id, !id.isEmpty else { return nil }
+        return id
+    }
+
+    /// Capture-only omits render. Both missing keeps duplex.
+    public static func wantsCapture(captureId: String?, renderId: String?) -> Bool {
+        presentId(captureId) != nil || presentId(renderId) == nil
+    }
+
+    /// Playback-only omits capture. Both missing keeps duplex.
+    public static func wantsPlayback(captureId: String?, renderId: String?) -> Bool {
+        presentId(renderId) != nil || presentId(captureId) == nil
+    }
+
     /// Native Format the engine actually opened. Not the requested edge Format.
     public static func nativeFormatMap(
         sampleRate: Double,

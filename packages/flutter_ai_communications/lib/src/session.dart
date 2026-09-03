@@ -628,6 +628,8 @@ final class Session {
     final adopted = report.withEdges(
       capture: captureFormat,
       playback: playbackFormat,
+      hasCapture: direction.hasCapture,
+      hasPlayback: direction.hasPlayback,
     );
     _captureTranscoder.reset();
     _playbackTranscoder.reset();
@@ -858,8 +860,8 @@ final class Session {
       _resetConvergence();
       _log(PipelineLog.applied, _routeFields(_applied, cause: cause));
       await _platform.selectEndpoints(
-        captureId: _applied.captureId,
-        renderId: _applied.renderId,
+        captureId: direction.hasCapture ? _applied.captureId : null,
+        renderId: direction.hasPlayback ? _applied.renderId : null,
       );
       _adoptNativeFormats(_platform.lastNativeFormats);
     }
@@ -1156,8 +1158,8 @@ final class Session {
       'maxAttempts': maxConvergenceAttempts,
     });
     await _platform.selectEndpoints(
-      captureId: _applied.captureId,
-      renderId: _applied.renderId,
+      captureId: direction.hasCapture ? _applied.captureId : null,
+      renderId: direction.hasPlayback ? _applied.renderId : null,
     );
     _adoptNativeFormats(_platform.lastNativeFormats);
     _publishStatus(_computeStatus());
@@ -1233,8 +1235,8 @@ final class Session {
     });
     try {
       final result = await _platform.resetNative(
-        captureId: _applied.captureId,
-        renderId: _applied.renderId,
+        captureId: direction.hasCapture ? _applied.captureId : null,
+        renderId: direction.hasPlayback ? _applied.renderId : null,
         captureFormat: captureFormat,
         playbackFormat: playbackFormat,
         noiseCancelling: preference.noiseCancelling,
