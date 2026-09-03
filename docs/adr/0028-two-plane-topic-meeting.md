@@ -1,9 +1,7 @@
-# Two planes for Topic meetings; FAC stays the media edge
+# Host owns meeting fabric; this library stays the media edge
 
-A live Conversation on an `ITopic` needs authoritative collaborative state and, optionally, real-time media. Those are different failure domains.
+Collaborative Topic state, WebTransport/QUIC meeting sessions, document bindings, and ICE signaling are host concerns. They must not live in this repository if the library is published independently of the host product.
 
-The data plane is the MinimalWebTransport frame already used for settlement I/O, with ALPN `fulcrum-meeting` and a WebSocket fallback. All Topic ops, chat, transcripts, and ICE signaling travel there. Datagrams stay fail closed.
+This library remains capture, render, catalogs, Production video path, and Video sinks. The host constructs PeerConnection and addTracks Send tracks (ADR-0018). A host may start a Communications Session only when that client enables mic, camera, or screen. Chat-only or document-only collaboration must not require a Session.
 
-The media plane is WebRTC into a media worker. `flutter_ai_communications` remains the Communications manager. `flutter_ai_meeting` is the host that ADR-0018 assumed: it constructs the PeerConnection, addTracks Send tracks, and owns signaling. Session types still have no PeerConnection.
-
-Rejected: putting document ops in Session, WebRTC data channels as the document bus, mesh-only multi-party media when a service must hear, Media-over-QUIC in v1, and SignalR RPC as the durable meeting protocol.
+Rejected: a `flutter_ai_meeting` package in this workspace, document ops on Session, WebRTC data channels as a document bus, and Media-over-QUIC inside this library.
