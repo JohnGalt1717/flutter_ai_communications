@@ -116,6 +116,43 @@ void main() {
     expect((call.arguments as Map)['noiseCancelling'], isFalse);
   });
 
+  test('startNative map reports Native Formats, not the requested edge', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'startNative') {
+        return {
+          'status': 'started',
+          'nativeCaptureFormat': {
+            'encoding': 'pcm16le',
+            'sampleRate': 48000,
+            'channels': 1,
+          },
+          'nativePlaybackFormat': {
+            'encoding': 'pcm16le',
+            'sampleRate': 44100,
+            'channels': 1,
+          },
+        };
+      }
+      return null;
+    });
+    expect(
+      await platform.startNative(
+        captureFormat: AudioFormat.pcm16le24k,
+        playbackFormat: AudioFormat.pcm16le24k,
+      ),
+      NativeGraphStart.started,
+    );
+    expect(
+      platform.lastNativeFormats.capture,
+      const AudioFormat.pcm16le(sampleRate: 48000),
+    );
+    expect(
+      platform.lastNativeFormats.playback,
+      const AudioFormat.pcm16le(sampleRate: 44100),
+    );
+  });
+
   test('isolation payload required maps to IsolationState.required', () async {
     await platform.dispose();
     const events = EventChannel('flutter_ai_communications/events');

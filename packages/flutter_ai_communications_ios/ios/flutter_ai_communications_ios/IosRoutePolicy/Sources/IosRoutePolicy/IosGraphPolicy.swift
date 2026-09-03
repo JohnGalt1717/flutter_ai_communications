@@ -19,4 +19,18 @@ public enum IosGraphPolicy {
     ) -> Int {
         playerConnectionChannels > 0 ? playerConnectionChannels : 1
     }
+
+    /// Native Format the engine actually opened. Not the requested edge Format.
+    public static func nativeFormatMap(
+        sampleRate: Double,
+        channels: Int = 1
+    ) -> [String: Any] {
+        let rate = sampleRate > 0 ? Int(sampleRate.rounded()) : 24_000
+        let ch = channels > 0 ? channels : 1
+        return [
+            "encoding": "pcm16le",
+            "sampleRate": rate,
+            "channels": ch,
+        ]
+    }
 }

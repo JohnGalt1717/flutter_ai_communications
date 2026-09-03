@@ -152,7 +152,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       emitIsolation()
       emitRoute()
       scheduleSpeakerReassert()
-      result("started")
+      result(startedFormatMap())
     } catch {
       result("failed")
     }
@@ -447,6 +447,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     emitRoute()
     emitIsolation()
     scheduleSpeakerReassert()
+  }
+
+  private func startedFormatMap() -> [String: Any] {
+    let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
+    let playRate = playbackFormat?.sampleRate ?? captureRate
+    return [
+      "status": "started",
+      "nativeCaptureFormat": IosGraphPolicy.nativeFormatMap(sampleRate: captureRate),
+      "nativePlaybackFormat": IosGraphPolicy.nativeFormatMap(sampleRate: playRate),
+    ]
   }
 
   private func applyRoute() {

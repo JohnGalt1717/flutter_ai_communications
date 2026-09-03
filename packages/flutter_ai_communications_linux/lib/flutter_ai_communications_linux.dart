@@ -47,6 +47,7 @@ final class FlutterAiCommunicationsLinux
     IsolationState.unavailable,
   );
   PairingSnapshot _observed = const PairingSnapshot();
+  NativeFormatReport _lastNativeFormats = const NativeFormatReport();
   Timer? _catalogWatch;
   var _catalogListeners = 0;
   var _running = false;
@@ -60,6 +61,9 @@ final class FlutterAiCommunicationsLinux
 
   @override
   PairingSnapshot get lastObservedRoute => _observed;
+
+  @override
+  NativeFormatReport get lastNativeFormats => _lastNativeFormats;
 
   @override
   Stream<OsRouteChange> get osRouteChanges => _routes.stream;
@@ -102,6 +106,10 @@ final class FlutterAiCommunicationsLinux
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
+      _lastNativeFormats = const NativeFormatReport(
+        capture: AudioFormat.pcm16le24k,
+        playback: AudioFormat.pcm16le24k,
+      );
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
       _ensureCatalogWatch();
@@ -109,6 +117,7 @@ final class FlutterAiCommunicationsLinux
       unawaited(_prepareBluetoothCatalog());
     } else {
       _running = false;
+      _lastNativeFormats = const NativeFormatReport();
       _emitObserved(force: true);
       _maybeStopCatalogWatch();
     }
@@ -120,6 +129,7 @@ final class FlutterAiCommunicationsLinux
     _running = false;
     _backend.stop();
     _observed = const PairingSnapshot();
+    _lastNativeFormats = const NativeFormatReport();
     _maybeStopCatalogWatch();
   }
 

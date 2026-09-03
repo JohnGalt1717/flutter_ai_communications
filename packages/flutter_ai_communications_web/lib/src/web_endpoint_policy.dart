@@ -1,3 +1,5 @@
+import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
+
 /// Capture constraint for a web Endpoint.
 final class WebCapturePlan {
   /// Creates a capture plan.
@@ -81,6 +83,12 @@ final class WebEndpointPolicy {
       );
     }
     return WebRenderPlan(sinkId: id);
+  }
+
+  /// Native Format at the AudioContext sample rate. PCM16 LE mono.
+  AudioFormat nativeFormat({required double sampleRate}) {
+    final rate = sampleRate > 0 ? sampleRate.round() : 24000;
+    return AudioFormat.pcm16le(sampleRate: rate);
   }
 
   /// Observed render is the sink the context actually opened, never the
