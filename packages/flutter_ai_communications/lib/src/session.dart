@@ -492,7 +492,7 @@ final class Session {
       _videoSinkTokens[sink] = token;
       _unawaitedNative(_platform.attachProductionVideoPathNative(token: token));
     }
-    sink.onVideoPath(_videoPathSnapshot());
+    _deliverVideoPath(sink, _videoPathSnapshot());
   }
 
   /// Detaches [sink]. Idempotent. Does not end the Session or replace
@@ -523,7 +523,15 @@ final class Session {
     }
     final snapshot = _videoPathSnapshot();
     for (final sink in List<VideoSink>.of(_videoSinks)) {
+      _deliverVideoPath(sink, snapshot);
+    }
+  }
+
+  void _deliverVideoPath(VideoSink sink, VideoPathSnapshot snapshot) {
+    try {
       sink.onVideoPath(snapshot);
+    } on Object catch (error, stack) {
+      _logger.warning(error, error, stack);
     }
   }
 

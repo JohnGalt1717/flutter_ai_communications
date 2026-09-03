@@ -143,6 +143,22 @@ void main() {
     expect(second.snapshots.last.muteVideo, isTrue);
   });
 
+  test(
+    'a throwing Video sink does not prevent other sinks from updating',
+    () async {
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      final throwing = _RecordingVideoSink();
+      final second = _RecordingVideoSink();
+      throwing.onNotify = (_) => throw StateError('sink');
+      session.attachVideoSink(throwing);
+      session.attachVideoSink(second);
+      await session.muteVideo();
+      expect(second.snapshots.last.muteVideo, isTrue);
+      expect(session.isStopped, isFalse);
+    },
+  );
+
   test('onVideoPath may detach during notify', () async {
     final session =
         ((await manager.start(cameraSend: true)) as StartReady).session;

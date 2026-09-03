@@ -69,8 +69,8 @@ Whatever moves media between Session edges and the network — a host-pumped PCM
 _Avoid_: websocket, hub, connection, PeerConnection (that lives inside a Transport plugin)
 
 **Transport plugin**:
-A companion package that binds Session edges to a wire protocol. First is WebRTC (it owns PeerConnection and RTP); later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It attaches as a Video sink; it is not itself that type.
-_Avoid_: Video sink (the Session attachment), Transport (the movement of media, not the package)
+A companion package that binds Session edges to a wire protocol. First is WebRTC (it owns PeerConnection and RTP); later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session; the plugin package is not the Video sink type.
+_Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package)
 
 **Format**:
 The encoding, sample rate, and channel layout of a Session edge — capture out or playback in. Capture and playback Formats may differ.
