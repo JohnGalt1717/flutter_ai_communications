@@ -27,4 +27,93 @@ void main() {
     expect(plan.unsupported?.path, 'AudioContext.sinkId');
     expect(plan.unsupported?.statusCode, 'unsupported');
   });
+
+  test('Observed render is the applied sink, never the requested id', () {
+    expect(
+      policy.observedRenderId(appliedSinkId: 'usb-out', requestedId: 'airpods-out'),
+      'usb-out',
+    );
+    expect(
+      policy.observedRenderId(appliedSinkId: null, requestedId: 'airpods-out'),
+      isNull,
+    );
+    expect(
+      policy.observedRenderId(appliedSinkId: '', requestedId: 'airpods-out'),
+      isNull,
+    );
+  });
+
+  test('unsupported sink leaves Observed render null', () {
+    expect(
+      policy.observedRenderId(
+        appliedSinkId: 'usb-out',
+        requestedId: 'usb-out',
+        unsupported: const WebSinkUnsupported(
+          path: 'AudioContext.sinkId',
+          statusCode: 'unsupported',
+        ),
+      ),
+      isNull,
+    );
+  });
+
+  test('first start opens a context for the Desired sink', () {
+    expect(
+      policy.sinkBind(
+        contextOpen: false,
+        appliedSinkId: null,
+        desiredSinkId: 'airpods-out',
+        stopping: false,
+      ),
+      WebSinkBind.open,
+    );
+  });
+
+  test('same applied sink keeps the live context', () {
+    expect(
+      policy.sinkBind(
+        contextOpen: true,
+        appliedSinkId: 'airpods-out',
+        desiredSinkId: 'airpods-out',
+        stopping: false,
+      ),
+      WebSinkBind.keep,
+    );
+  });
+
+  test('render pick replaces the context so the new sink is applied', () {
+    expect(
+      policy.sinkBind(
+        contextOpen: true,
+        appliedSinkId: 'airpods-out',
+        desiredSinkId: 'usb-out',
+        stopping: false,
+      ),
+      WebSinkBind.replace,
+    );
+  });
+
+  test('stop closes an open context', () {
+    expect(
+      policy.sinkBind(
+        contextOpen: true,
+        appliedSinkId: 'airpods-out',
+        desiredSinkId: 'airpods-out',
+        stopping: true,
+      ),
+      WebSinkBind.close,
+    );
+  });
+
+  test('a new Session after stop opens a fresh context', () {
+    expect(
+      policy.sinkBind(
+        contextOpen: false,
+        appliedSinkId: null,
+        desiredSinkId: 'airpods-out',
+        stopping: false,
+      ),
+      WebSinkBind.open,
+    );
+  });
 }
