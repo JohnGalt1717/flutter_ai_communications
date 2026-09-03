@@ -184,3 +184,41 @@ import Testing
         ) == "unavailable"
     )
 }
+
+@Test func speakerphoneHandsetPickDoesNotRebuildTheGraph() {
+    #expect(
+        IosVoiceProcessingPolicy.shouldRebuildGraph(
+            previousCaptureId: "speaker-in",
+            previousRenderId: "speaker-out",
+            nextCaptureId: "handset-in",
+            nextRenderId: "handset-out"
+        ) == false
+    )
+    #expect(
+        IosVoiceProcessingPolicy.shouldRebuildGraph(
+            previousCaptureId: "handset-in",
+            previousRenderId: "handset-out",
+            nextCaptureId: "speaker-in",
+            nextRenderId: "speaker-out"
+        ) == false
+    )
+}
+
+@Test func accessoryInputChangeMayRebuildTheGraph() {
+    #expect(
+        IosVoiceProcessingPolicy.shouldRebuildGraph(
+            previousCaptureId: "speaker-in",
+            previousRenderId: "speaker-out",
+            nextCaptureId: "airpods-in",
+            nextRenderId: "airpods-out"
+        )
+    )
+    #expect(
+        IosVoiceProcessingPolicy.shouldRebuildGraph(
+            previousCaptureId: "airpods-in",
+            previousRenderId: "airpods-out",
+            nextCaptureId: "speaker-in",
+            nextRenderId: "speaker-out"
+        )
+    )
+}

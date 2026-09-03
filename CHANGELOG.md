@@ -2,6 +2,7 @@
 
 ## 0.0.1
 
+* iOS speakerphone ↔ handset `selectEndpoints` applies the port override on the live graph and does not restart the engine. Accessory input changes may still rebuild.
 * Web render selection closes and reopens `AudioContext` so a live pick and the next Session apply the Desired sink. Observed render is the applied sink, never the requested id.
 * Federated Audio manager workspace with iOS, Android, Web, macOS, Windows, and Linux adapters.
 * Android adapter migrates to built-in Kotlin (AGP 9).
