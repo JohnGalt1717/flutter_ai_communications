@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'audio_format.dart';
@@ -6,12 +7,13 @@ import 'audio_format.dart';
 /// (PCM16 LE mono 48 kHz).
 ///
 /// Capture and playback Formats are independent; each edge is converted on its
-/// own. Linear interpolation is used for PCM resample — not a production SRC.
-/// G.711 is ITU-T µ-law / A-law with documented quantization loss.
-/// Opus is a typed seam: [UnsupportedError] until a codec is linked.
+/// own with one stateful converter. PCM rate conversion is a windowed-sinc
+/// resampler that keeps phase and history across chunks. G.711 is ITU-T µ-law /
+/// A-law with documented quantization loss. Opus is a typed seam:
+/// [UnsupportedError] until a codec is linked.
 final class AudioTranscoder {
-  /// Creates a transcoder.
-  const AudioTranscoder();
+  /// Creates a transcoder. Converter state is per instance.
+  AudioTranscoder();
 
   /// Internal working Format.
   static const AudioFormat working = AudioFormat.pcm16le(sampleRate: 48000);
@@ -19,46 +21,61 @@ final class AudioTranscoder {
   /// Default edge Format when the host omits one.
   static const AudioFormat defaultEdge = AudioFormat.pcm16le24k;
 
+  final Map<String, _RateConverter> _converters = {};
+
+  /// Drops converter state. Call when the Native Format on an edge changes.
+  void reset() => _converters.clear();
+
   /// [bytes] in [source] → working PCM16/48 kHz.
-  Uint8List toWorking(Uint8List bytes, AudioFormat source) {
-    _check(source);
-    return switch (source.encoding) {
-      AudioEncoding.pcm16le => _resamplePcm16(
-        bytes,
-        source.sampleRate,
-        working.sampleRate,
-      ),
-      AudioEncoding.pcmu => _g711ToWorking(bytes, _G711Law.muLaw),
-      AudioEncoding.pcma => _g711ToWorking(bytes, _G711Law.aLaw),
-      AudioEncoding.opus => throw UnsupportedError(
-        'Opus is not linked. Attach an OpusCodec before using audio/opus.',
-      ),
-    };
-  }
+  ///
+  /// When [end] is true, remaining filter delay is flushed as a complete
+  /// buffer. Leave [end] false for a live stream so the next chunk continues.
+  Uint8List toWorking(
+    Uint8List bytes,
+    AudioFormat source, {
+    bool end = false,
+  }) => transcode(bytes, source, working, end: end);
 
   /// Working PCM16/48 kHz → [target].
-  Uint8List fromWorking(Uint8List bytes, AudioFormat target) {
-    _check(target);
-    return switch (target.encoding) {
-      AudioEncoding.pcm16le => _resamplePcm16(
-        bytes,
-        working.sampleRate,
-        target.sampleRate,
-      ),
-      AudioEncoding.pcmu => _workingToG711(bytes, _G711Law.muLaw),
-      AudioEncoding.pcma => _workingToG711(bytes, _G711Law.aLaw),
-      AudioEncoding.opus => throw UnsupportedError(
-        'Opus is not linked. Attach an OpusCodec before using audio/opus.',
-      ),
-    };
-  }
+  Uint8List fromWorking(
+    Uint8List bytes,
+    AudioFormat target, {
+    bool end = false,
+  }) => transcode(bytes, working, target, end: end);
 
-  /// [source] → working → [target]. Capture and playback may differ.
+  /// [source] → [target] with one converter on this edge.
+  ///
+  /// PCM-to-PCM resamples directly. G.711 is decoded or encoded at 8 kHz and
+  /// resampled in one step. Pass [end] true to flush a complete buffer.
   Uint8List transcode(
     Uint8List bytes,
     AudioFormat source,
-    AudioFormat target,
-  ) => fromWorking(toWorking(bytes, source), target);
+    AudioFormat target, {
+    bool end = false,
+  }) {
+    _check(source);
+    _check(target);
+    if (source.encoding == AudioEncoding.opus ||
+        target.encoding == AudioEncoding.opus) {
+      throw UnsupportedError(
+        'Opus is not linked. Attach an OpusCodec before using audio/opus.',
+      );
+    }
+    if (source == target) {
+      return Uint8List.fromList(bytes);
+    }
+    final sourceRate = source.encoding == AudioEncoding.pcm16le
+        ? source.sampleRate
+        : 8000;
+    final targetRate = target.encoding == AudioEncoding.pcm16le
+        ? target.sampleRate
+        : 8000;
+    var pcm = _decodeToPcm(bytes, source);
+    if (sourceRate != targetRate) {
+      pcm = _converter(sourceRate, targetRate).convert(pcm, end: end);
+    }
+    return _encodeFromPcm(pcm, target);
+  }
 
   void _check(AudioFormat format) {
     if (!format.isSupported) {
@@ -66,60 +83,42 @@ final class AudioTranscoder {
     }
   }
 
-  Uint8List _resamplePcm16(Uint8List bytes, int fromRate, int toRate) {
-    if (fromRate == toRate) {
-      return Uint8List.fromList(bytes);
-    }
-    if (bytes.length.isOdd) {
-      throw ArgumentError('PCM16 byte length must be even');
-    }
-    final input = Int16List(bytes.length ~/ 2);
-    final data = ByteData.sublistView(bytes);
-    for (var i = 0; i < input.length; i++) {
-      input[i] = data.getInt16(i * 2, Endian.little);
-    }
-    if (input.isEmpty) {
-      return Uint8List(0);
-    }
-    final outCount = (input.length * toRate / fromRate).round().clamp(
-      1,
-      1 << 30,
+  _RateConverter _converter(int fromRate, int toRate) {
+    final key = '$fromRate:$toRate';
+    return _converters.putIfAbsent(
+      key,
+      () => _RateConverter(fromRate: fromRate, toRate: toRate),
     );
-    final output = Int16List(outCount);
-    for (var i = 0; i < outCount; i++) {
-      final srcPos = i * fromRate / toRate;
-      final index = srcPos.floor();
-      final frac = srcPos - index;
-      if (index + 1 < input.length) {
-        output[i] = (input[index] + (input[index + 1] - input[index]) * frac)
-            .round();
-      } else {
-        output[i] = input[index.clamp(0, input.length - 1)];
-      }
-    }
-    return _int16ToBytes(output);
   }
 
-  Uint8List _g711ToWorking(Uint8List bytes, _G711Law law) {
-    final pcm = Int16List(bytes.length);
-    for (var i = 0; i < bytes.length; i++) {
-      pcm[i] = law == _G711Law.muLaw
-          ? _muLawDecode(bytes[i])
-          : _aLawDecode(bytes[i]);
-    }
-    return _resamplePcm16(_int16ToBytes(pcm), 8000, working.sampleRate);
+  Int16List _decodeToPcm(Uint8List bytes, AudioFormat source) {
+    return switch (source.encoding) {
+      AudioEncoding.pcm16le => _bytesToInt16(bytes),
+      AudioEncoding.pcmu => Int16List.fromList([
+        for (final b in bytes) _muLawDecode(b),
+      ]),
+      AudioEncoding.pcma => Int16List.fromList([
+        for (final b in bytes) _aLawDecode(b),
+      ]),
+      AudioEncoding.opus => throw UnsupportedError(
+        'Opus is not linked. Attach an OpusCodec before using audio/opus.',
+      ),
+    };
   }
 
-  Uint8List _workingToG711(Uint8List bytes, _G711Law law) {
-    final pcm8k = _resamplePcm16(bytes, working.sampleRate, 8000);
-    final samples = _bytesToInt16(pcm8k);
-    final out = Uint8List(samples.length);
-    for (var i = 0; i < samples.length; i++) {
-      out[i] = law == _G711Law.muLaw
-          ? _muLawEncode(samples[i])
-          : _aLawEncode(samples[i]);
-    }
-    return out;
+  Uint8List _encodeFromPcm(Int16List pcm, AudioFormat target) {
+    return switch (target.encoding) {
+      AudioEncoding.pcm16le => _int16ToBytes(pcm),
+      AudioEncoding.pcmu => Uint8List.fromList([
+        for (final s in pcm) _muLawEncode(s),
+      ]),
+      AudioEncoding.pcma => Uint8List.fromList([
+        for (final s in pcm) _aLawEncode(s),
+      ]),
+      AudioEncoding.opus => throw UnsupportedError(
+        'Opus is not linked. Attach an OpusCodec before using audio/opus.',
+      ),
+    };
   }
 
   static const int _muLawBias = 0x84;
@@ -201,6 +200,9 @@ final class AudioTranscoder {
   }
 
   Int16List _bytesToInt16(Uint8List bytes) {
+    if (bytes.length.isOdd) {
+      throw ArgumentError('PCM16 byte length must be even');
+    }
     final samples = Int16List(bytes.length ~/ 2);
     final data = ByteData.sublistView(bytes);
     for (var i = 0; i < samples.length; i++) {
@@ -210,4 +212,109 @@ final class AudioTranscoder {
   }
 }
 
-enum _G711Law { muLaw, aLaw }
+/// Windowed-sinc resampler that keeps input history and output phase.
+final class _RateConverter {
+  _RateConverter({required this.fromRate, required this.toRate})
+    : _cutoff = 0.45 * math.min(1.0, toRate / fromRate),
+      _i0Beta = _besselI0(_beta);
+
+  final int fromRate;
+  final int toRate;
+  final double _cutoff;
+  final double _i0Beta;
+  final List<double> _input = <double>[];
+  var _inputCount = 0;
+  var _dropped = 0;
+  var _outputIndex = 0;
+
+  static const int _halfTaps = 24;
+  static const double _beta = 8.5;
+
+  Int16List convert(Int16List samples, {required bool end}) {
+    for (var i = 0; i < samples.length; i++) {
+      _input.add(samples[i] / 32768.0);
+    }
+    _inputCount += samples.length;
+    final expected = (_inputCount * toRate / fromRate).round();
+    final step = fromRate / toRate;
+    final out = <int>[];
+    while (true) {
+      final pos = _outputIndex * step;
+      if (end) {
+        if (_outputIndex >= expected) {
+          break;
+        }
+      } else if (pos + _halfTaps > _inputCount) {
+        break;
+      }
+      final y = _interpolate(pos).clamp(-1.0, 1.0);
+      out.add((y * 32767.0).round().clamp(-32767, 32767));
+      _outputIndex++;
+    }
+    _trim();
+    return Int16List.fromList(out);
+  }
+
+  double _interpolate(double pos) {
+    var acc = 0.0;
+    final center = pos.round();
+    final first = center - _halfTaps;
+    final last = center + _halfTaps;
+    for (var i = first; i <= last; i++) {
+      acc += _at(i) * _kernel(pos - i);
+    }
+    return acc;
+  }
+
+  double _kernel(double t) {
+    if (t.abs() >= _halfTaps) {
+      return 0;
+    }
+    final x = 2 * _cutoff * t;
+    final sinc = x.abs() < 1e-12 ? 1.0 : math.sin(math.pi * x) / (math.pi * x);
+    final window = _kaiser(t / _halfTaps);
+    return 2 * _cutoff * sinc * window;
+  }
+
+  double _kaiser(double x) {
+    if (x.abs() > 1) {
+      return 0;
+    }
+    return _besselI0(_beta * math.sqrt(1 - x * x)) / _i0Beta;
+  }
+
+  double _at(int index) {
+    if (index < 0 || index >= _inputCount) {
+      return 0;
+    }
+    final local = index - _dropped;
+    if (local < 0 || local >= _input.length) {
+      return 0;
+    }
+    return _input[local];
+  }
+
+  void _trim() {
+    final keepFrom = (_outputIndex * fromRate / toRate - _halfTaps).floor();
+    final drop = keepFrom - _dropped;
+    if (drop <= 0 || drop > _input.length) {
+      return;
+    }
+    _input.removeRange(0, drop);
+    _dropped += drop;
+  }
+
+  static double _besselI0(double x) {
+    var sum = 1.0;
+    var term = 1.0;
+    final y = x * x / 4;
+    for (var k = 1; k < 32; k++) {
+      term *= y / (k * k);
+      sum += term;
+      if (term < 1e-12 * sum) {
+        break;
+      }
+    }
+    return sum;
+  }
+}

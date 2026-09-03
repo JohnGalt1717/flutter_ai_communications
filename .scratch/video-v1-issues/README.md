@@ -6,7 +6,7 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
-Status as of 2026-09-01, HEAD `e6b37b4` (PR #34 on `main`).
+Status as of 2026-09-03. Ticket 04 Video sink seam on `feat/04-video-sink-seam` (#45).
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ Status as of 2026-09-01, HEAD `e6b37b4` (PR #34 on `main`).
 | 01 | Shared video types | 00 | done |
 | 02 | Session and platform-interface video contracts | 01 | done |
 | 03 | Lobby Session | 02 | done |
-| 04 | Video sink provider seam | 02 | not started |
+| 04 | Video sink provider seam | 02 | done (#45) |
 | 05 | iOS camera graph | 02 | done (sim receipt) |
 | 06 | Android camera graph | 02 | done (SM A176U1 receipt) |
 | 07 | macOS camera graph | 02 | done (graph + audio Orchestration) |

@@ -113,8 +113,10 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   @override
-  PairingSnapshot get observed =>
-      PairingSnapshot(captureId: _captureId, renderId: _renderId);
+  PairingSnapshot get observed => PairingSnapshot(
+    captureId: _wantCapture ? _presentId(_captureId) ?? _captureId : null,
+    renderId: _wantRender ? _presentId(_renderId) ?? _renderId : null,
+  );
 
   @override
   void flush() {
@@ -135,8 +137,18 @@ final class PulseAudioBackend implements AudioBackend {
     unawaited(_captureOut.close());
   }
 
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
+
+  bool get _wantCapture =>
+      _presentId(_captureId) != null || _presentId(_renderId) == null;
+
+  bool get _wantRender =>
+      _presentId(_renderId) != null || _presentId(_captureId) == null;
+
   bool _startGraph() {
-    _emitSilence();
+    if (_wantCapture) {
+      _emitSilence();
+    }
     _stopGraph();
     final spec = calloc<PaSampleSpec>();
     try {
@@ -144,17 +156,21 @@ final class PulseAudioBackend implements AudioBackend {
         ..format = paSampleS16le
         ..rate = _sampleRate
         ..channels = 1;
-      final render = _simple.open(
-        direction: paStreamPlayback,
-        device: _renderId,
-        spec: spec,
-      );
-      if (render == nullptr) {
-        return false;
+      if (_wantRender) {
+        final render = _simple.open(
+          direction: paStreamPlayback,
+          device: _renderId,
+          spec: spec,
+        );
+        if (render == nullptr) {
+          return false;
+        }
+        _render = render;
       }
-      _render = render;
       _running = true;
-      _startCaptureIsolate();
+      if (_wantCapture) {
+        _startCaptureIsolate();
+      }
       return true;
     } finally {
       calloc.free(spec);

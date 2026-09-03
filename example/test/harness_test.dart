@@ -73,6 +73,11 @@ void main() {
       expect(find.byKey(const Key('applied-capture')), findsOneWidget);
       expect(find.byKey(const Key('observed-capture')), findsOneWidget);
       expect(find.byKey(const Key('generation')), findsOneWidget);
+      expect(find.byKey(const Key('status-code')), findsOneWidget);
+      expect(find.byKey(const Key('status-recoverability')), findsOneWidget);
+      expect(find.byKey(const Key('status-usability')), findsOneWidget);
+      expect(find.byKey(const Key('status-attempt')), findsOneWidget);
+      expect(find.byKey(const Key('status-max-attempts')), findsOneWidget);
       expect(find.byKey(const Key('pipeline-log')), findsOneWidget);
       expect(find.byKey(const Key('capture-frames')), findsOneWidget);
       expect(find.byKey(const Key('playback-progress')), findsOneWidget);
@@ -150,7 +155,7 @@ void main() {
     expect(find.byKey(const Key('camera-front')), findsOneWidget);
     await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), 80);
     expect(find.byKey(const Key('camera-off')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -80);
+    await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -300);
     await tester.tap(find.byKey(const Key('lobby-join')));
     await tester.pump();
     await tester.pump();

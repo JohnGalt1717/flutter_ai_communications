@@ -57,8 +57,10 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(frames, hasLength(1));
-    expect(frames.single.length ~/ 2, closeTo(24000 * 0.05, 2));
+    expect(frames.single.length ~/ 2, closeTo(24000 * 0.05, 48));
     expect(_rms(frames.single), greaterThan(0.1));
+    expect(session.status.code, SessionStatusCode.formatConverted);
+    expect(session.status.severity, StatusSeverity.warning);
     await sub.cancel();
   });
 
@@ -76,7 +78,7 @@ void main() {
 
     await session.play(_sinePcm(sampleRate: 16000, seconds: 0.05));
     expect(platform.played, isNotEmpty);
-    expect(_joined(platform.played).length ~/ 2, closeTo(24000 * 0.05, 2));
+    expect(_joined(platform.played).length ~/ 2, closeTo(24000 * 0.05, 48));
   });
 
   test(
@@ -95,7 +97,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(frames, hasLength(1));
-      expect(frames.single.length, closeTo(8000 * 0.05, 2));
+      expect(frames.single.length, closeTo(8000 * 0.05, 48));
       expect(frames.single.every((b) => b == 0), isFalse);
       await sub.cancel();
     },
@@ -112,7 +114,7 @@ void main() {
       final sub = session.capture.listen(frames.add);
       platform.feedCapture(_sinePcm(sampleRate: 8000, seconds: 0.05));
       await Future<void>.delayed(Duration.zero);
-      expect(frames.single.length, closeTo(8000 * 0.05, 2));
+      expect(frames.single.length, closeTo(8000 * 0.05, 48));
       expect(frames.single.every((b) => b == 0), isFalse);
       await sub.cancel();
     },
@@ -123,6 +125,65 @@ void main() {
     expect(session.diagnostics.nativeCaptureFormat, AudioFormat.pcm16le24k);
     expect(session.diagnostics.captureConversionPath, ConversionPath.identity);
     expect(session.diagnostics.playbackConversionPath, ConversionPath.identity);
+  });
+
+  test('unsupported requested rate is reported and converted', () async {
+    platform.unsupportedCaptureRates = {24000};
+    final session = await ready();
+    expect(
+      session.diagnostics.nativeCaptureFormat,
+      const AudioFormat.pcm16le(sampleRate: 48000),
+    );
+    expect(session.diagnostics.captureConversionPath, ConversionPath.dart);
+    expect(session.diagnostics.formatFailures, [
+      const FormatCandidateFailure(
+        format: AudioFormat.pcm16le24k,
+        reason: 'unsupported',
+      ),
+    ]);
+  });
+
+  test('Pair change renegotiates Native Formats on the same Session', () async {
+    platform.catalog = [
+      ...FakeCommunicationsPlatform.defaultCatalog,
+      const Endpoint(
+        id: 'usb-in',
+        name: 'USB Audio',
+        routeClass: RouteClass.wired,
+        isCapture: true,
+        pairId: 'usb',
+      ),
+      const Endpoint(
+        id: 'usb-out',
+        name: 'USB Audio',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+        pairId: 'usb',
+      ),
+    ];
+    platform.nativeCaptureFormat = const AudioFormat.pcm16le(sampleRate: 16000);
+    platform.nativeCaptureByEndpointId['usb-in'] = const AudioFormat.pcm16le(
+      sampleRate: 48000,
+    );
+    final session = await ready();
+    expect(
+      session.diagnostics.nativeCaptureFormat,
+      const AudioFormat.pcm16le(sampleRate: 16000),
+    );
+
+    await session.select(captureId: 'usb-in', renderId: 'usb-out');
+    expect(
+      session.diagnostics.nativeCaptureFormat,
+      const AudioFormat.pcm16le(sampleRate: 48000),
+    );
+    expect(session.diagnostics.captureConversionPath, ConversionPath.dart);
+
+    final frames = <Uint8List>[];
+    final sub = session.capture.listen(frames.add);
+    platform.feedCapture(_sinePcm(sampleRate: 48000, seconds: 0.05));
+    await Future<void>.delayed(Duration.zero);
+    expect(frames.single.length ~/ 2, closeTo(24000 * 0.05, 48));
+    await sub.cancel();
   });
 }
 

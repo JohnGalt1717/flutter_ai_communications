@@ -11,6 +11,16 @@ void main() {
     expect(plan.constrainDevice, isTrue);
   });
 
+  test('capture-only does not want playback', () {
+    expect(policy.wantsCapture('mic-1', null), isTrue);
+    expect(policy.wantsPlayback('mic-1', null), isFalse);
+  });
+
+  test('playback-only does not want capture', () {
+    expect(policy.wantsCapture(null, 'speaker-out'), isFalse);
+    expect(policy.wantsPlayback(null, 'speaker-out'), isTrue);
+  });
+
   test('blank capture id uses the browser default', () {
     expect(policy.capturePlan(null).constrainDevice, isFalse);
     expect(policy.capturePlan('').deviceId, isNull);

@@ -116,40 +116,111 @@ void main() {
     expect((call.arguments as Map)['noiseCancelling'], isFalse);
   });
 
-  test('startNative map reports Native Formats, not the requested edge', () async {
+  test(
+    'startNative map reports Native Formats, not the requested edge',
+    () async {
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        calls.add(call);
+        if (call.method == 'startNative') {
+          return {
+            'status': 'started',
+            'nativeCaptureFormat': {
+              'encoding': 'pcm16le',
+              'sampleRate': 48000,
+              'channels': 1,
+            },
+            'nativePlaybackFormat': {
+              'encoding': 'pcm16le',
+              'sampleRate': 44100,
+              'channels': 1,
+            },
+          };
+        }
+        return null;
+      });
+      expect(
+        await platform.startNative(
+          captureFormat: AudioFormat.pcm16le24k,
+          playbackFormat: AudioFormat.pcm16le24k,
+        ),
+        NativeGraphStart.started,
+      );
+      expect(
+        platform.lastNativeFormats.capture,
+        const AudioFormat.pcm16le(sampleRate: 48000),
+      );
+      expect(
+        platform.lastNativeFormats.playback,
+        const AudioFormat.pcm16le(sampleRate: 44100),
+      );
+    },
+  );
+
+  test('startNative map reports structured Format failures', () async {
     messenger.setMockMethodCallHandler(methods, (call) async {
       calls.add(call);
       if (call.method == 'startNative') {
         return {
           'status': 'started',
-          'nativeCaptureFormat': {
+          'captureFormat': {
             'encoding': 'pcm16le',
             'sampleRate': 48000,
             'channels': 1,
           },
+          'playbackFormat': {
+            'encoding': 'pcm16le',
+            'sampleRate': 48000,
+            'channels': 1,
+          },
+          'formatFailures': [
+            {
+              'encoding': 'pcm16le',
+              'sampleRate': 24000,
+              'channels': 1,
+              'reason': 'unsupported',
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    expect(await platform.startNative(), NativeGraphStart.started);
+    expect(platform.lastNativeFormats.failures, [
+      const FormatCandidateFailure(
+        format: AudioFormat.pcm16le24k,
+        reason: 'unsupported',
+      ),
+    ]);
+  });
+
+  test('selectEndpoints map re-adopts Native Formats', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'selectEndpoints') {
+        return {
+          'status': 'started',
+          'nativeCaptureFormat': {
+            'encoding': 'pcm16le',
+            'sampleRate': 16000,
+            'channels': 1,
+          },
           'nativePlaybackFormat': {
             'encoding': 'pcm16le',
-            'sampleRate': 44100,
+            'sampleRate': 48000,
             'channels': 1,
           },
         };
       }
       return null;
     });
-    expect(
-      await platform.startNative(
-        captureFormat: AudioFormat.pcm16le24k,
-        playbackFormat: AudioFormat.pcm16le24k,
-      ),
-      NativeGraphStart.started,
-    );
+    await platform.selectEndpoints(captureId: 'usb-in', renderId: 'usb-out');
     expect(
       platform.lastNativeFormats.capture,
-      const AudioFormat.pcm16le(sampleRate: 48000),
+      const AudioFormat.pcm16le(sampleRate: 16000),
     );
     expect(
       platform.lastNativeFormats.playback,
-      const AudioFormat.pcm16le(sampleRate: 44100),
+      const AudioFormat.pcm16le(sampleRate: 48000),
     );
   });
 
@@ -314,4 +385,13 @@ void main() {
     expect(seen.first.single.id, 'display-0');
     await sub.cancel();
   });
+
+  test(
+    'Production video path attach is a no-op on the method channel',
+    () async {
+      await platform.attachProductionVideoPathNative(token: 'video-sink-0');
+      await platform.detachProductionVideoPathNative(token: 'video-sink-0');
+      expect(calls, isEmpty);
+    },
+  );
 }

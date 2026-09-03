@@ -143,6 +143,11 @@ class MethodChannelCommunicationsPlatform
     if (status == 'failed') {
       return NativeGraphStart.failed;
     }
+    _adoptReport(map);
+    return NativeGraphStart.started;
+  }
+
+  void _adoptReport(Map<Object?, Object?> map) {
     _lastNativeFormats = NativeFormatReport(
       capture:
           _formatFrom(map['captureFormat']) ??
@@ -150,8 +155,23 @@ class MethodChannelCommunicationsPlatform
       playback:
           _formatFrom(map['playbackFormat']) ??
           _formatFrom(map['nativePlaybackFormat']),
+      failures: _failuresFrom(map['formatFailures']),
     );
-    return NativeGraphStart.started;
+  }
+
+  List<FormatCandidateFailure> _failuresFrom(Object? raw) {
+    if (raw is! List) {
+      return const [];
+    }
+    return [
+      for (final item in raw)
+        if (item is Map)
+          if (_formatFrom(item) case final format?)
+            FormatCandidateFailure(
+              format: format,
+              reason: item['reason'] as String? ?? 'unsupported',
+            ),
+    ];
   }
 
   Map<String, Object?>? _formatMap(AudioFormat? format) {
@@ -213,12 +233,15 @@ class MethodChannelCommunicationsPlatform
   }
 
   @override
-  Future<void> selectEndpoints({String? captureId, String? renderId}) {
+  Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _ensureListening();
-    return _methods.invokeMethod<void>('selectEndpoints', {
+    final value = await _methods.invokeMethod<Object?>('selectEndpoints', {
       'captureId': captureId,
       'renderId': renderId,
     });
+    if (value is Map<Object?, Object?>) {
+      _adoptReport(value);
+    }
   }
 
   @override

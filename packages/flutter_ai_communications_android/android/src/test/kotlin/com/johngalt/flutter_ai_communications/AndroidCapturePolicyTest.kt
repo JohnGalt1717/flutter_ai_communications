@@ -38,6 +38,34 @@ class AndroidCapturePolicyTest {
     }
 
     @Test
+    fun rejectedRatesStayStructured() {
+        assertEquals(
+            listOf(
+                mapOf(
+                    "encoding" to "pcm16le",
+                    "sampleRate" to 24_000,
+                    "channels" to 1,
+                    "reason" to "unsupported",
+                ),
+            ),
+            AndroidCapturePolicy.failures(setOf(24_000, 48_000), 48_000),
+        )
+    }
+
+    @Test
+    fun captureOnlyDoesNotWantPlayback() {
+        assertTrue(AndroidCapturePolicy.wantsCapture("handset-in", null))
+        assertFalse(AndroidCapturePolicy.wantsPlayback("handset-in", null))
+    }
+
+    @Test
+    fun playbackOnlyDoesNotWantCapture() {
+        assertFalse(AndroidCapturePolicy.wantsCapture(null, "speaker-out"))
+        assertTrue(AndroidCapturePolicy.wantsPlayback(null, "speaker-out"))
+        assertFalse(AndroidCapturePolicy.wantsCapture("", "speaker-out"))
+    }
+
+    @Test
     fun requestedSampleRateReadsFormatMap() {
         assertEquals(
             16_000,

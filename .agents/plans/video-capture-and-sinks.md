@@ -158,11 +158,11 @@ Complete when the example lobby subsection can show a self-view from the fake or
 
 ### 3. Transport plugin / video attach seam
 
-Ticket 04.
+Ticket 04. **Done (2026-09-03, #45).**
 
-- Attach/detach one or more sinks on Session
-- Fake sink receives generation and enabled/muted/off state
-- Documented native hook for real sink packages
+- Attach/detach one or more Video sinks on Session
+- Fake sink receives generation, Mute-video, Camera-off, and processor identity
+- Native hook `attachProductionVideoPathNative` (frames stay native)
 
 Complete when tests prove two sinks see one path and detach does not end the Session.
 

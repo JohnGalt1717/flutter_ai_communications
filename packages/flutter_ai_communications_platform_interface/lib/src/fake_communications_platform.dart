@@ -213,6 +213,18 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Native playback Format returned after start. Defaults to the requested edge.
   AudioFormat? nativePlaybackFormat;
 
+  /// Sample rates the fake graph rejects so start probes the next candidate.
+  Set<int> unsupportedCaptureRates = {};
+
+  /// Native capture Format after a Pair change, keyed by capture Endpoint id.
+  Map<String, AudioFormat> nativeCaptureByEndpointId = {};
+
+  /// Native playback Format after a Pair change, keyed by render Endpoint id.
+  Map<String, AudioFormat> nativePlaybackByEndpointId = {};
+
+  AudioFormat? _requestedCaptureFormat;
+  AudioFormat? _requestedPlaybackFormat;
+
   NativeFormatReport _lastNativeFormats = const NativeFormatReport();
 
   @override
@@ -235,7 +247,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   String get platformName => 'fake';
 
   @override
-  Future<List<Endpoint>> enumerateEndpoints() async => List<Endpoint>.of(catalog);
+  Future<List<Endpoint>> enumerateEndpoints() async =>
+      List<Endpoint>.of(catalog);
 
   @override
   Stream<List<Endpoint>> get endpointCatalog => catalogController.stream;
@@ -272,16 +285,24 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (nativeStart != NativeGraphStart.started) {
       return nativeStart;
     }
-    _lastNativeFormats = NativeFormatReport(
-      capture: nativeCaptureFormat ?? captureFormat,
-      playback: nativePlaybackFormat ?? playbackFormat,
+    _requestedCaptureFormat = captureFormat;
+    _requestedPlaybackFormat = playbackFormat;
+    final capture = _presentId(captureId);
+    final render = _presentId(renderId);
+    final wantCapture = capture != null || render == null;
+    final wantRender = render != null || capture == null;
+    selectedCaptureId = wantCapture
+        ? capture ??
+              catalog.where((endpoint) => endpoint.isCapture).firstOrNull?.id
+        : null;
+    selectedRenderId = wantRender
+        ? render ??
+              catalog.where((endpoint) => !endpoint.isCapture).firstOrNull?.id
+        : null;
+    _lastNativeFormats = _formatsFor(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId,
     );
-    selectedCaptureId =
-        captureId ??
-        catalog.where((endpoint) => endpoint.isCapture).firstOrNull?.id;
-    selectedRenderId =
-        renderId ??
-        catalog.where((endpoint) => !endpoint.isCapture).firstOrNull?.id;
     nativeRunning = true;
     nativePaused = false;
     lastIsolationEvent = IsolationEvent(
@@ -355,8 +376,52 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (renderId != null) {
       selectedRenderId = renderId;
     }
+    _lastNativeFormats = _formatsFor(
+      captureId: selectedCaptureId,
+      renderId: selectedRenderId,
+    );
     _maybeObserveApplied();
   }
+
+  NativeFormatReport _formatsFor({String? captureId, String? renderId}) {
+    const negotiator = FormatNegotiator();
+    final requestedCapture =
+        _requestedCaptureFormat ?? AudioTranscoder.defaultEdge;
+    final requestedPlayback =
+        _requestedPlaybackFormat ?? AudioTranscoder.defaultEdge;
+    AudioFormat? capture = captureId == null
+        ? null
+        : nativeCaptureByEndpointId[captureId] ??
+              nativeCaptureFormat ??
+              requestedCapture;
+    AudioFormat? playback = renderId == null
+        ? null
+        : nativePlaybackByEndpointId[renderId] ??
+              nativePlaybackFormat ??
+              requestedPlayback;
+    final rejected = <AudioFormat>[];
+    if (capture != null &&
+        unsupportedCaptureRates.contains(requestedCapture.sampleRate)) {
+      rejected.add(requestedCapture);
+      if (unsupportedCaptureRates.contains(capture.sampleRate)) {
+        capture = negotiator
+            .probeOrder(requested: requestedCapture)
+            .firstWhere(
+              (format) => !unsupportedCaptureRates.contains(format.sampleRate),
+              orElse: () => const AudioFormat.pcm16le(sampleRate: 48000),
+            );
+      }
+    }
+    return NativeFormatReport(
+      capture: capture,
+      playback: playback,
+      failures: capture == null
+          ? const []
+          : negotiator.failures(selected: capture, rejected: rejected),
+    );
+  }
+
+  String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
 
   void _maybeObserveApplied() {
     if (!observeOnApply) {
@@ -422,6 +487,12 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Whether Mute-video is substituting black frames.
   bool muteVideo = false;
 
+  /// Tokens passed to [attachProductionVideoPathNative].
+  final List<String> attachedProductionVideoPathTokens = <String>[];
+
+  /// Tokens passed to [detachProductionVideoPathNative].
+  final List<String> detachedProductionVideoPathTokens = <String>[];
+
   /// Selected camera id.
   String? selectedCameraId;
 
@@ -467,7 +538,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       _lastNativeVideoFormat = null;
       return NativeGraphStart.unavailable;
     }
-    final resolved = cameras.where((camera) => camera.id == cameraId).firstOrNull ??
+    final resolved =
+        cameras.where((camera) => camera.id == cameraId).firstOrNull ??
         cameras.firstOrNull;
     if (resolved == null) {
       cameraRunning = false;
@@ -482,11 +554,11 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     const negotiator = VideoFormatNegotiator();
     _lastNativeVideoFormat = negotiator.nearest(
       videoFormat ?? VideoFormat.defaultFormat,
-      resolved.modes.isEmpty ? const [VideoFormat.defaultFormat] : resolved.modes,
+      resolved.modes.isEmpty
+          ? const [VideoFormat.defaultFormat]
+          : resolved.modes,
     );
-    _lastVideoSurface = cameraRunning
-        ? const VideoSurface(handle: 1)
-        : null;
+    _lastVideoSurface = cameraRunning ? const VideoSurface(handle: 1) : null;
     _cameraFrameCount = cameraRunning ? 8 : 0;
     _cameraLiveFrames = cameraRunning && !muted ? 8 : 0;
     return NativeGraphStart.started;
@@ -519,6 +591,16 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (muted) {
       _cameraLiveFrames = 0;
     }
+  }
+
+  @override
+  Future<void> attachProductionVideoPathNative({required String token}) async {
+    attachedProductionVideoPathTokens.add(token);
+  }
+
+  @override
+  Future<void> detachProductionVideoPathNative({required String token}) async {
+    detachedProductionVideoPathTokens.add(token);
   }
 
   @override

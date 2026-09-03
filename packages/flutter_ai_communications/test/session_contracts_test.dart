@@ -268,6 +268,35 @@ void main() {
       expect(platform.played, isEmpty);
       expect(session.direction, SessionDirection.captureOnly);
     });
+
+    test('capture-only does not acquire unused playback', () async {
+      final session = await ready(direction: SessionDirection.captureOnly);
+      expect(platform.selectedRenderId, isNull);
+      expect(session.diagnostics.desired.renderId, isNull);
+      expect(session.diagnostics.nativePlaybackFormat, isNull);
+    });
+
+    test('playback-only does not acquire unused capture', () async {
+      final session = await ready(direction: SessionDirection.playbackOnly);
+      expect(platform.selectedCaptureId, isNull);
+      expect(session.diagnostics.desired.captureId, isNull);
+      expect(session.diagnostics.nativeCaptureFormat, isNull);
+      expect(platform.permissionRequests, 0);
+    });
+
+    test('playback-only is playbackReady after the graph is Observed', () async {
+      final session = await ready(direction: SessionDirection.playbackOnly);
+      expect(session.status.code, SessionStatusCode.playbackReady);
+      expect(session.diagnostics.nativePlaybackFormat, isNotNull);
+    });
+
+    test('capture-only is captureLive after frames arrive', () async {
+      final session = await ready(direction: SessionDirection.captureOnly);
+      expect(session.status.code, SessionStatusCode.starting);
+      platform.feedCapture(_voiceFrame());
+      await _microtask();
+      expect(session.status.code, SessionStatusCode.captureLive);
+    });
   });
 
   group('status and diagnostics', () {
@@ -337,6 +366,8 @@ void main() {
         expect(session.diagnostics.desired.renderId, 'speaker-out');
         expect(session.diagnostics.preferenceControlled, isFalse);
         expect(session.status.code, SessionStatusCode.routeMismatch);
+        expect(session.status.severity, StatusSeverity.error);
+        expect(session.status.usability, StatusUsability.unusable);
         expect(platform.selectEndpointsCalls - before, lessThanOrEqualTo(3));
         expect(platform.selectEndpointsCalls - before, greaterThan(0));
       },

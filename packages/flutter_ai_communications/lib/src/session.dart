@@ -98,6 +98,9 @@ final class Session {
         _statusController.add(_status);
       }
     };
+    if (_videoSurface != null && _cameraEnabled) {
+      _videoPathGeneration = 1;
+    }
   }
 
   static const _resolver = PreferenceResolver();
@@ -173,6 +176,9 @@ final class Session {
   var _captureConversionPath = ConversionPath.identity;
   var _playbackConversionPath = ConversionPath.identity;
   List<FormatCandidateFailure> _formatFailures = const [];
+  final AudioTranscoder _captureTranscoder = AudioTranscoder();
+  final AudioTranscoder _playbackTranscoder = AudioTranscoder();
+  final AudioTranscoder _floorTranscoder = AudioTranscoder();
 
   /// Capture-out Format. Defaults to PCM16 LE mono 24 kHz.
   final AudioFormat captureFormat;
@@ -385,6 +391,11 @@ final class Session {
   VideoSurface? _videoSurface;
   VideoFormat? _nativeVideoFormat;
   String? _videoUnavailableReason;
+  var _videoPathGeneration = 0;
+  final Set<VideoSink> _videoSinks = Set<VideoSink>.identity();
+  final Map<VideoSink, String> _videoSinkTokens =
+      Map<VideoSink, String>.identity();
+  var _nextVideoSinkToken = 0;
   StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
   var _screenPickOpen = false;
   var _screenSending = false;
@@ -427,6 +438,7 @@ final class Session {
     }
     _cameraId = cameraId;
     await _platform.selectCameraNative(cameraId);
+    _notifyVideoSinks();
   }
 
   /// Mute-video: black frames, graph stays up.
@@ -436,6 +448,7 @@ final class Session {
     }
     _videoMuted = true;
     await _platform.setMuteVideoNative(true);
+    _notifyVideoSinks();
   }
 
   /// Restores real frames on the same send path.
@@ -445,6 +458,7 @@ final class Session {
     }
     _videoMuted = false;
     await _platform.setMuteVideoNative(false);
+    _notifyVideoSinks();
   }
 
   /// Camera-off when [enabled] is false. Audio continues.
@@ -452,6 +466,7 @@ final class Session {
     if (_stopped) {
       return;
     }
+    final turningOn = enabled && !_cameraEnabled;
     _cameraEnabled = enabled;
     if (!enabled) {
       _videoMuted = false;
@@ -460,7 +475,11 @@ final class Session {
     await _platform.setCameraEnabledNative(enabled);
     if (enabled) {
       _videoSurface = _platform.lastVideoSurface;
+      if (turningOn && _videoSurface != null) {
+        _videoPathGeneration++;
+      }
     }
+    _notifyVideoSinks();
   }
 
   /// Opens Screen pick. Does not send. Lobby is a typed failure.
@@ -648,8 +667,7 @@ final class Session {
       return;
     }
     final cameras = await _platform.enumerateCameras();
-    final resolved =
-        cameraPreference.resolve(cameras) ?? cameras.firstOrNull;
+    final resolved = cameraPreference.resolve(cameras) ?? cameras.firstOrNull;
     final id = cameraId ?? _cameraId ?? resolved?.id;
     if (id == null) {
       _videoUnavailableReason = 'none';
@@ -673,6 +691,90 @@ final class Session {
     _videoUnavailableReason = null;
     _videoSurface = _platform.lastVideoSurface;
     _nativeVideoFormat = _platform.lastNativeVideoFormat;
+    _videoPathGeneration++;
+    _notifyVideoSinks();
+  }
+
+  /// Attaches [sink] to this Session's Production video path.
+  ///
+  /// Immediate snapshot, then updates on generation, Mute-video, Camera-off,
+  /// and processor identity. Duplicate attach is idempotent. Camera preview
+  /// has no Video sink seam. A Transport plugin binds natively through
+  /// [FlutterAiCommunicationsPlatform.attachProductionVideoPathNative];
+  /// frames do not copy through Dart.
+  void attachVideoSink(VideoSink sink) {
+    if (_stopped) {
+      return;
+    }
+    if (_videoSinks.add(sink)) {
+      final token = 'video-sink-$_nextVideoSinkToken';
+      _nextVideoSinkToken++;
+      _videoSinkTokens[sink] = token;
+      _unawaitedNative(_platform.attachProductionVideoPathNative(token: token));
+    }
+    _deliverVideoPath(sink, _videoPathSnapshot());
+  }
+
+  /// Detaches [sink]. Idempotent. Does not end the Session or replace
+  /// [capture].
+  void detachVideoSink(VideoSink sink) {
+    if (!_videoSinks.remove(sink)) {
+      return;
+    }
+    final token = _videoSinkTokens.remove(sink);
+    if (token != null) {
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
+    }
+  }
+
+  VideoPathSnapshot _videoPathSnapshot() {
+    return VideoPathSnapshot(
+      generation: _videoPathGeneration,
+      muteVideo: _videoMuted,
+      cameraOff: !_cameraEnabled || _videoSurface == null,
+      processor: videoProcessor,
+      surface: _videoSurface,
+    );
+  }
+
+  void _notifyVideoSinks() {
+    if (_videoSinks.isEmpty) {
+      return;
+    }
+    final snapshot = _videoPathSnapshot();
+    for (final sink in List<VideoSink>.of(_videoSinks)) {
+      _deliverVideoPath(sink, snapshot);
+    }
+  }
+
+  void _deliverVideoPath(VideoSink sink, VideoPathSnapshot snapshot) {
+    try {
+      sink.onVideoPath(snapshot);
+    } on Object catch (error, stack) {
+      _logger.warning(error, error, stack);
+    }
+  }
+
+  void _releaseVideoSinks() {
+    _cameraEnabled = false;
+    _videoMuted = false;
+    _videoSurface = null;
+    _notifyVideoSinks();
+    for (final token in List<String>.of(_videoSinkTokens.values)) {
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
+    }
+    _videoSinks.clear();
+    _videoSinkTokens.clear();
+  }
+
+  void _unawaitedNative(Future<void> future) {
+    unawaited(() async {
+      try {
+        await future;
+      } on Object catch (error, stack) {
+        _logger.warning(error, error, stack);
+      }
+    }());
   }
 
   /// Mute keeps the same capture subscription and emits silence frames.
@@ -771,6 +873,7 @@ final class Session {
           stack,
         );
       }
+      _releaseVideoSinks();
       // Do not await cancel/close. Some Dart streams complete those Futures
       // on a Timer, which never fires under FakeAsync unless time is pumped.
       unawaited(_captureSub?.cancel());
@@ -817,7 +920,7 @@ final class Session {
     if (native == captureFormat) {
       return bytes;
     }
-    return const AudioTranscoder().transcode(bytes, native, captureFormat);
+    return _captureTranscoder.transcode(bytes, native, captureFormat);
   }
 
   Uint8List _toNativePlayback(Uint8List bytes) {
@@ -825,7 +928,7 @@ final class Session {
     if (native == playbackFormat) {
       return bytes;
     }
-    return const AudioTranscoder().transcode(bytes, playbackFormat, native);
+    return _playbackTranscoder.transcode(bytes, playbackFormat, native);
   }
 
   void _adoptAcousticProfile() {
@@ -849,7 +952,12 @@ final class Session {
     final adopted = report.withEdges(
       capture: captureFormat,
       playback: playbackFormat,
+      hasCapture: direction.hasCapture,
+      hasPlayback: direction.hasPlayback,
     );
+    _captureTranscoder.reset();
+    _playbackTranscoder.reset();
+    _floorTranscoder.reset();
     _nativeCaptureFormat = adopted.capture;
     _nativePlaybackFormat = adopted.playback;
     _captureConversionPath = adopted.capturePath;
@@ -866,7 +974,7 @@ final class Session {
   Uint8List _processCapture(Uint8List bytes) {
     final working = captureFormat.encoding == AudioEncoding.pcm16le
         ? bytes
-        : const AudioTranscoder().toWorking(bytes, captureFormat);
+        : _floorTranscoder.toWorking(bytes, captureFormat);
     final rate = captureFormat.encoding == AudioEncoding.pcm16le
         ? captureFormat.sampleRate
         : AudioTranscoder.working.sampleRate;
@@ -884,7 +992,7 @@ final class Session {
     );
     return captureFormat.encoding == AudioEncoding.pcm16le
         ? gated
-        : const AudioTranscoder().fromWorking(gated, captureFormat);
+        : _floorTranscoder.fromWorking(gated, captureFormat);
   }
 
   void _noteCapture(Uint8List bytes) {
@@ -925,7 +1033,7 @@ final class Session {
         _captureController.add(
           captureFormat.encoding == AudioEncoding.pcm16le
               ? gated
-              : const AudioTranscoder().fromWorking(gated, captureFormat),
+              : _floorTranscoder.fromWorking(gated, captureFormat),
         );
       }
     }
@@ -1076,9 +1184,10 @@ final class Session {
       _resetConvergence();
       _log(PipelineLog.applied, _routeFields(_applied, cause: cause));
       await _platform.selectEndpoints(
-        captureId: _applied.captureId,
-        renderId: _applied.renderId,
+        captureId: direction.hasCapture ? _applied.captureId : null,
+        renderId: direction.hasPlayback ? _applied.renderId : null,
       );
+      _adoptNativeFormats(_platform.lastNativeFormats);
     }
     _publishStatus(_computeStatus());
     if (!diagnostics.observedMatchesDesired && _hasObservedRoute) {
@@ -1124,15 +1233,18 @@ final class Session {
           (_convergenceStartedAt != null &&
               DateTime.now().difference(_convergenceStartedAt!) >=
                   convergenceDeadline);
+      final explicitFault = exhausted && !_preferenceControlled;
       return SessionStatus(
-        severity: StatusSeverity.warning,
+        severity: explicitFault ? StatusSeverity.error : StatusSeverity.warning,
         code: pending
             ? SessionStatusCode.routeConverging
             : SessionStatusCode.routeMismatch,
         recoverability: pending || !exhausted
             ? StatusRecoverability.automatic
             : StatusRecoverability.hostAction,
-        usability: StatusUsability.degraded,
+        usability: explicitFault
+            ? StatusUsability.unusable
+            : StatusUsability.degraded,
         action: pending || !exhausted
             ? SessionAction.wait
             : SessionAction.selectPair,
@@ -1155,6 +1267,45 @@ final class Session {
     }
     if (direction.hasCapture && _captureFrameCount == 0) {
       return SessionStatus.starting(purpose: purpose, generation: _generation);
+    }
+    if (direction.hasPlayback && _nativePlaybackFormat == null) {
+      return SessionStatus.starting(purpose: purpose, generation: _generation);
+    }
+    if (direction.hasCapture && !direction.hasPlayback) {
+      return SessionStatus(
+        severity: StatusSeverity.success,
+        code: SessionStatusCode.captureLive,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
+    }
+    if (direction.hasPlayback && !direction.hasCapture) {
+      return SessionStatus(
+        severity: StatusSeverity.success,
+        code: SessionStatusCode.playbackReady,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
+    }
+    final converting =
+        _captureConversionPath == ConversionPath.dart ||
+        _playbackConversionPath == ConversionPath.dart;
+    if (converting) {
+      return SessionStatus(
+        severity: StatusSeverity.warning,
+        code: SessionStatusCode.formatConverted,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
     }
     return SessionStatus.ready(purpose: purpose, generation: _generation);
   }
@@ -1373,9 +1524,10 @@ final class Session {
       'maxAttempts': maxConvergenceAttempts,
     });
     await _platform.selectEndpoints(
-      captureId: _applied.captureId,
-      renderId: _applied.renderId,
+      captureId: direction.hasCapture ? _applied.captureId : null,
+      renderId: direction.hasPlayback ? _applied.renderId : null,
     );
+    _adoptNativeFormats(_platform.lastNativeFormats);
     _publishStatus(_computeStatus());
     if (!diagnostics.observedMatchesDesired) {
       _scheduleConvergence();
@@ -1449,8 +1601,8 @@ final class Session {
     });
     try {
       final result = await _platform.resetNative(
-        captureId: _applied.captureId,
-        renderId: _applied.renderId,
+        captureId: direction.hasCapture ? _applied.captureId : null,
+        renderId: direction.hasPlayback ? _applied.renderId : null,
         captureFormat: captureFormat,
         playbackFormat: playbackFormat,
         noiseCancelling: preference.noiseCancelling,

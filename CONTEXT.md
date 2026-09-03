@@ -69,8 +69,8 @@ Whatever moves media between Session edges and the network — a host-pumped PCM
 _Avoid_: websocket, hub, connection, PeerConnection (that lives inside a Transport plugin)
 
 **Transport plugin**:
-A companion package that binds Session edges to a wire protocol. First is WebRTC (it owns PeerConnection and RTP); later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout.
-_Avoid_: sink (as the type name), Transport (the movement of media, not the package)
+A companion package that binds Session edges to a wire protocol. First is WebRTC (it owns PeerConnection and RTP); later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session; the plugin package is not the Video sink type.
+_Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package)
 
 **Format**:
 The encoding, sample rate, and channel layout of a Session edge — capture out or playback in. Capture and playback Formats may differ.
@@ -203,6 +203,10 @@ _Avoid_: Optimize (as the type name), video clip mode
 **Video surface**:
 A Flutter-visible surface the library gives the host for local send preview, Camera preview, or one inbound video stream. One host type; the platform handle is a Texture id on most platforms and a view/element id on web. The host lays out tiles and switches widget implementation; callers do not import `RTCVideoView` or `dart:html` for local self-view. The library does not ship a meeting grid.
 _Avoid_: tile, RTCVideoView, Preview Texture (a Texture id is a handle, not the type)
+
+**Video sink**:
+A Session attachment that observes one Production video path: generation, Mute-video versus Camera-off, Video processor identity, and the local Video surface. Multiple sinks may attach. Detach does not end the Session or replace the Capture stream. A Transport plugin or disk package binds here and consumes frames natively; tests use a fake. Camera preview has no Video sink seam. Session has no PeerConnection or MediaStream types.
+_Avoid_: PeerConnection, MediaStream, RTCVideoView, sink (alone)
 
 **Video processor**:
 A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). v1 implements only none (pass-through). Blur and replace are a later plan. Hosts do not inject a processor object.

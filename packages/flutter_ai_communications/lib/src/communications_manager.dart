@@ -185,8 +185,12 @@ final class CommunicationsManager {
       final NativeGraphStart native;
       try {
         native = await _platform.startNative(
-          captureId: resolution.desired.captureId,
-          renderId: resolution.desired.renderId,
+          captureId: direction.hasCapture
+              ? resolution.desired.captureId
+              : null,
+          renderId: direction.hasPlayback
+              ? resolution.desired.renderId
+              : null,
           captureFormat: capture,
           playbackFormat: playback,
           noiseCancelling: preference.noiseCancelling,

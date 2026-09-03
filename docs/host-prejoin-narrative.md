@@ -65,7 +65,7 @@ result = await manager.start(
   purpose: 'meeting',
   settings: settings,             // or equivalent start args copied from lobby
 )
-await session.attach Transport plugin / EchoTransport
+session.attachVideoSink(transportVideoSink)  // Video sink from the Transport plugin; not in lobby
 ```
 
 Objects are not shared. A brief exclusive-device gap is allowed. Do not freeze

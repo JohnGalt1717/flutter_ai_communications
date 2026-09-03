@@ -232,6 +232,15 @@ void main() {
     expect(resolved.desired.captureId, isNull);
   });
 
+  test('capture-only does not fill unused render', () {
+    final resolved = resolver.resolve(
+      catalog: catalog,
+      requireRender: false,
+    );
+    expect(resolved.desired.captureId, isNotNull);
+    expect(resolved.desired.renderId, isNull);
+  });
+
   test('playback-only may resolve a render-only Pair', () {
     const renderOnly = [
       Endpoint(

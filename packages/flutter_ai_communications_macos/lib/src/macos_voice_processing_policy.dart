@@ -35,4 +35,17 @@ final class MacosVoiceProcessingPolicy {
   /// Noise cancelling asks the platform for VoiceProcessingIO.
   static bool shouldEnableVoiceProcessing(bool noiseCancelling) =>
       noiseCancelling;
+
+  static String? _presentId(String? id) =>
+      id == null || id.isEmpty ? null : id;
+
+  /// Capture-only omits render. Both missing keeps duplex.
+  static bool wantsCapture(String? captureId, String? renderId) {
+    return _presentId(captureId) != null || _presentId(renderId) == null;
+  }
+
+  /// Playback-only omits capture. Both missing keeps duplex.
+  static bool wantsPlayback(String? captureId, String? renderId) {
+    return _presentId(renderId) != null || _presentId(captureId) == null;
+  }
 }

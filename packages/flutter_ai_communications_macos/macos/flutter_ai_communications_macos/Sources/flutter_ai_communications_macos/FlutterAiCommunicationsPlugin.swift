@@ -25,6 +25,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var voiceProcessingEnabled = false
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
+  private var captureTapInstalled = false
   private let camera = MacCameraGraph()
 
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -73,7 +74,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         captureId: args?["captureId"] as? String,
         renderId: args?["renderId"] as? String
       )
-      result(nil)
+      result(startedFormatMap())
     case "openIsolationSettings":
       emitIsolation()
       result(nil)
@@ -168,52 +169,78 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     teardownEngine()
   }
 
+  private func presentId(_ id: String?) -> String? {
+    guard let id, !id.isEmpty else { return nil }
+    return id
+  }
+
+  private func wantsCapture() -> Bool {
+    presentId(selectedCaptureId) != nil || presentId(selectedRenderId) == nil
+  }
+
+  private func wantsPlayback() -> Bool {
+    presentId(selectedRenderId) != nil || presentId(selectedCaptureId) == nil
+  }
+
   private func startEngine() throws {
-    emitSilenceFrame()
+    let wantCapture = wantsCapture()
+    let wantPlayback = wantsPlayback()
+    if wantCapture {
+      emitSilenceFrame()
+    }
     teardownEngine()
     let next = AVAudioEngine()
-    let playerNode = AVAudioPlayerNode()
-    next.attach(playerNode)
     let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
     let inputFormat = next.inputNode.outputFormat(forBus: 0)
-    let playerFormat = try Self.makePlaybackFormat(
-      inputFormat: inputFormat,
-      mixerFormat: mixerFormat
-    )
-    // Capture + playback share this one engine. Mixer is the VPIO reference.
-    next.connect(playerNode, to: next.mainMixerNode, format: playerFormat)
+    var playerNode: AVAudioPlayerNode?
+    var playerFormat: AVAudioFormat?
+    if wantPlayback {
+      let node = AVAudioPlayerNode()
+      next.attach(node)
+      let format = try Self.makePlaybackFormat(
+        inputFormat: inputFormat,
+        mixerFormat: mixerFormat
+      )
+      // Capture + playback share this one engine. Mixer is the VPIO reference.
+      next.connect(node, to: next.mainMixerNode, format: format)
+      playerNode = node
+      playerFormat = format
+    }
     next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
 
-    let enableVoiceProcessing = noiseCancelling
-    if enableVoiceProcessing {
-      do {
-        try next.inputNode.setVoiceProcessingEnabled(true)
-        if next.inputNode.isVoiceProcessingBypassed {
-          next.inputNode.isVoiceProcessingBypassed = false
+    if wantCapture {
+      let enableVoiceProcessing = noiseCancelling
+      if enableVoiceProcessing {
+        do {
+          try next.inputNode.setVoiceProcessingEnabled(true)
+          if next.inputNode.isVoiceProcessingBypassed {
+            next.inputNode.isVoiceProcessingBypassed = false
+          }
+          voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
+        } catch {
+          voiceProcessingEnabled = false
         }
-        voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
-      } catch {
+      } else if next.inputNode.isVoiceProcessingEnabled {
+        try? next.inputNode.setVoiceProcessingEnabled(false)
+        voiceProcessingEnabled = false
+      } else {
         voiceProcessingEnabled = false
       }
-    } else if next.inputNode.isVoiceProcessingEnabled {
-      try? next.inputNode.setVoiceProcessingEnabled(false)
-      voiceProcessingEnabled = false
-    } else {
-      voiceProcessingEnabled = false
-    }
 
-    let processedInput = next.inputNode.outputFormat(forBus: 0)
-    let tapChannels = processedInput.channelCount > 0 ? Int(processedInput.channelCount) : 1
-    let tapFormat = captureTapFormat(inputFormat: processedInput, channels: min(tapChannels, 1))
-    next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-      self?.emitCapture(buffer)
+      let processedInput = next.inputNode.outputFormat(forBus: 0)
+      let tapChannels = processedInput.channelCount > 0 ? Int(processedInput.channelCount) : 1
+      let tapFormat = captureTapFormat(inputFormat: processedInput, channels: min(tapChannels, 1))
+      next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
+        self?.emitCapture(buffer)
+      }
+      captureTapInstalled = true
     }
     try next.start()
     engine = next
     player = playerNode
     playbackFormat = playerFormat
     queuedPlaybackFrames = 0
-    playerNode.play()
+    playerNode?.play()
   }
 
   private func teardownEngine() {
@@ -221,13 +248,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       if engine.inputNode.isVoiceProcessingEnabled {
         try? engine.inputNode.setVoiceProcessingEnabled(false)
       }
-      engine.inputNode.removeTap(onBus: 0)
+      if captureTapInstalled {
+        engine.inputNode.removeTap(onBus: 0)
+      }
       player?.stop()
       engine.stop()
     }
     engine = nil
     player = nil
     playbackFormat = nil
+    captureTapInstalled = false
     voiceProcessingEnabled = false
   }
 
@@ -245,13 +275,18 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func startedFormatMap() -> [String: Any] {
-    let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
-    let playRate = playbackFormat?.sampleRate ?? captureRate
-    return [
-      "status": "started",
-      "nativeCaptureFormat": formatMap(sampleRate: captureRate),
-      "nativePlaybackFormat": formatMap(sampleRate: playRate),
-    ]
+    var map: [String: Any] = ["status": "started"]
+    if wantsCapture() {
+      let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
+      map["nativeCaptureFormat"] = formatMap(sampleRate: captureRate)
+    }
+    if wantsPlayback() {
+      let playRate = playbackFormat?.sampleRate
+        ?? engine?.inputNode.outputFormat(forBus: 0).sampleRate
+        ?? 24_000
+      map["nativePlaybackFormat"] = formatMap(sampleRate: playRate)
+    }
+    return map
   }
 
   private func formatMap(sampleRate: Double, channels: Int = 1) -> [String: Any] {

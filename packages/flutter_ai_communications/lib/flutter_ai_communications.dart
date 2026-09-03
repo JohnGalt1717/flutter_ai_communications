@@ -13,6 +13,7 @@ import 'src/coverage.dart';
 import 'src/session_diagnostics.dart';
 import 'src/session_options.dart';
 import 'src/session_status.dart';
+import 'src/video_sink.dart';
 
 export 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 export 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -21,6 +22,7 @@ export 'src/coverage.dart';
 export 'src/session_diagnostics.dart';
 export 'src/session_options.dart';
 export 'src/session_status.dart';
+export 'src/video_sink.dart';
 
 part 'src/communications_manager.dart';
 part 'src/camera_preview.dart';

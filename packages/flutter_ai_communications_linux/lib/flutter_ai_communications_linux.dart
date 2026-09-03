@@ -110,9 +110,9 @@ final class FlutterAiCommunicationsLinux
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
-      _lastNativeFormats = const NativeFormatReport(
-        capture: AudioFormat.pcm16le24k,
-        playback: AudioFormat.pcm16le24k,
+      _lastNativeFormats = _formatsFor(
+        captureId: captureId,
+        renderId: renderId,
       );
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
@@ -153,8 +153,23 @@ final class FlutterAiCommunicationsLinux
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
+      _lastNativeFormats = _formatsFor(
+        captureId: captureId ?? _backend.observed.captureId,
+        renderId: renderId ?? _backend.observed.renderId,
+      );
       _emitObserved(force: true);
     }
+  }
+
+  NativeFormatReport _formatsFor({String? captureId, String? renderId}) {
+    final capture = captureId == null || captureId.isEmpty ? null : captureId;
+    final render = renderId == null || renderId.isEmpty ? null : renderId;
+    final wantCapture = capture != null || render == null;
+    final wantPlayback = render != null || capture == null;
+    return NativeFormatReport(
+      capture: wantCapture ? AudioFormat.pcm16le24k : null,
+      playback: wantPlayback ? AudioFormat.pcm16le24k : null,
+    );
   }
 
   void _ensureCatalogWatch() {

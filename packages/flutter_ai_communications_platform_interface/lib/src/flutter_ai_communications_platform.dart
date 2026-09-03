@@ -213,7 +213,21 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   }
 
   /// Last Video surface from camera start, if any.
+  ///
+  /// Transport plugins bind natively to this Production video path. They do
+  /// not copy frames through Dart. [attachProductionVideoPathNative] is the
+  /// native hook Session calls per Video sink.
   VideoSurface? get lastVideoSurface => null;
+
+  /// Native consumer of the Production video path. Frames stay native.
+  ///
+  /// [token] identifies one Video sink. Default is a no-op so adapters
+  /// without a Transport plugin still load. Camera preview does not call this.
+  Future<void> attachProductionVideoPathNative({required String token}) async {}
+
+  /// Tears down the native consumer registered by
+  /// [attachProductionVideoPathNative]. Idempotent for unknown tokens.
+  Future<void> detachProductionVideoPathNative({required String token}) async {}
 
   /// Negotiated Native Video Format from the last camera start.
   VideoFormat? get lastNativeVideoFormat => null;

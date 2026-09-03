@@ -36,6 +36,17 @@ import Testing
     #expect(IosGraphPolicy.captureEventsRequirePlatformThread)
 }
 
+@Test func captureOnlyDoesNotWantPlayback() {
+    #expect(IosGraphPolicy.wantsCapture(captureId: "handset-in", renderId: nil))
+    #expect(!IosGraphPolicy.wantsPlayback(captureId: "handset-in", renderId: nil))
+}
+
+@Test func playbackOnlyDoesNotWantCapture() {
+    #expect(!IosGraphPolicy.wantsCapture(captureId: nil, renderId: "speaker-out"))
+    #expect(IosGraphPolicy.wantsPlayback(captureId: nil, renderId: "speaker-out"))
+    #expect(!IosGraphPolicy.wantsCapture(captureId: "", renderId: "speaker-out"))
+}
+
 @Test func nativeFormatMapReportsTheEngineSampleRate() {
     let map = IosGraphPolicy.nativeFormatMap(sampleRate: 48000)
     #expect(map["encoding"] as? String == "pcm16le")
