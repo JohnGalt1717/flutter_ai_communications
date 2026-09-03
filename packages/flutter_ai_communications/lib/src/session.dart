@@ -94,6 +94,9 @@ final class Session {
         _statusController.add(_status);
       }
     };
+    if (_videoSurface != null && _cameraEnabled) {
+      _videoPathGeneration = 1;
+    }
   }
 
   static const _resolver = PreferenceResolver();
@@ -349,6 +352,11 @@ final class Session {
   VideoSurface? _videoSurface;
   VideoFormat? _nativeVideoFormat;
   String? _videoUnavailableReason;
+  var _videoPathGeneration = 0;
+  final Set<VideoSink> _videoSinks = Set<VideoSink>.identity();
+  final Map<VideoSink, String> _videoSinkTokens =
+      Map<VideoSink, String>.identity();
+  var _nextVideoSinkToken = 0;
 
   /// Renders [bytes] in [playbackFormat]. No-op while paused, stopped, or
   /// capture-only.
@@ -379,6 +387,7 @@ final class Session {
     }
     _cameraId = cameraId;
     await _platform.selectCameraNative(cameraId);
+    _notifyVideoSinks();
   }
 
   /// Mute-video: black frames, graph stays up.
@@ -388,6 +397,7 @@ final class Session {
     }
     _videoMuted = true;
     await _platform.setMuteVideoNative(true);
+    _notifyVideoSinks();
   }
 
   /// Restores real frames on the same send path.
@@ -397,6 +407,7 @@ final class Session {
     }
     _videoMuted = false;
     await _platform.setMuteVideoNative(false);
+    _notifyVideoSinks();
   }
 
   /// Camera-off when [enabled] is false. Audio continues.
@@ -404,6 +415,7 @@ final class Session {
     if (_stopped) {
       return;
     }
+    final turningOn = enabled && !_cameraEnabled;
     _cameraEnabled = enabled;
     if (!enabled) {
       _videoMuted = false;
@@ -412,7 +424,11 @@ final class Session {
     await _platform.setCameraEnabledNative(enabled);
     if (enabled) {
       _videoSurface = _platform.lastVideoSurface;
+      if (turningOn && _videoSurface != null) {
+        _videoPathGeneration++;
+      }
     }
+    _notifyVideoSinks();
   }
 
   /// Attach camera send later on the same Session. Does not replace [capture].
@@ -455,6 +471,90 @@ final class Session {
     _videoUnavailableReason = null;
     _videoSurface = _platform.lastVideoSurface;
     _nativeVideoFormat = _platform.lastNativeVideoFormat;
+    _videoPathGeneration++;
+    _notifyVideoSinks();
+  }
+
+  /// Attaches [sink] to this Session's Production video path.
+  ///
+  /// Immediate snapshot, then updates on generation, Mute-video, Camera-off,
+  /// and processor identity. Duplicate attach is idempotent. Camera preview
+  /// has no Video sink seam. A Transport plugin binds natively through
+  /// [FlutterAiCommunicationsPlatform.attachProductionVideoPathNative];
+  /// frames do not copy through Dart.
+  void attachVideoSink(VideoSink sink) {
+    if (_stopped) {
+      return;
+    }
+    if (_videoSinks.add(sink)) {
+      final token = 'video-sink-$_nextVideoSinkToken';
+      _nextVideoSinkToken++;
+      _videoSinkTokens[sink] = token;
+      _unawaitedNative(_platform.attachProductionVideoPathNative(token: token));
+    }
+    _deliverVideoPath(sink, _videoPathSnapshot());
+  }
+
+  /// Detaches [sink]. Idempotent. Does not end the Session or replace
+  /// [capture].
+  void detachVideoSink(VideoSink sink) {
+    if (!_videoSinks.remove(sink)) {
+      return;
+    }
+    final token = _videoSinkTokens.remove(sink);
+    if (token != null) {
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
+    }
+  }
+
+  VideoPathSnapshot _videoPathSnapshot() {
+    return VideoPathSnapshot(
+      generation: _videoPathGeneration,
+      muteVideo: _videoMuted,
+      cameraOff: !_cameraEnabled || _videoSurface == null,
+      processor: videoProcessor,
+      surface: _videoSurface,
+    );
+  }
+
+  void _notifyVideoSinks() {
+    if (_videoSinks.isEmpty) {
+      return;
+    }
+    final snapshot = _videoPathSnapshot();
+    for (final sink in List<VideoSink>.of(_videoSinks)) {
+      _deliverVideoPath(sink, snapshot);
+    }
+  }
+
+  void _deliverVideoPath(VideoSink sink, VideoPathSnapshot snapshot) {
+    try {
+      sink.onVideoPath(snapshot);
+    } on Object catch (error, stack) {
+      _logger.warning(error, error, stack);
+    }
+  }
+
+  void _releaseVideoSinks() {
+    _cameraEnabled = false;
+    _videoMuted = false;
+    _videoSurface = null;
+    _notifyVideoSinks();
+    for (final token in List<String>.of(_videoSinkTokens.values)) {
+      _unawaitedNative(_platform.detachProductionVideoPathNative(token: token));
+    }
+    _videoSinks.clear();
+    _videoSinkTokens.clear();
+  }
+
+  void _unawaitedNative(Future<void> future) {
+    unawaited(() async {
+      try {
+        await future;
+      } on Object catch (error, stack) {
+        _logger.warning(error, error, stack);
+      }
+    }());
   }
 
   /// Mute keeps the same capture subscription and emits silence frames.
@@ -552,6 +652,7 @@ final class Session {
           stack,
         );
       }
+      _releaseVideoSinks();
       // Do not await cancel/close. Some Dart streams complete those Futures
       // on a Timer, which never fires under FakeAsync unless time is pumped.
       unawaited(_captureSub?.cancel());
@@ -911,9 +1012,7 @@ final class Session {
                   convergenceDeadline);
       final explicitFault = exhausted && !_preferenceControlled;
       return SessionStatus(
-        severity: explicitFault
-            ? StatusSeverity.error
-            : StatusSeverity.warning,
+        severity: explicitFault ? StatusSeverity.error : StatusSeverity.warning,
         code: pending
             ? SessionStatusCode.routeConverging
             : SessionStatusCode.routeMismatch,
