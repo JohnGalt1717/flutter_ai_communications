@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Video sink provider seam; 05 — iOS camera graph (or any one native graph)
 
-**Status:** done (2026-09-03). GitHub #47. Package
+**Status:** done (2026-09-03). GitHub #47, PR #48 (`4f38598`). Package
 `flutter_ai_communications_webrtc`; documented sample in
 `docs/host-webrtc-narrative.md`.
 

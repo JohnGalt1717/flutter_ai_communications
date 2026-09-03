@@ -6,7 +6,7 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
-Status as of 2026-09-03. Ticket 12 WebRTC Send tracks on `feat/12-webrtc-video-sink` (#47).
+Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#46) and 12 (#48) on `main`.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Session and platform-interface video contracts
 
-**Status:** done (2026-09-03). GitHub #45. `Session.attachVideoSink` / `detachVideoSink`; native hook `attachProductionVideoPathNative`.
+**Status:** done (2026-09-03). GitHub #45, PR #46 (`e207769`). `Session.attachVideoSink` / `detachVideoSink`; native hook `attachProductionVideoPathNative`.
 
 - [x] Two fake sinks can attach at once
 - [x] Mute-video and Camera-off notify sinks differently

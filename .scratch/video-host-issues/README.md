@@ -10,7 +10,8 @@ are done. Do not create GitHub issues for these until a human asks.
 
 Library tickets stay in `.scratch/video-v1-issues/`.
 
-Status as of 2026-09-01, HEAD `e6b37b4`. First host surface is `example/`.
+Status as of 2026-09-03, HEAD `4f38598`. First host surface is `example/`.
+Library 04 and 12 are on `main`.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
@@ -22,6 +23,6 @@ Status as of 2026-09-01, HEAD `e6b37b4`. First host surface is `example/`.
 | 05 | Example lobby subsection | 03, 04 | done (lobby shipped; persistence ticket 03 still open) |
 | 06 | Join and enable-video-later | 05 and library 02 | done |
 | 07 | In-session AV controls | 06 | done |
-| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | not started (Echo Transport is the stand-in) |
+| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | partial — `WebrtcVideoSink` attaches on Join; Echo is audio; RTCVideoView loopback remaining |
 | 09 | Orchestration path and receipts | 07 and one native library graph | in progress (keys exist; Linux camera receipt remaining) |
 | 10 | Docs pass | 09 | in progress (plan status updated 2026-09-01) |

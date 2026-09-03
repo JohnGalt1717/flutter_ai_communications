@@ -8,6 +8,7 @@ Receipts on remaining heads:
 **Tickets:** `.scratch/screen-v1-issues/`.
 **Host narrative:** `docs/host-screen-share-narrative.md`.
 **Camera track:** `.agents/plans/video-capture-and-sinks.md` (do not regress).
+**Video sink / Transport plugin:** tickets 04 (#46) and 12 (#48) are on `main`.
 
 ## Current slice (2026-09-03)
 
@@ -30,6 +31,8 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 - Android MediaProjection + FGS; OS-stop via `MediaProjection.Callback`
 - Web `getDisplayMedia` + HtmlElementView; track `ended` is source-gone
 - Camera Production video path per platform (do not reuse as a screen graph)
+- Native screen graphs on Windows, Linux (X11), Android, web (PR #39)
+- Video sink seam (#46) and WebrtcVideoSink Send tracks (#48)
 
 ### Shipped vs remaining (native)
 
@@ -45,10 +48,8 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 
 ### Not in this slice
 
-- Video ticket 04 / 12 Transport plugin RTP seam (camera). Screen send
-  adds a *second* local video path onto that seam once it exists; fake
-  Transport coverage is in screen ticket 02/12 and must not wait for
-  flutter_webrtc if that package is still open.
+- Screen ticket 12: Transport second send path (camera + screen). Fake
+  coverage does not wait on flutter_webrtc; that package is on `main` (#48).
 - Blur / replace processors
 - Linux camera physical receipt (camera track)
 

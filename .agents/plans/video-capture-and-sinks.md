@@ -1,17 +1,18 @@
 # Video Capture, Processors, and Sink Providers Plan
 
-**Status (2026-09-01):** Camera graphs shipped on iOS, Android, macOS, web,
-Windows, and Linux (in tree). PR #34 squash-merged to `main` as `e6b37b4`.
-Windows LifeCam Studio `native_camera_test` passed. Next is Linux
-`flutter build linux` plus a physical camera receipt, then Transport plugin
-seam (tickets 04 / 12). See `docs/windows-linux-video-setup.md`.
-**Tickets:** `.scratch/video-v1-issues/` (markdown, not GitHub issues).
+**Status (2026-09-03):** Camera graphs shipped on six platforms. Video sink
+seam #45 / #46 and WebRTC Send-track package #47 / #48 are on `main`
+(`4f38598`). Linux camera compile + physical receipt remain. Processors
+blur/replace stay deferred. Screen send is a separate plan (PR #39 on
+`main`; Apple graphs #43).
+**Tickets:** `.scratch/video-v1-issues/`.
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.
 
-## Current slice (2026-09-01)
+## Current slice (2026-09-03)
 
-HEAD: `e6b37b4` on `main`. Working tree clean after PR #34.
+HEAD: `4f38598` on `main` (includes #46 Video sinks, #48 WebrtcVideoSink,
+#39 screen send on Windows/Linux/Android/web).
 
 Linux remains: compile the V4L2 graph on a machine with clang/cmake/GTK/v4l
 headers, then collect camera Orchestration receipts. Windows camera is
@@ -38,13 +39,18 @@ fail `start()`.
 - v1 processor is `none` only
 - Windows/Linux audio backends already exist (WASAPI / Pulse). Audio
   Orchestration 20-cycles ran in the PR #32 / #33 window
+- Video sink seam: `Session.attachVideoSink` / `detachVideoSink` (#46)
+- Transport plugin package `flutter_ai_communications_webrtc`: Send tracks,
+  host owns PeerConnection (#48). Documented sample
+  `docs/host-webrtc-narrative.md`. Example meeting Join attaches the sink.
 
 ### Not in this slice (do not block Linux receipts)
 
-- Ticket 04 / 12: Transport plugin RTP seam and `flutter_webrtc` package
 - Tickets 10–11: blur / replace processors (see
   `.agents/plans/video-processors-blur-replace.md`)
-- Screen send native graphs: `.agents/plans/screen-capture-and-send.md` (ADR-0019 catalog; ADRs 0022–0027)
+- Screen send: `.agents/plans/screen-capture-and-send.md` (PR #39 in tree;
+  Apple graphs #43; receipts #44)
+- Host RTCVideoView loopback: `.scratch/video-host-issues/08-webrtc-sink.md`
 - Physical iPhone Allow-dialog receipt
 - Web Join overlay: lobby works; Join must keep a 320×220 platform view, not
   unmount a 100% HtmlElementView
@@ -87,7 +93,7 @@ Do not treat video as done when a Texture shows a camera. Done means:
 - Session AV lifecycle including enable-video-later
 - Mute-video vs Camera-off vs pause
 - native Production video path
-- Transport plugin (flutter_webrtc) plus a fake in tests
+- Transport plugin (`flutter_ai_communications_webrtc` Send tracks + fake Video sinks in tests)
 - example lobby subsection + in-session AV on the six platforms, driven by Orchestration
 - host narrative can be followed without a second camera plugin
 
@@ -221,13 +227,13 @@ Tickets 13–14, plus `.scratch/video-host-issues/`.
 | 01 | Shared video types | 00 |
 | 02 | Session and platform-interface contracts | 01 |
 | 03 | Lobby Session | 02 |
-| 04 | Transport plugin video seam | 02 |
+| 04 | Transport plugin video seam | 02 — done #45/#46 |
 | 05–09 | iOS / Android / macOS / Windows / Web graphs | 02 — 05–09 done; Linux graph in tree, receipts remaining |
 | 10 | Processors on iOS and Android | deferred — later plan |
 | 11 | Processors on macOS, Windows, Web | deferred — later plan |
-| 12 | flutter_webrtc Transport plugin | 04 and one native graph |
-| 13 | Example lobby + in-session harness | 03 and one native graph |
-| 14 | Host guide accuracy pass | 13 |
+| 12 | flutter_webrtc Transport plugin | 04 — done #47/#48 |
+| 13 | Example lobby + in-session harness | 03 and one native graph — done |
+| 14 | Host guide accuracy pass | 13 — in progress |
 
 ## Physical-device matrix
 

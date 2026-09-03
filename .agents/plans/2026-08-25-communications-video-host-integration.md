@@ -1,13 +1,10 @@
 # Plan: Host communications video (example first)
 
-**Status (2026-09-01):** Example lobby + Session contracts shipped. Do not
-start native camera work in a host app. All six platform camera graphs are
-in the federated packages (PR #34 / `e6b37b4` on `main`). Windows LifeCam
-Studio camera receipt passed. Remaining library work for the host is Linux
-camera compile + receipt, then Transport plugin tickets 04 / 12 (see
-`.agents/plans/video-capture-and-sinks.md` and
-`docs/windows-linux-video-setup.md`). Host preference persistence is still
-unshipped in `example/`.
+**Status (2026-09-03):** Example lobby + Session contracts shipped. Library
+tickets 04 (#46) and 12 (#48) are on `main`. Example meeting Join attaches
+`WebrtcVideoSink`. Remaining host work: preference persistence in `example/`,
+RTCVideoView loopback (host ticket 08), Linux camera compile + receipt.
+Do not start native camera work in a host app.
 **Audience:** Fresh agent working in `JohnGalt1717/flutter_ai_communications`.
 **Date:** 2026-08-25
 **Library source of truth:** `docs/spec-video-v1.md`, ADRs 0012–0017,
@@ -66,11 +63,9 @@ the example. Done means:
 Library audio conformance stays on its own track. This plan must not regress
 one-Session or ADR-0004 stream identity.
 
-**Hard block:** Host implementation of preview, processors, or sinks waits
-until library tickets `01` and `02` exist (shared types + fake Session
-contracts). Native preview waits until at least one library platform graph
-(`05`–`09`) and the sink seam (`04`) exist. flutter_webrtc attach waits on
-library ticket `12`.
+**Hard block:** Library tickets `01`, `02`, `04`, and `12` exist. Native
+preview waits on a platform graph (`05`–`09`). Host ticket `08` (RTCVideoView
+loopback / addTrack) is unblocked.
 
 Example landing chrome may be the same work as library ticket `13`. Do not
 build a second lobby. Host tickets `05`–`07` are the checklist for that
