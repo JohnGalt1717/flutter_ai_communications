@@ -107,8 +107,11 @@ struct WgcCapture::Stream {
   RECT bounds{};
   std::mutex mutex;
   std::vector<uint8_t> bgra;
+  ComPtr<ID3D11Texture2D> staging;
   int width = 0;
   int height = 0;
+  int staging_width = 0;
+  int staging_height = 0;
 };
 
 WgcCapture::WgcCapture() {
@@ -260,20 +263,27 @@ bool WgcCapture::AddStream(HWND hwnd, HMONITOR monitor, const RECT& bounds,
           if (device_ == nullptr || device_->d3d == nullptr) {
             return;
           }
-          ComPtr<ID3D11Texture2D> staging;
-          if (FAILED(device_->d3d->CreateTexture2D(&desc, nullptr, &staging))) {
-            return;
+          const int frame_w = static_cast<int>(desc.Width);
+          const int frame_h = static_cast<int>(desc.Height);
+          if (raw->staging == nullptr || raw->staging_width != frame_w ||
+              raw->staging_height != frame_h) {
+            raw->staging.Reset();
+            if (FAILED(device_->d3d->CreateTexture2D(&desc, nullptr,
+                                                     &raw->staging))) {
+              return;
+            }
+            raw->staging_width = frame_w;
+            raw->staging_height = frame_h;
           }
-          device_->context->CopyResource(staging.Get(), texture.Get());
+          device_->context->CopyResource(raw->staging.Get(), texture.Get());
           D3D11_MAPPED_SUBRESOURCE mapped{};
-          if (FAILED(device_->context->Map(staging.Get(), 0, D3D11_MAP_READ, 0,
-                                           &mapped))) {
+          if (FAILED(device_->context->Map(raw->staging.Get(), 0,
+                                           D3D11_MAP_READ, 0, &mapped))) {
             return;
           }
-          CopyStreamFrame(raw, mapped.pData, static_cast<int>(desc.Width),
-                          static_cast<int>(desc.Height),
+          CopyStreamFrame(raw, mapped.pData, frame_w, frame_h,
                           static_cast<int>(mapped.RowPitch));
-          device_->context->Unmap(staging.Get(), 0);
+          device_->context->Unmap(raw->staging.Get(), 0);
         });
     stream->session.StartCapture();
   } catch (winrt::hresult_error const&) {
@@ -291,7 +301,10 @@ void WgcCapture::CopyStreamFrame(Stream* stream, const void* src, int src_w,
   std::lock_guard<std::mutex> lock(stream->mutex);
   stream->width = src_w;
   stream->height = src_h;
-  stream->bgra.assign(static_cast<size_t>(src_w) * src_h * 4, 0);
+  const size_t bytes = static_cast<size_t>(src_w) * src_h * 4;
+  if (stream->bgra.size() != bytes) {
+    stream->bgra.resize(bytes);
+  }
   const auto* row = static_cast<const uint8_t*>(src);
   for (int y = 0; y < src_h; y++) {
     std::memcpy(stream->bgra.data() + static_cast<size_t>(y) * src_w * 4, row,

@@ -71,6 +71,7 @@ class ScreenGraph {
   void ShowFrame(int x, int y, int w, int h);
   void HideFrame();
   bool StartPortal(FlMethodCall* pending, bool cursor, bool motion);
+  void CancelPortal();
 
   FlTextureRegistrar* textures_;
   Display* display_ = nullptr;
@@ -83,6 +84,9 @@ class ScreenGraph {
   std::atomic<bool> motion_{false};
   std::atomic<bool> cursor_{true};
   std::thread capture_thread_;
+  std::thread portal_thread_;
+  struct PortalState;
+  std::shared_ptr<PortalState> portal_state_;
   std::string send_id_;
   int send_width_ = 1280;
   int send_height_ = 720;

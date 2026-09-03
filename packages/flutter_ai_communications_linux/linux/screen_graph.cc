@@ -407,6 +407,7 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
 
 void ScreenGraph::Stop() {
   running_ = false;
+  CancelPortal();
   if (capture_thread_.joinable()) {
     capture_thread_.join();
   }
@@ -512,6 +513,14 @@ gboolean ScreenGraph::CopyPixels(const uint8_t** buffer, uint32_t* width,
   return TRUE;
 }
 
+struct ScreenGraph::PortalState {
+  std::mutex mutex;
+  std::atomic<bool> cancel{false};
+  GMainLoop* loop = nullptr;
+  ScreenGraph* graph = nullptr;
+  FlMethodCall* pending = nullptr;
+};
+
 namespace {
 
 struct PortalWait {
@@ -528,18 +537,26 @@ void OnPortalResponse(GDBusConnection*, const gchar*, const gchar*,
   g_main_loop_quit(wait->loop);
 }
 
+void UnrefResults(GVariant* results) {
+  if (results != nullptr) {
+    g_variant_unref(results);
+  }
+}
+
 bool PortalCall(GDBusProxy* proxy, const char* method, GVariant* args,
-                GVariant** results, guint* code) {
+                GVariant** results, guint* code,
+                const std::shared_ptr<ScreenGraph::PortalState>& state) {
   g_autoptr(GError) error = nullptr;
   g_autoptr(GVariant) ret = g_dbus_proxy_call_sync(
       proxy, method, args, G_DBUS_CALL_FLAGS_NONE, 180000, nullptr, &error);
-  if (ret == nullptr) {
+  if (ret == nullptr || state->cancel) {
     return false;
   }
   const gchar* request_path = nullptr;
   g_variant_get(ret, "(&o)", &request_path);
   PortalWait wait;
   wait.loop = g_main_loop_new(nullptr, FALSE);
+  state->loop = wait.loop;
   GDBusConnection* bus = g_dbus_proxy_get_connection(proxy);
   const guint sub = g_dbus_connection_signal_subscribe(
       bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request",
@@ -547,7 +564,12 @@ bool PortalCall(GDBusProxy* proxy, const char* method, GVariant* args,
       OnPortalResponse, &wait, nullptr);
   g_main_loop_run(wait.loop);
   g_dbus_connection_signal_unsubscribe(bus, sub);
+  state->loop = nullptr;
   g_main_loop_unref(wait.loop);
+  if (state->cancel) {
+    UnrefResults(wait.results);
+    return false;
+  }
   *code = wait.code;
   *results = wait.results;
   return true;
@@ -571,30 +593,85 @@ FlValue* ScreenGraph::PortalStartedMap() {
   return fl_value_clone(map);
 }
 
+void ScreenGraph::CancelPortal() {
+  const auto state = portal_state_;
+  if (state != nullptr) {
+    state->cancel = true;
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->graph = nullptr;
+    }
+    GMainLoop* loop = state->loop;
+    if (loop != nullptr) {
+      g_main_loop_quit(loop);
+    }
+  }
+  if (portal_thread_.joinable()) {
+    portal_thread_.join();
+  }
+  if (state != nullptr) {
+    FlMethodCall* pending = nullptr;
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      pending = state->pending;
+      state->pending = nullptr;
+    }
+    if (pending != nullptr) {
+      g_autoptr(FlValue) map = fl_value_new_map();
+      fl_value_set_string_take(map, "status",
+                               fl_value_new_string("unavailable"));
+      fl_value_set_string_take(map, "reason", fl_value_new_string("none"));
+      g_autoptr(FlMethodResponse) response =
+          FL_METHOD_RESPONSE(fl_method_success_response_new(map));
+      fl_method_call_respond(pending, response, nullptr);
+      g_object_unref(pending);
+    }
+  }
+  portal_state_.reset();
+}
+
 bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
   if (pending == nullptr) {
     return false;
   }
+  CancelPortal();
+  auto state = std::make_shared<PortalState>();
+  state->graph = this;
+  state->pending = pending;
   g_object_ref(pending);
-  std::thread([this, pending, cursor, motion]() {
-    auto finish = [this, pending](const char* status, const char* reason) {
+  portal_state_ = state;
+  portal_thread_ = std::thread([this, state, cursor, motion]() {
+    auto finish = [state](const char* status, const char* reason) {
+      FlMethodCall* pending_call = nullptr;
+      ScreenGraph* graph = nullptr;
+      {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if (state->cancel) {
+          return;
+        }
+        pending_call = state->pending;
+        state->pending = nullptr;
+        graph = state->graph;
+      }
+      if (pending_call == nullptr) {
+        return;
+      }
       struct Done {
         ScreenGraph* graph;
         FlMethodCall* pending;
         std::string status;
         std::string reason;
       };
-      auto* done = new Done{this, pending, status, reason == nullptr ? "" : reason};
+      auto* done = new Done{graph, pending_call, status,
+                            reason == nullptr ? "" : reason};
       g_idle_add(
           [](gpointer data) -> gboolean {
             auto* done = static_cast<Done*>(data);
             g_autoptr(FlValue) map = fl_value_new_map();
             fl_value_set_string_take(map, "status",
                                      fl_value_new_string(done->status.c_str()));
-            if (done->status == "started") {
+            if (done->status == "started" && done->graph != nullptr) {
               g_autoptr(FlValue) started = done->graph->PortalStartedMap();
-              fl_value_set_string_take(map, "status",
-                                       fl_value_new_string("started"));
               FlValue* texture = fl_value_lookup_string(started, "textureId");
               FlValue* width = fl_value_lookup_string(started, "width");
               FlValue* height = fl_value_lookup_string(started, "height");
@@ -630,7 +707,7 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
         G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
         "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
         "org.freedesktop.portal.ScreenCast", nullptr, &error);
-    if (proxy == nullptr) {
+    if (proxy == nullptr || state->cancel) {
       finish("unavailable", "none");
       return;
     }
@@ -645,21 +722,22 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
                           g_variant_new_string(token));
     GVariant* results = nullptr;
     guint code = 2;
-    if (!PortalCall(proxy, "CreateSession",
-                    g_variant_new("(a{sv})", &opts), &results, &code) ||
+    if (!PortalCall(proxy, "CreateSession", g_variant_new("(a{sv})", &opts),
+                    &results, &code, state) ||
         code != 0 || results == nullptr) {
+      UnrefResults(results);
       finish("unavailable", code == 1 ? "denied" : "none");
       return;
     }
     const gchar* session_path = nullptr;
     g_variant_lookup(results, "session_handle", "&o", &session_path);
     if (session_path == nullptr) {
-      g_variant_unref(results);
+      UnrefResults(results);
       finish("unavailable", "none");
       return;
     }
     const std::string session = session_path;
-    g_variant_unref(results);
+    UnrefResults(results);
 
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token",
@@ -673,17 +751,13 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
     results = nullptr;
     if (!PortalCall(proxy, "SelectSources",
                     g_variant_new("(oa{sv})", session.c_str(), &opts), &results,
-                    &code) ||
+                    &code, state) ||
         code != 0) {
-      if (results != nullptr) {
-        g_variant_unref(results);
-      }
+      UnrefResults(results);
       finish("unavailable", code == 1 ? "denied" : "none");
       return;
     }
-    if (results != nullptr) {
-      g_variant_unref(results);
-    }
+    UnrefResults(results);
 
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token",
@@ -691,9 +765,15 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
     results = nullptr;
     if (!PortalCall(proxy, "Start",
                     g_variant_new("(osa{sv})", session.c_str(), "", &opts),
-                    &results, &code) ||
+                    &results, &code, state) ||
         code != 0 || results == nullptr) {
+      UnrefResults(results);
       finish("unavailable", code == 1 ? "denied" : "none");
+      return;
+    }
+    UnrefResults(results);
+    if (state->cancel) {
+      finish("unavailable", "none");
       return;
     }
     send_width_ = 1920;
@@ -705,8 +785,7 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
       running_ = true;
       front_.assign(static_cast<size_t>(send_width_) * send_height_ * 4, 0);
     }
-    g_variant_unref(results);
     finish("started", nullptr);
-  }).detach();
+  });
   return true;
 }
