@@ -909,15 +909,20 @@ final class Session {
           (_convergenceStartedAt != null &&
               DateTime.now().difference(_convergenceStartedAt!) >=
                   convergenceDeadline);
+      final explicitFault = exhausted && !_preferenceControlled;
       return SessionStatus(
-        severity: StatusSeverity.warning,
+        severity: explicitFault
+            ? StatusSeverity.error
+            : StatusSeverity.warning,
         code: pending
             ? SessionStatusCode.routeConverging
             : SessionStatusCode.routeMismatch,
         recoverability: pending || !exhausted
             ? StatusRecoverability.automatic
             : StatusRecoverability.hostAction,
-        usability: StatusUsability.degraded,
+        usability: explicitFault
+            ? StatusUsability.unusable
+            : StatusUsability.degraded,
         action: pending || !exhausted
             ? SessionAction.wait
             : SessionAction.selectPair,
@@ -940,6 +945,45 @@ final class Session {
     }
     if (direction.hasCapture && _captureFrameCount == 0) {
       return SessionStatus.starting(purpose: purpose, generation: _generation);
+    }
+    if (direction.hasPlayback && _nativePlaybackFormat == null) {
+      return SessionStatus.starting(purpose: purpose, generation: _generation);
+    }
+    final converting =
+        _captureConversionPath == ConversionPath.dart ||
+        _playbackConversionPath == ConversionPath.dart;
+    if (converting) {
+      return SessionStatus(
+        severity: StatusSeverity.warning,
+        code: SessionStatusCode.formatConverted,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
+    }
+    if (direction.hasCapture && !direction.hasPlayback) {
+      return SessionStatus(
+        severity: StatusSeverity.success,
+        code: SessionStatusCode.captureLive,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
+    }
+    if (direction.hasPlayback && !direction.hasCapture) {
+      return SessionStatus(
+        severity: StatusSeverity.success,
+        code: SessionStatusCode.playbackReady,
+        recoverability: StatusRecoverability.none,
+        usability: StatusUsability.usable,
+        action: SessionAction.none,
+        purpose: purpose,
+        generation: _generation,
+      );
     }
     return SessionStatus.ready(purpose: purpose, generation: _generation);
   }

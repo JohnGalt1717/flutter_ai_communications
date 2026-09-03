@@ -45,18 +45,6 @@ enum SessionStatusCode {
   /// Applicable readiness checks have passed.
   ready,
 
-  /// Microphone permission was denied.
-  permissionDenied,
-
-  /// Microphone permission is restricted.
-  permissionRestricted,
-
-  /// A live Session already exists.
-  alreadyActive,
-
-  /// Native graph could not start.
-  failed,
-
   /// No complete usable Pair remains.
   noUsablePair,
 

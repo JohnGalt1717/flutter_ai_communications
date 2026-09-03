@@ -59,6 +59,8 @@ void main() {
     expect(frames, hasLength(1));
     expect(frames.single.length ~/ 2, closeTo(24000 * 0.05, 48));
     expect(_rms(frames.single), greaterThan(0.1));
+    expect(session.status.code, SessionStatusCode.formatConverted);
+    expect(session.status.severity, StatusSeverity.warning);
     await sub.cancel();
   });
 
