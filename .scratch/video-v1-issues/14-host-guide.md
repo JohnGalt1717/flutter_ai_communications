@@ -4,8 +4,11 @@
 
 **Blocked by:** 13 — Example landing page and in-session AV harness
 
-**Status:** in progress (2026-09-01). `docs/host-prejoin-narrative.md` matches lobby Session + Join. Linux/Windows camera status now current in plans/setup docs. Remaining: any missing Teams/Zoom control filed as follow-up.
+**Status:** in progress (2026-09-03). `docs/host-prejoin-narrative.md` matches
+lobby Session + Join. WebRTC attach is in `docs/host-webrtc-narrative.md`.
+Remaining: any missing Teams/Zoom control filed as follow-up.
 
 - [x] Narrative call names match the public API
 - [x] Failure mapping matches Start results
+- [x] WebRTC Send-track attach documented
 - [ ] Any missing Teams/Zoom control is filed, not papered over

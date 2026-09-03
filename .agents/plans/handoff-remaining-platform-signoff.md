@@ -4,20 +4,26 @@ Hand this file to the next agent. Do not reopen the “unplug USB” path. USB s
 
 Read first: `CONTEXT.md`, `AGENTS.md`, this file, then the ADRs for the area you touch (`0006`, `0007`, `0004`). Load `device-agent-lens` and `device-permission-prompts` before any exclusive drive. Load `tdd` / `dart-add-unit-test` before product edits. The suite is Orchestration, not Marionette.
 
-## Current status (2026-09-01)
+## Current status (2026-09-03)
 
-This handoff was written against `10f9c2c` / PR #30. **Do not treat the
-matrix and working-tree sections below as live.** Verify against `main`.
+This handoff was written against `10f9c2c` / PR #30. **The matrix and
+working-tree sections below are historical.** Verify against `main`.
 
-Verified on 2026-09-01:
+Live on 2026-09-03, HEAD `4f38598`:
 
-- HEAD: `e6b37b4` on `main`. Working tree clean.
 - Suite file is `example/integration_test/native_orchestration_test.dart`.
   `native_marionette_test.dart` does not exist.
-- PRs on `main` after this handoff was drafted: #31 (iOS/macOS duplex VPIO,
-  Isolation), #32 (Windows directed Sessions), #33 (mic consent, acoustic
-  profiles, Bluetooth identity, Orchestration), #34 (Windows/Linux camera).
-- GitHub issues #1 and #16–#29 stay **OPEN**. Code is not close.
+- GitHub issues #1 and #16–#25, #27–#29, #35, #45, #47 are **CLOSED**.
+  Do not reopen them from this file.
+- Open: #26 (`ready-for-human`, physical iPhone / Android / Chrome),
+  #43 (Apple screen send), #44 (screen send receipts).
+- Video sink seam #46 and WebRTC Send-track package #48 are on `main`.
+- Screen send Windows/Linux/Android/web: PR #39 on `main`.
+
+Verified on 2026-09-01 (historical):
+
+- HEAD then: `e6b37b4` on `main`.
+- PRs after this handoff was drafted: #31–#34.
 - #26 Fieldist gate is still physical iPhone, physical Android, Chrome.
 - Chrome 20-cycle + 45 capture×render receipts exist at `10f9c2c` (comments
   on #21). `devicechange` still `skipped=capability`.
@@ -34,8 +40,8 @@ Verified on 2026-09-01:
 - Observed emit for macOS/Windows/Linux is on `main`, not uncommitted.
 
 Next work this file still owns: Mac USB live capture if still red, Chrome
-`devicechange` rows, then keep #17 / #19 / #20 / #26 open until their close
-bars. Do not close those from Windows/Linux camera receipts.
+`devicechange` rows, then #26 until its close bar. #17 / #19 / #20 are
+already closed. Do not reopen them from Windows/Linux camera receipts.
 
 ## Mission
 
@@ -47,7 +53,7 @@ Definition of done for this handoff:
 - Exclusive native suite passes on **Chrome**, then **Windows**, then **Linux**.
 - Each pass writes a host receipt under `/tmp/flutter_ai_communications_receipts/<commit>-<platform>-<device>.json` with the real git commit, not `unknown`.
 - PR #30 gets a comment per platform. Hardware issues stay open until their own close bar is met.
-- #17 / #19 / #20 / #26 are **not** closed from a single platform receipt.
+- #26 is **not** closed from a single platform receipt. #17 / #19 / #20 are already closed.
 
 Fieldist integration stays blocked until #26’s required matrix is clean: physical iPhone, physical Android, and Chrome. Desktop receipts are required to “roll the rest of the platforms”; they do not by themselves close #26.
 
@@ -67,12 +73,12 @@ Fieldist integration stays blocked until #26’s required matrix is clean: physi
 - Isolation is not a suite gate. Mic Allow is a `StartReady` gate.
 - Do not add Patrol mid-receipt.
 - Do not start a second `flutter drive` / `flutter run`. If a leftover exists, kill it first.
-- Do not close #17, #19, #20, or #26 without the matching receipt. Comment the path and the pass/fail summary.
+- Do not close #26 without the matching receipt. Comment the path and the pass/fail summary. #17 / #19 / #20 are already closed.
 - Working tree on 2026-09-01 is clean at HEAD `e6b37b4`. Historical receipts below were stamped `10f9c2c84c5642c9050cbf30d24b209212630774`. Receipts must stamp the commit that actually ran. If you land product fixes, re-run the exclusive suite on the new HEAD.
 
 ## Current matrix
 
-HEAD at last exclusive runs recorded **in this file**: `10f9c2c84c5642c9050cbf30d24b209212630774` on `production-audio-manager-device-conformance`. PR #30. Current `main` is `e6b37b4` (see Current status above). Historical matrix:
+HEAD at last exclusive runs recorded **in this file**: `10f9c2c84c5642c9050cbf30d24b209212630774` on `production-audio-manager-device-conformance`. PR #30. Live `main` is `4f38598` (see Current status above). Historical matrix:
 
 | Target | Id | Receipt | Status |
 | --- | --- | --- | --- |

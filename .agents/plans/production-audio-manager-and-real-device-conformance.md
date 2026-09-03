@@ -1,8 +1,9 @@
 # Production Audio Manager and Real-Device Conformance Plan
 
-**Status (2026-09-01):** Code for issues #16–#29 exists on `main` (`e6b37b4`).
-Those GitHub issues stay **OPEN** until receipts close them. Fieldist is
-still blocked on #26: physical iPhone, physical Android, and Chrome.
+**Status (2026-09-03):** Code for issues #16–#29 is on `main`. Those issues
+are **CLOSED** except #26 (`ready-for-human`: physical iPhone, physical
+Android, Chrome). Do not reopen #16–#25 or #27–#29 from this file. Fieldist
+is still blocked on #26.
 
 Verified evidence (do not treat as close):
 
@@ -14,9 +15,9 @@ Verified evidence (do not treat as close):
   comment on #26). Linux/WSLg 20-cycles ran in the PR #33 window
   (Plantronics/WASAPI on Windows; Pulse `RDPSource`/`RDPSink` on WSL).
 - Acoustic-profile registry and Capture processors: implemented in shared
-  + Session; physical calibration receipts still #26 / #29.
-- Windows directed Sessions: PR #32; does not close #27.
-- Observed emit on Windows: PR #32; does not close #17.
+  + Session; physical calibration receipts still #26.
+- Windows directed Sessions: PR #32; later closed by #41 (`3e1bb8d`).
+- Observed emit on Windows: PR #32; #17 is closed.
 - Video is a separate track (`.agents/plans/video-capture-and-sinks.md`).
   Do not close audio tickets from camera receipts.
 
