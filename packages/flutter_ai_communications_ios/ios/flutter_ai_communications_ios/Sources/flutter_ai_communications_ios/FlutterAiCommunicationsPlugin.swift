@@ -24,11 +24,16 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var captureTapInstalled = false
   private var textures: FlutterTextureRegistry?
   private let camera = IosCameraGraph()
+  private let screen = IosScreenGraph()
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
     instance.textures = registrar.textures()
     instance.camera.attach(textures: registrar.textures())
+    instance.screen.attach(textures: registrar.textures())
+    instance.screen.onCatalog = { [weak instance] sources in
+      instance?.eventSink?(["type": "screenCatalog", "payload": sources])
+    }
     let messenger = registrar.messenger()
     let methods = FlutterMethodChannel(name: instance.methods, binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methods)
@@ -108,6 +113,35 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       result(nil)
     case "setMuteVideoNative":
       camera.setMuted((call.arguments as? [String: Any])?["muted"] as? Bool ?? false)
+      result(nil)
+    case "enumerateScreenSources":
+      result(screen.enumerate())
+    case "requestScreenPermission":
+      result(screen.permission())
+    case "beginScreenPickNative":
+      result(["previews": [:] as [String: Int64]])
+    case "endScreenPickNative":
+      result(nil)
+    case "indicateScreenSourceNative":
+      result(nil)
+    case "startScreenShareNative":
+      let args = call.arguments as? [String: Any]
+      screen.start(
+        includeSystemAudio: args?["includeSystemAudio"] as? Bool ?? false,
+        cursor: args?["cursor"] as? Bool ?? true,
+        motion: args?["motion"] as? Bool ?? false,
+        result: result
+      )
+    case "stopScreenShareNative":
+      screen.stop()
+      result(nil)
+    case "setIncludeSystemAudioNative":
+      result(screen.setIncludeSystemAudio((call.arguments as? [String: Any])?["enabled"] as? Bool ?? false))
+    case "setScreenMotionNative":
+      screen.setMotion((call.arguments as? [String: Any])?["motion"] as? Bool ?? false)
+      result(nil)
+    case "setScreenCursorNative":
+      screen.setCursor((call.arguments as? [String: Any])?["cursor"] as? Bool ?? true)
       result(nil)
     default:
       result(FlutterMethodNotImplemented)

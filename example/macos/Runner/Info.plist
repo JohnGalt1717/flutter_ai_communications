@@ -26,6 +26,8 @@
 	<string>AI Communications needs the microphone for a live Session.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>AI Communications needs the camera for a lobby Session and in-call video.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>AI Communications captures the screen you pick so the meeting can send it.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>

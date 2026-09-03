@@ -45,8 +45,8 @@ Use the **id** column.
 | Linux Wayland | `linux` | one system-picker source | flutter-skill + portal |
 | Chrome | `chrome` | one system-picker source | flutter-skill + getDisplayMedia |
 | SM A176U1 | `R5GL63B3GWV` | one system-picker source | flutter-skill + MediaProjection |
-| macOS | `macos` | empty until #43 | skip `none` |
-| James’s iPhone | `00008150-000664981A38401C` | empty until #43 | skip `none` |
+| macOS | `macos` | display, window, All-displays | automated |
+| James’s iPhone | `00008150-000664981A38401C` | one system-picker source | flutter-skill + Broadcast; wireless/sim not proof |
 
 If the requested id is missing, stop. Wireless iPhones and simulators are
 not iOS Broadcast proof.

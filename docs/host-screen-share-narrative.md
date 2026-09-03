@@ -89,6 +89,14 @@ await meeting.stopScreenShare()
 The host still owns the Share button and the Include-sound / Optimize
 controls that the Session API supports; the OS sheet may also offer audio.
 
+iOS v1 presents ReplayKit `RPSystemBroadcastPickerView` on Share. Full-device
+frames come from a Broadcast upload extension in the **host** app (example
+ships `BroadcastUpload`) through an App Group into the same Texture handle
+shape as camera send. In-app ReplayKit (`RPScreenRecorder`) is not
+full-device share. Host Info.plist keys: `FacScreenShareExtension` and
+`FacScreenShareAppGroup`. ScreenCaptureKit picker is not in the current
+iOS SDK; use Broadcast until that ships.
+
 ## What the host must not do
 
 - Persist a Screen preference or auto-share on Join.
