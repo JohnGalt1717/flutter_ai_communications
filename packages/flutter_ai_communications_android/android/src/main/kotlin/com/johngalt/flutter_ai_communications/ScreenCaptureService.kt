@@ -57,7 +57,17 @@ class ScreenCaptureService : Service() {
         }
         val started = onStarted
         onStarted = null
-        started?.invoke()
+        if (started == null) {
+            if (Build.VERSION.SDK_INT >= 24) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        started.invoke()
         return START_STICKY
     }
 }
