@@ -82,8 +82,36 @@ stops the capture device. Missing or denied camera does not fail
 
 Unpackaged Win32 (`flutter run -d windows`): allow desktop apps under
 Settings → Privacy → Camera. Packaged Store / MSIX hosts must declare
-webcam themselves:
+webcam themselves. `requestCameraPermission()` (inside Session `start()`)
+requests `webcam` with first-party WinRT (`AppCapability` /
+`DeviceAccessInformation`) and waits for the consent UI:
 
 ```xml
 <DeviceCapability Name="webcam"/>
 ```
+
+## Screen send
+
+Production send uses Windows Graphics Capture (`CreateForMonitor` /
+`CreateForWindow`). Picker thumbs stay GDI so catalog windows are not
+branded with a yellow WGC border.
+
+Unpackaged Win32: allow desktop apps under Settings → Privacy → Screen
+capture (and Screenshots). Packaged Store / MSIX hosts must declare
+programmatic capture. `requestScreenPermission()` (at Screen pick or
+`startScreenShare`, not Session `start()`) requests
+`graphicsCaptureProgrammatic` and, when granted, best-effort
+`graphicsCaptureWithoutBorder` so the library can suppress the OS
+capture border:
+
+```xml
+<Capabilities>
+  <uap11:Capability Name="graphicsCaptureProgrammatic"/>
+  <uap11:Capability Name="graphicsCaptureWithoutBorder"/>
+</Capabilities>
+```
+
+The `uap11` namespace belongs on the host `Package` element
+(`IgnorableNamespaces="uap11"`). This plugin cannot write the host
+manifest. Denial is a typed Screen pick / share result; the Session
+stays up.

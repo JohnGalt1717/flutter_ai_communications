@@ -13,6 +13,7 @@ import 'src/wasapi_factory.dart';
 import 'src/windows_bluetooth_identity.dart';
 import 'src/windows_camera_consent.dart';
 import 'src/windows_microphone_consent.dart';
+import 'src/windows_screen_consent.dart';
 
 /// Windows adapter. Isolation is unavailable. WASAPI is called via Dart FFI.
 ///
@@ -27,12 +28,14 @@ final class FlutterAiCommunicationsWindows
     CameraBackend? camera,
     WindowsCameraConsent? cameraConsent,
     MethodChannelScreenBackend? screen,
+    WindowsScreenConsent? screenConsent,
   }) : _backend = backend ?? createWasapiBackend(),
        _consent = consent ?? createWindowsMicrophoneConsent(),
        _bluetooth = bluetooth ?? createBluetoothIdentitySource(),
        _camera = camera ?? MethodChannelCameraBackend(),
        _cameraConsent = cameraConsent ?? createWindowsCameraConsent(),
-       _screen = screen ?? MethodChannelScreenBackend();
+       _screen = screen ?? MethodChannelScreenBackend(),
+       _screenConsent = screenConsent ?? createWindowsScreenConsent();
 
   /// Registers this class as the default instance.
   static void registerWith() {
@@ -47,6 +50,7 @@ final class FlutterAiCommunicationsWindows
   final CameraBackend _camera;
   final WindowsCameraConsent _cameraConsent;
   final MethodChannelScreenBackend _screen;
+  final WindowsScreenConsent _screenConsent;
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
@@ -291,8 +295,13 @@ final class FlutterAiCommunicationsWindows
   Future<List<ScreenSource>> enumerateScreenSources() => _screen.enumerate();
 
   @override
-  Future<ScreenPermission> requestScreenPermission() =>
-      _screen.requestPermission();
+  Future<ScreenPermission> requestScreenPermission() async {
+    final consent = await _screenConsent.request();
+    if (consent != ScreenPermission.granted) {
+      return consent;
+    }
+    return _screen.requestPermission();
+  }
 
   @override
   Future<NativeGraphStart> beginScreenPickNative() => _screen.beginPick();
