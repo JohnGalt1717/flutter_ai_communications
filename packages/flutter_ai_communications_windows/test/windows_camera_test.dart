@@ -92,6 +92,21 @@ void main() {
     expect(camera.permissionCalls, 0);
   });
 
+  test('packaged Store host requests camera consent', () async {
+    final packaged = _RecordingCameraConsent()
+      ..result = CameraPermission.denied;
+    final adapter = FlutterAiCommunicationsWindows(
+      camera: _RecordingCamera(),
+      cameraConsent: GatedWindowsCameraConsent(
+        isPackaged: () => true,
+        packaged: packaged,
+      ),
+    );
+    addTearDown(adapter.stopCameraNative);
+    expect(await adapter.requestCameraPermission(), CameraPermission.denied);
+    expect(packaged.calls, 1);
+  });
+
   test('unpackaged Win32 skips Store camera consent', () async {
     final packaged = _RecordingCameraConsent()
       ..result = CameraPermission.denied;

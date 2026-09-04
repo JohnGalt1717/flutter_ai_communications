@@ -6,6 +6,7 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:flutter_ai_communications_windows/flutter_ai_communications_windows.dart';
 import 'package:flutter_ai_communications_windows/src/screen_channel.dart';
 import 'package:flutter_ai_communications_windows/src/wasapi_backend.dart';
+import 'package:flutter_ai_communications_windows/src/windows_screen_consent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -122,6 +123,90 @@ void main() {
     expect(backend.stops, 1);
   });
 
+  test('unpackaged Win32 skips Store screen consent', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'requestScreenPermission') {
+            return 'granted';
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final packaged = _RecordingScreenConsent()..result = ScreenPermission.denied;
+    final adapter = FlutterAiCommunicationsWindows(
+      screen: MethodChannelScreenBackend(methods: channel),
+      screenConsent: GatedWindowsScreenConsent(
+        isPackaged: () => false,
+        packaged: packaged,
+      ),
+    );
+    expect(await adapter.requestScreenPermission(), ScreenPermission.granted);
+    expect(packaged.calls, 0);
+  });
+
+  test('packaged Store host requests screen consent', () async {
+    var nativeCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'requestScreenPermission') {
+            nativeCalls++;
+            return 'granted';
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final packaged = _RecordingScreenConsent()..result = ScreenPermission.denied;
+    final adapter = FlutterAiCommunicationsWindows(
+      screen: MethodChannelScreenBackend(methods: channel),
+      screenConsent: GatedWindowsScreenConsent(
+        isPackaged: () => true,
+        packaged: packaged,
+      ),
+    );
+    expect(await adapter.requestScreenPermission(), ScreenPermission.denied);
+    expect(packaged.calls, 1);
+    expect(nativeCalls, 0);
+  });
+
+  test('granted Store screen consent still asks the native graph', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'requestScreenPermission') {
+            return 'granted';
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsWindows(
+      screen: MethodChannelScreenBackend(methods: channel),
+      screenConsent: GatedWindowsScreenConsent(
+        isPackaged: () => true,
+        packaged: _RecordingScreenConsent(),
+      ),
+    );
+    expect(await adapter.requestScreenPermission(), ScreenPermission.granted);
+  });
+
+  test('AppCapabilityAccessStatus maps to ScreenPermission', () {
+    expect(screenPermissionFromAppCapabilityStatus(4), ScreenPermission.granted);
+    expect(screenPermissionFromAppCapabilityStatus(2), ScreenPermission.denied);
+    expect(screenPermissionFromAppCapabilityStatus(1), ScreenPermission.denied);
+    expect(
+      screenPermissionFromAppCapabilityStatus(0),
+      ScreenPermission.restricted,
+    );
+    expect(screenPermissionFromAppCapabilityStatus(3), isNull);
+  });
+
   test('Include sound off stops WASAPI loopback', () async {
     final backend = _LoopbackWasapi();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);
@@ -130,6 +215,17 @@ void main() {
     expect(backend.starts, 1);
     expect(backend.stops, 1);
   });
+}
+
+final class _RecordingScreenConsent implements WindowsScreenConsent {
+  var calls = 0;
+  ScreenPermission result = ScreenPermission.granted;
+
+  @override
+  Future<ScreenPermission> request() async {
+    calls++;
+    return result;
+  }
 }
 
 final class _LoopbackWasapi implements WasapiBackend {

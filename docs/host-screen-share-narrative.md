@@ -76,6 +76,12 @@ await meeting.stopScreenShare()
 
 The host never draws the Share frame. The library does.
 
+Windows Store / MSIX hosts must declare `graphicsCaptureProgrammatic`
+(and `graphicsCaptureWithoutBorder` to suppress the OS capture chrome)
+in their own `Package.appxmanifest`. The plugin requests those
+AppCapabilities at pick or share. Unpackaged Win32 uses Settings →
+Privacy → Screen capture. See `packages/flutter_ai_communications_windows/README.md`.
+
 ## OS-picker platforms (web, Android, iOS, Linux Wayland)
 
 ```text
