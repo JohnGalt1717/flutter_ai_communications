@@ -130,6 +130,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.byKey(const Key('meeting')), findsOneWidget);
       expect(find.byKey(const Key('prove')), findsOneWidget);
+      await tester.scrollUntilVisible(find.byKey(const Key('direction')), 80);
       expect(
         (find.byKey(const Key('direction')).evaluate().single.widget as Text)
             .data,
@@ -141,7 +142,9 @@ void main() {
     },
   );
 
-  testWidgets('lobby Session exposes camera keys and self-view', (tester) async {
+  testWidgets('lobby Session exposes camera keys and self-view', (
+    tester,
+  ) async {
     await tester.pumpWidget(ExampleApp(manager: manager));
     await tester.pump();
     await tester.pump();
@@ -151,10 +154,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     await tester.scrollUntilVisible(find.byKey(const Key('self-view')), 80);
     expect(find.byKey(const Key('self-view')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
-    expect(find.byKey(const Key('camera-front')), findsOneWidget);
     await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), 80);
     expect(find.byKey(const Key('camera-off')), findsOneWidget);
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
+    expect(find.byKey(const Key('camera-front')), findsOneWidget);
     await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -300);
     await tester.tap(find.byKey(const Key('lobby-join')));
     await tester.pump();
@@ -170,9 +173,47 @@ void main() {
     await tester.pump(Duration.zero);
   });
 
-  testWidgets('Screen send subsection starts a Session, shares, and loopbacks', (
-    tester,
-  ) async {
+  testWidgets(
+    'Screen send subsection starts a Session, shares, and loopbacks',
+    (tester) async {
+      await tester.pumpWidget(ExampleApp(manager: manager));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('lobby-enter')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.tap(find.byKey(const Key('lobby-join')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.byKey(const Key('meeting')), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('screen-share')),
+        120,
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('screen-source-display-0')),
+        80,
+      );
+      await tester.tap(find.byKey(const Key('screen-source-display-0')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('screen-share')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(manager.session?.isScreenSending, isTrue);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('screen-loopback')),
+        -200,
+      );
+      expect(find.byKey(const Key('screen-loopback')), findsOneWidget);
+      await manager.session?.stopScreenShare();
+      await tester.pump();
+      expect(manager.session?.isScreenSending, isFalse);
+      await manager.session?.stop();
+      await tester.pump(Duration.zero);
+    },
+  );
+
+  testWidgets('Join opens a loopback meeting with in-call bar', (tester) async {
     await tester.pumpWidget(ExampleApp(manager: manager));
     await tester.pump();
     await tester.pump();
@@ -182,8 +223,33 @@ void main() {
     await tester.tap(find.byKey(const Key('lobby-join')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
+
     expect(find.byKey(const Key('meeting')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('screen-share')), 120);
+    expect(find.byKey(const Key('loopback-meeting')), findsOneWidget);
+    expect(find.byKey(const Key('meeting-bar')), findsOneWidget);
+    expect(find.byKey(const Key('loopback-tile')), findsOneWidget);
+    expect(find.byKey(const Key('self-view')), findsOneWidget);
+    expect(find.byKey(const Key('webrtc-send-track')), findsOneWidget);
+    expect(
+      (find.byKey(const Key('webrtc-send-track')).evaluate().single.widget
+              as Text)
+          .data,
+      'video-1',
+    );
+
+    await tester.tap(find.byKey(const Key('mute')));
+    await tester.pump();
+    expect(manager.session?.isMuted, isTrue);
+
+    await tester.tap(find.byKey(const Key('mute-video')));
+    await tester.pump();
+    expect(manager.session?.isVideoMuted, isTrue);
+
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.isCameraEnabled, isFalse);
+
     await tester.scrollUntilVisible(
       find.byKey(const Key('screen-source-display-0')),
       80,
@@ -194,15 +260,31 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
     expect(manager.session?.isScreenSending, isTrue);
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('screen-loopback')),
-      -200,
-    );
     expect(find.byKey(const Key('screen-loopback')), findsOneWidget);
-    await manager.session?.stopScreenShare();
+
+    await tester.tap(find.byKey(const Key('screen-stop')));
     await tester.pump();
     expect(manager.session?.isScreenSending, isFalse);
+
     await manager.session?.stop();
     await tester.pump(Duration.zero);
+  });
+
+  testWidgets('Enter lobby maps microphone denial to host copy', (
+    tester,
+  ) async {
+    platform.permission = MicrophonePermission.denied;
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      (find.byKey(const Key('status')).evaluate().single.widget as Text).data,
+      'denied',
+    );
+    expect(find.byKey(const Key('permission-copy')), findsOneWidget);
+    expect(find.byKey(const Key('meeting')), findsNothing);
+    expect(manager.session, isNull);
   });
 }

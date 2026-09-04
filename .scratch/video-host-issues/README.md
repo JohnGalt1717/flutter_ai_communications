@@ -23,6 +23,6 @@ Library 04 and 12 are on `main`.
 | 05 | Example lobby subsection | 03, 04 | done (lobby shipped; persistence ticket 03 still open) |
 | 06 | Join and enable-video-later | 05 and library 02 | done |
 | 07 | In-session AV controls | 06 | done |
-| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | partial — `WebrtcVideoSink` attaches on Join; Echo is audio; RTCVideoView loopback remaining |
+| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | partial — Join attaches `WebrtcVideoSink`; example loopback meeting chrome ships; RTCVideoView inbound remaining |
 | 09 | Orchestration path and receipts | 07 and one native library graph | in progress (keys exist; Linux camera receipt remaining) |
 | 10 | Docs pass | 09 | in progress (plan status updated 2026-09-01) |

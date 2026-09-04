@@ -43,6 +43,11 @@ Loopback proof: host adds the Send track to a loopback PeerConnection and
 renders the inbound track on `RTCVideoView`. That is host code. Identity of
 that loopback is not native Production-path proof.
 
+The example's loopback meeting subsection does not construct a PeerConnection.
+It lays out local Session Video surfaces (camera self-view, screen send) as
+the in-call stage. `RTCVideoView` inbound waits on a native Production-path
+bind (`attachProductionVideoPathNative`).
+
 ## Detach
 
 ```text
