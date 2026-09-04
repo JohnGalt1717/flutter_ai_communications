@@ -7,8 +7,16 @@ test (`flutter test` in this package) or by running the app on iOS, Android,
 web, macOS, Windows, or Linux.
 
 The **Lobby** subsection is a Session with no Transport (no Echo). Join stops
-it and starts a meeting Session, then attaches Echo Transport. Orchestration
-e2e uses that path.
+it and starts a meeting Session, then attaches Echo Transport and
+`WebrtcVideoSink`. Orchestration e2e uses that path.
+
+After Join, the **loopback meeting** subsection is a mini in-call surface:
+camera and screen Video surfaces on a stage, in-call bar (mute, Camera-off,
+Mute-video, Share, Pause, Leave), Isolation prompt, and typed permission
+copy. Media stays on this device — there is no signaling. Keys:
+`loopback-meeting`, `meeting-bar`, `loopback-tile`, `self-view`,
+`screen-loopback`. Microphone/camera permission is requested on Enter lobby;
+screen permission is requested on Share.
 
 Debug-mode runs initialize `FlutterSkillBinding` so **flutter-skill** can
 tap/type/scroll the UI. Use **flutter_agent_lens** to discover/attach to the

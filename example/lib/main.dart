@@ -9,6 +9,7 @@ import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
+import 'package:flutter_ai_communications_example/meeting/loopback_meeting.dart';
 import 'package:flutter_skill/flutter_skill.dart';
 import 'package:logging/logging.dart';
 
@@ -277,14 +278,11 @@ final class _SessionPageState extends State<SessionPage> {
         });
       }
     });
-    session.screenSourceCatalog.listen(
-      (sources) {
-        if (mounted) {
-          setState(() => _screenSources = sources);
-        }
-      },
-      onError: (_) {},
-    );
+    session.screenSourceCatalog.listen((sources) {
+      if (mounted) {
+        setState(() => _screenSources = sources);
+      }
+    }, onError: (_) {});
     session.capture.listen((bytes) {
       if (!mounted) {
         return;
@@ -350,7 +348,9 @@ final class _SessionPageState extends State<SessionPage> {
         (_osPickerCatalog
             ? _screenSources.first.id
             : _screenSources
-                  .where((source) => source.kind != ScreenSourceKind.systemPicker)
+                  .where(
+                    (source) => source.kind != ScreenSourceKind.systemPicker,
+                  )
                   .firstOrNull
                   ?.id);
     if (sourceId == null) {
@@ -407,6 +407,7 @@ final class _SessionPageState extends State<SessionPage> {
   @override
   Widget build(BuildContext context) {
     final session = _session;
+    final isolation = _isolation ?? session?.lastIsolation;
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Communications'),
@@ -419,328 +420,333 @@ final class _SessionPageState extends State<SessionPage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: Column(
         children: [
-          Text(
-            switch (_phase) {
-              _HarnessPhase.idle => 'Lobby',
-              _HarnessPhase.lobby => 'Lobby',
-              _HarnessPhase.meeting => 'Live Session',
-            },
-            key: Key(_phase == _HarnessPhase.meeting ? 'meeting' : 'lobby'),
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _phase == _HarnessPhase.meeting ? 'Meeting' : 'Pick devices, then Join. Permission is requested on Enter lobby.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _status ?? 'idle',
-            key: const Key('status'),
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-          if (session != null)
-            Text(
-              'Isolation ${(session.lastIsolation.state.name)}',
-              key: const Key('isolation'),
+          if (isolation != null)
+            IsolationBanner(
+              event: isolation,
+              onOpen: () => session?.openIsolationSettings(),
             ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              if (_phase != _HarnessPhase.meeting) ...[
-                FilledButton(
-                  key: const Key('lobby-enter'),
-                  onPressed: _phase == _HarnessPhase.idle ? _enterLobby : null,
-                  child: const Text('Enter lobby'),
-                ),
-                FilledButton(
-                  key: const Key('lobby-join'),
-                  onPressed: _phase == _HarnessPhase.lobby
-                      ? _joinMeeting
-                      : null,
-                  child: const Text('Join'),
-                ),
-                OutlinedButton(
-                  key: const Key('lobby-leave'),
-                  onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
-                  child: const Text('Leave'),
-                ),
-              ],
-              FilledButton.tonal(
-                key: const Key('mute'),
-                onPressed: session == null
-                    ? null
-                    : () {
-                        if (session.isMuted) {
-                          session.unmute();
-                        } else {
-                          session.mute();
-                        }
-                        setState(() {});
-                      },
-                child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
-              ),
-              if (_phase == _HarnessPhase.meeting) ...[
-                FilledButton.tonal(
-                  key: const Key('pause'),
-                  onPressed: () async {
-                    if (session!.isPaused) {
-                      await session.resume();
-                    } else {
-                      await session.pause();
-                    }
-                    setState(() {});
-                  },
-                  child: Text(session?.isPaused == true ? 'Resume' : 'Pause'),
-                ),
-                OutlinedButton(
-                  key: const Key('stop'),
-                  onPressed: _stop,
-                  child: const Text('End'),
-                ),
-                FilledButton.tonal(
-                  key: const Key('prove'),
-                  onPressed: _prove,
-                  child: const Text('Prove'),
-                ),
-              ],
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: _pipelineKeys(session),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 220,
-            child: Row(
-              children: [
-                Expanded(child: _selfView(session)),
-                if (session?.isScreenSending == true) ...[
-                  const SizedBox(width: 12),
-                  Expanded(child: _screenLoopback(session!)),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 72,
-            child: CustomPaint(
-              painter: _WavePainter(_levels, _level),
-              child: const SizedBox.expand(),
-            ),
-          ),
-          if (_proof != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(
-                'echo ${_proof!.bytes} B'
-                '${_proof!.identical ? ' identical' : ' mismatch'}'
-                '${_proof!.clipped ? ' clipped' : ''}'
-                '${_proof!.sameCaptureStream ? '' : ' stream-replaced'}',
-                key: const Key('echo-proof'),
+          if (_phase == _HarnessPhase.meeting && session != null) ...[
+            SizedBox(
+              height: 240,
+              child: LoopbackMeetingStage(
+                key: const Key('meeting'),
+                session: session,
+                webrtcTrackId: _webrtc?.localVideo?.id ?? 'none',
               ),
             ),
-          const SizedBox(height: 24),
-          if (_phase != _HarnessPhase.idle && session != null)
-            Wrap(
-              spacing: 12,
-              children: [
-                FilledButton.tonal(
-                  key: const Key('camera-off'),
-                  onPressed: () async {
-                    await session.setCameraEnabled(!session.isCameraEnabled);
-                    setState(() {});
-                  },
-                  child: Text(
-                    session.isCameraEnabled ? 'Camera off' : 'Camera on',
-                  ),
-                ),
-                if (_phase == _HarnessPhase.meeting)
-                  FilledButton.tonal(
-                    key: const Key('mute-video'),
-                    onPressed: () async {
-                      if (session.isVideoMuted) {
-                        await session.unmuteVideo();
-                      } else {
-                        await session.muteVideo();
-                      }
-                      setState(() {});
-                    },
-                    child: Text(
-                      session.isVideoMuted ? 'Unmute video' : 'Mute video',
-                    ),
-                  ),
-              ],
+            MeetingBar(
+              session: session,
+              onMute: () {
+                if (session.isMuted) {
+                  session.unmute();
+                } else {
+                  session.mute();
+                }
+                setState(() {});
+              },
+              onCamera: () async {
+                await session.setCameraEnabled(!session.isCameraEnabled);
+                setState(() {});
+              },
+              onMuteVideo: () async {
+                if (session.isVideoMuted) {
+                  await session.unmuteVideo();
+                } else {
+                  await session.muteVideo();
+                }
+                setState(() {});
+              },
+              onShare: () => _shareScreen(session),
+              onStopShare: () => _stopScreenShare(session),
+              onPause: () async {
+                if (session.isPaused) {
+                  await session.resume();
+                } else {
+                  await session.pause();
+                }
+                setState(() {});
+              },
+              onLeave: _stop,
+              onProve: _prove,
             ),
-          if (_phase == _HarnessPhase.meeting)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _webrtc?.localVideo?.id ?? 'none',
-                key: const Key('webrtc-send-track'),
+            SizedBox(
+              height: 56,
+              child: CustomPaint(
+                painter: _WavePainter(_levels, _level),
+                child: const SizedBox.expand(),
               ),
             ),
-          const SizedBox(height: 16),
-          Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          for (final camera in _cameras)
-            ListTile(
-              key: Key('camera-${camera.id}'),
-              title: Text(camera.name),
-              subtitle: Text(camera.facing.name),
-              selected: camera.id == session?.selectedCameraId,
-              onTap: session == null
-                  ? null
-                  : () async {
-                      await session.selectCamera(camera.id);
-                      setState(() {});
-                    },
-            ),
-          Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          for (final endpoint in _endpoints)
-            ListTile(
-              key: Key('endpoint-${endpoint.id}'),
-              title: Text(endpoint.name),
-              subtitle: Text(
-                '${endpoint.routeClass.name} · ${endpoint.isCapture ? 'capture' : 'render'}',
-              ),
-              selected:
-                  endpoint.id == session?.selectedCaptureId ||
-                  endpoint.id == session?.selectedRenderId,
-              onTap: session == null
-                  ? null
-                  : () => session.select(
-                      captureId: endpoint.isCapture ? endpoint.id : null,
-                      renderId: endpoint.isCapture ? null : endpoint.id,
-                    ),
-            ),
-          const SizedBox(height: 24),
-          Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            _phase == _HarnessPhase.lobby
-                ? 'Join first. Lobby cannot start screen send.'
-                : 'Start a meeting Session, pick a source, Share. Loopback is the send surface.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (_screenStatus != null)
-            Text(
-              _screenStatus!,
-              key: const Key('screen-status'),
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              FilledButton(
-                key: const Key('screen-session'),
-                onPressed: _phase == _HarnessPhase.idle
-                    ? _startScreenSession
-                    : null,
-                child: const Text('Start session'),
-              ),
-              FilledButton.tonal(
-                key: const Key('screen-share'),
-                onPressed: session != null && _phase == _HarnessPhase.meeting
-                    ? () => _shareScreen(session)
-                    : null,
-                child: const Text('Share'),
-              ),
-              OutlinedButton(
-                key: const Key('screen-stop'),
-                onPressed: session != null && session.isScreenSending
-                    ? () => _stopScreenShare(session)
-                    : null,
-                child: const Text('Stop share'),
-              ),
-              FilterChip(
-                key: const Key('screen-sound'),
-                label: const Text('Include sound'),
-                selected: _includeSound,
-                onSelected: (value) async {
-                  setState(() => _includeSound = value);
-                  if (session?.isScreenSending == true) {
-                    await session!.setIncludeSystemAudio(value);
-                    setState(() {});
-                  }
-                },
-              ),
-              FilterChip(
-                key: const Key('screen-motion'),
-                label: const Text('Optimize'),
-                selected: _screenMotion,
-                onSelected: (value) async {
-                  setState(() => _screenMotion = value);
-                  if (session?.isScreenSending == true) {
-                    await session!.setScreenMotion(value);
-                    setState(() {});
-                  }
-                },
-              ),
-              FilterChip(
-                key: const Key('screen-cursor'),
-                label: const Text('Cursor'),
-                selected: _screenCursor,
-                onSelected: (value) async {
-                  setState(() => _screenCursor = value);
-                  if (session?.isScreenSending == true) {
-                    await session!.setScreenCursor(value);
-                    setState(() {});
-                  }
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          for (final source in _screenSources)
-            ListTile(
-              key: Key('screen-source-${source.id}'),
-              title: Text(source.name),
-              subtitle: Text(
-                '${source.kind.name}'
-                '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
-              ),
-              selected: source.id == _indicatedScreenId,
-              trailing: _screenPreviewThumb(session, source),
-              onTap: session == null || _phase != _HarnessPhase.meeting
-                  ? null
-                  : () async {
-                      if (!_osPickerCatalog) {
-                        await session.beginScreenPick();
-                        await session.indicateScreenSource(source.id);
-                      }
-                      setState(() => _indicatedScreenId = source.id);
-                    },
-            ),
-          if (session != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              child: ListTile(
-                title: const Text('Isolation settings'),
-                subtitle: Text(
-                  (_isolation ?? session.lastIsolation).state.name,
-                ),
-                trailing: TextButton(
-                  key: const Key('open-isolation'),
-                  onPressed: () => session.openIsolationSettings(),
-                  child: const Text('Open'),
+            if (_proof != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Text(
+                  'echo ${_proof!.bytes} B'
+                  '${_proof!.identical ? ' identical' : ' mismatch'}'
+                  '${_proof!.clipped ? ' clipped' : ''}'
+                  '${_proof!.sameCaptureStream ? '' : ' stream-replaced'}',
+                  key: const Key('echo-proof'),
                 ),
               ),
-            ),
           ],
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: _harnessChildren(context, session, isolation),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  List<Widget> _harnessChildren(
+    BuildContext context,
+    Session? session,
+    IsolationEvent? isolation,
+  ) {
+    final failure = startFailureCopy(_status);
+    final isolationRequired = isolation?.state == IsolationState.required;
+    return [
+      if (_phase != _HarnessPhase.meeting)
+        Text(
+          'Lobby',
+          key: const Key('lobby'),
+          style: Theme.of(context).textTheme.headlineSmall,
+        )
+      else
+        Text('Harness', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text(
+        _phase == _HarnessPhase.meeting
+            ? 'Loopback meeting. Media stays on this device. Share and device picks are below.'
+            : 'Pick devices, then Join. Permission is requested on Enter lobby.',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      const SizedBox(height: 8),
+      Text(
+        _status ?? 'idle',
+        key: const Key('status'),
+        style: Theme.of(context).textTheme.labelLarge,
+      ),
+      if (failure != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(failure, key: const Key('permission-copy')),
+        ),
+      if (session != null)
+        Text(
+          'Isolation ${(session.lastIsolation.state.name)}',
+          key: const Key('isolation'),
+        ),
+      const SizedBox(height: 16),
+      if (_phase != _HarnessPhase.meeting)
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            FilledButton(
+              key: const Key('lobby-enter'),
+              onPressed: _phase == _HarnessPhase.idle ? _enterLobby : null,
+              child: const Text('Enter lobby'),
+            ),
+            FilledButton(
+              key: const Key('lobby-join'),
+              onPressed: _phase == _HarnessPhase.lobby ? _joinMeeting : null,
+              child: const Text('Join'),
+            ),
+            OutlinedButton(
+              key: const Key('lobby-leave'),
+              onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
+              child: const Text('Leave'),
+            ),
+            FilledButton.tonal(
+              key: const Key('mute'),
+              onPressed: session == null
+                  ? null
+                  : () {
+                      if (session.isMuted) {
+                        session.unmute();
+                      } else {
+                        session.mute();
+                      }
+                      setState(() {});
+                    },
+              child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
+            ),
+          ],
+        ),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _pipelineKeys(session),
+      ),
+      if (_phase != _HarnessPhase.meeting) ...[
+        const SizedBox(height: 16),
+        SizedBox(height: 220, child: _selfView(session)),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 72,
+          child: CustomPaint(
+            painter: _WavePainter(_levels, _level),
+            child: const SizedBox.expand(),
+          ),
+        ),
+        if (session != null) ...[
+          const SizedBox(height: 24),
+          Wrap(
+            spacing: 12,
+            children: [
+              FilledButton.tonal(
+                key: const Key('camera-off'),
+                onPressed: () async {
+                  await session.setCameraEnabled(!session.isCameraEnabled);
+                  setState(() {});
+                },
+                child: Text(
+                  session.isCameraEnabled ? 'Camera off' : 'Camera on',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+      const SizedBox(height: 16),
+      Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      for (final camera in _cameras)
+        ListTile(
+          key: Key('camera-${camera.id}'),
+          title: Text(camera.name),
+          subtitle: Text(camera.facing.name),
+          selected: camera.id == session?.selectedCameraId,
+          onTap: session == null
+              ? null
+              : () async {
+                  await session.selectCamera(camera.id);
+                  setState(() {});
+                },
+        ),
+      Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      for (final endpoint in _endpoints)
+        ListTile(
+          key: Key('endpoint-${endpoint.id}'),
+          title: Text(endpoint.name),
+          subtitle: Text(
+            '${endpoint.routeClass.name} · ${endpoint.isCapture ? 'capture' : 'render'}',
+          ),
+          selected:
+              endpoint.id == session?.selectedCaptureId ||
+              endpoint.id == session?.selectedRenderId,
+          onTap: session == null
+              ? null
+              : () => session.select(
+                  captureId: endpoint.isCapture ? endpoint.id : null,
+                  renderId: endpoint.isCapture ? null : endpoint.id,
+                ),
+        ),
+      const SizedBox(height: 24),
+      Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text(
+        _phase == _HarnessPhase.lobby
+            ? 'Join first. Lobby cannot start screen send.'
+            : 'Start a meeting Session, pick a source, Share. Loopback is the send surface.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      if (_screenStatus != null)
+        Text(
+          _screenStatus!,
+          key: const Key('screen-status'),
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          FilledButton(
+            key: const Key('screen-session'),
+            onPressed: _phase == _HarnessPhase.idle
+                ? _startScreenSession
+                : null,
+            child: const Text('Start session'),
+          ),
+          FilterChip(
+            key: const Key('screen-sound'),
+            label: const Text('Include sound'),
+            selected: _includeSound,
+            onSelected: (value) async {
+              setState(() => _includeSound = value);
+              if (session?.isScreenSending == true) {
+                await session!.setIncludeSystemAudio(value);
+                setState(() {});
+              }
+            },
+          ),
+          FilterChip(
+            key: const Key('screen-motion'),
+            label: const Text('Optimize'),
+            selected: _screenMotion,
+            onSelected: (value) async {
+              setState(() => _screenMotion = value);
+              if (session?.isScreenSending == true) {
+                await session!.setScreenMotion(value);
+                setState(() {});
+              }
+            },
+          ),
+          FilterChip(
+            key: const Key('screen-cursor'),
+            label: const Text('Cursor'),
+            selected: _screenCursor,
+            onSelected: (value) async {
+              setState(() => _screenCursor = value);
+              if (session?.isScreenSending == true) {
+                await session!.setScreenCursor(value);
+                setState(() {});
+              }
+            },
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      for (final source in _screenSources)
+        ListTile(
+          key: Key('screen-source-${source.id}'),
+          title: Text(source.name),
+          subtitle: Text(
+            '${source.kind.name}'
+            '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
+          ),
+          selected: source.id == _indicatedScreenId,
+          trailing: _screenPreviewThumb(session, source),
+          onTap: session == null || _phase != _HarnessPhase.meeting
+              ? null
+              : () async {
+                  if (!_osPickerCatalog) {
+                    await session.beginScreenPick();
+                    await session.indicateScreenSource(source.id);
+                  }
+                  setState(() => _indicatedScreenId = source.id);
+                },
+        ),
+      if (session != null) ...[
+        const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            title: const Text('Isolation settings'),
+            subtitle: Text((_isolation ?? session.lastIsolation).state.name),
+            trailing: TextButton(
+              key: isolationRequired ? null : const Key('open-isolation'),
+              onPressed: () => session.openIsolationSettings(),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ],
+    ];
   }
 
   Widget _selfView(Session? session) {
@@ -776,38 +782,6 @@ final class _SessionPageState extends State<SessionPage> {
       );
     }
     return Texture(key: const Key('self-view'), textureId: surface.handle);
-  }
-
-  Widget _screenLoopback(Session session) {
-    final surface = session.screenSurface;
-    if (!session.isScreenSending || surface == null) {
-      return ColoredBox(
-        color: const Color(0xFF111118),
-        child: Center(
-          child: Text(
-            session.screenUnavailableReason ?? 'Not sharing',
-            key: const Key('screen-loopback'),
-            style: const TextStyle(color: Color(0xFFB0B0C0)),
-          ),
-        ),
-      );
-    }
-    if (surface.kind == VideoSurfaceKind.htmlElement) {
-      return SizedBox(
-        width: 320,
-        height: 220,
-        child: ClipRect(
-          child: HtmlElementView(
-            key: const Key('screen-loopback'),
-            viewType: 'fac-screen-${surface.handle}',
-          ),
-        ),
-      );
-    }
-    return Texture(
-      key: const Key('screen-loopback'),
-      textureId: surface.handle,
-    );
   }
 
   Widget? _screenPreviewThumb(Session? session, ScreenSource source) {
