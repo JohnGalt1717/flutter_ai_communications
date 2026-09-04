@@ -8,11 +8,19 @@ import 'video_surface_view.dart';
 /// Media stays on this device: local camera and screen Video surfaces are
 /// the participant and content stage. Echo Transport and the WebRTC sink
 /// attach in the host; nothing is signaled off-box.
-final class const LoopbackMeetingStage({
-  super.key,
-  required final Session session,
-  final String? webrtcTrackId,
-}) extends StatelessWidget {
+final class LoopbackMeetingStage extends StatelessWidget {
+  /// Creates the loopback meeting stage.
+  const LoopbackMeetingStage({
+    super.key,
+    required this.session,
+    this.webrtcTrackId,
+  });
+
+  /// Live meeting Session.
+  final Session session;
+
+  /// Send track id from the WebRTC sink, if any.
+  final String? webrtcTrackId;
   bool get _cameraLive =>
       session.cameraSend &&
       session.isCameraEnabled &&
@@ -187,18 +195,47 @@ final class const LoopbackMeetingStage({
 }
 
 /// In-call control bar. Keys match the Orchestration harness.
-final class const MeetingBar({
-  super.key,
-  required final Session session,
-  required final VoidCallback onMute,
-  required final VoidCallback onCamera,
-  required final VoidCallback onMuteVideo,
-  required final VoidCallback onShare,
-  required final VoidCallback onStopShare,
-  required final VoidCallback onPause,
-  required final VoidCallback onLeave,
-  required final VoidCallback onProve,
-}) extends StatelessWidget {
+final class MeetingBar extends StatelessWidget {
+  /// Creates the in-call bar.
+  const MeetingBar({
+    super.key,
+    required this.session,
+    required this.onMute,
+    required this.onCamera,
+    required this.onMuteVideo,
+    required this.onShare,
+    required this.onStopShare,
+    required this.onPause,
+    required this.onLeave,
+    required this.onProve,
+  });
+
+  /// Live meeting Session.
+  final Session session;
+
+  /// Mute / unmute.
+  final VoidCallback onMute;
+
+  /// Camera-off / camera on.
+  final VoidCallback onCamera;
+
+  /// Mute-video / unmute video.
+  final VoidCallback onMuteVideo;
+
+  /// Start screen send.
+  final VoidCallback onShare;
+
+  /// Stop screen send.
+  final VoidCallback onStopShare;
+
+  /// Pause / resume.
+  final VoidCallback onPause;
+
+  /// End the Session.
+  final VoidCallback onLeave;
+
+  /// Digital echo Prove.
+  final VoidCallback onProve;
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -318,11 +355,15 @@ final class const MeetingBar({
 }
 
 /// Host-owned Isolation prompt. Library events carry no copy.
-final class const IsolationBanner({
-  super.key,
-  required final IsolationEvent event,
-  required final VoidCallback onOpen,
-}) extends StatelessWidget {
+final class IsolationBanner extends StatelessWidget {
+  /// Creates a host Isolation prompt.
+  const IsolationBanner({super.key, required this.event, required this.onOpen});
+
+  /// Isolation event from the Session.
+  final IsolationEvent event;
+
+  /// Opens the system Isolation UI.
+  final VoidCallback onOpen;
   @override
   Widget build(BuildContext context) {
     if (event.state != IsolationState.required) {

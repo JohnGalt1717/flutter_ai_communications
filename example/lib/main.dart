@@ -673,22 +673,6 @@ final class _SessionPageState extends State<SessionPage> {
                 : null,
             child: const Text('Start session'),
           ),
-          if (_phase != _HarnessPhase.meeting) ...[
-            FilledButton.tonal(
-              key: const Key('screen-share'),
-              onPressed: session != null && _phase == _HarnessPhase.meeting
-                  ? () => _shareScreen(session)
-                  : null,
-              child: const Text('Share'),
-            ),
-            OutlinedButton(
-              key: const Key('screen-stop'),
-              onPressed: session != null && session.isScreenSending
-                  ? () => _stopScreenShare(session)
-                  : null,
-              child: const Text('Stop share'),
-            ),
-          ],
           FilterChip(
             key: const Key('screen-sound'),
             label: const Text('Include sound'),
