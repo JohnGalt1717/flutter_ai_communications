@@ -347,6 +347,13 @@ void main() {
             'canPreview': true,
           },
           {
+            'id': 'window-1',
+            'name': 'Notes',
+            'kind': 'window',
+            'applicationName': 'TextEdit',
+            'canPreview': true,
+          },
+          {
             'id': 'system-picker',
             'name': 'System picker',
             'kind': 'systemPicker',
@@ -360,8 +367,11 @@ void main() {
     expect(catalog.map((source) => source.kind), [
       ScreenSourceKind.display,
       ScreenSourceKind.allDisplays,
+      ScreenSourceKind.window,
       ScreenSourceKind.systemPicker,
     ]);
+    expect(catalog[2].name, 'TextEdit — Notes');
+    expect(catalog[2].applicationName, 'TextEdit');
   });
 
   test('screenSourceCatalog yields the enumerate snapshot first', () async {

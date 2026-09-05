@@ -24,6 +24,114 @@ void main() {
       expect(a.hashCode, b.hashCode);
     });
 
+    test('window share labels always include the owning app', () {
+      expect(
+        windowShareLabel(title: 'GitHub', applicationName: 'Safari'),
+        'Safari — GitHub',
+      );
+      expect(
+        windowShareLabel(title: 'Window', applicationName: 'Finder'),
+        'Finder',
+      );
+      expect(
+        windowShareLabel(title: '', applicationName: 'TextEdit'),
+        'TextEdit',
+      );
+      expect(
+        windowShareLabel(title: 'TextEdit', applicationName: 'TextEdit'),
+        'TextEdit',
+      );
+      expect(
+        windowShareLabel(title: 'Firefox', applicationName: 'firefox'),
+        'firefox',
+      );
+      expect(windowShareLabel(title: 'Window', applicationName: ''), isNull);
+      expect(windowShareLabel(title: '', applicationName: ''), isNull);
+    });
+
+    test('fromChannel formats window rows with the owning app', () {
+      final titled = ScreenSource.fromChannel({
+        'id': 'window-1',
+        'name': 'GitHub',
+        'kind': 'window',
+        'applicationName': 'Safari',
+      });
+      expect(titled.name, 'Safari — GitHub');
+      expect(titled.applicationName, 'Safari');
+
+      final generic = ScreenSource.fromChannel({
+        'id': 'window-2',
+        'name': 'Window',
+        'kind': 'window',
+        'applicationName': 'Finder',
+      });
+      expect(generic.name, 'Finder');
+
+      final untitled = ScreenSource.fromChannel({
+        'id': 'window-3',
+        'name': '',
+        'kind': 'window',
+        'applicationName': 'Notepad',
+      });
+      expect(untitled.name, 'Notepad');
+
+      final display = ScreenSource.fromChannel({
+        'id': 'display-0',
+        'name': 'DELL U3219Q',
+        'kind': 'display',
+      });
+      expect(display.name, 'DELL U3219Q');
+    });
+
+    test('tryFromChannel omits generic Window rows with no owning app', () {
+      expect(
+        ScreenSource.tryFromChannel({
+          'id': 'window-1',
+          'name': 'Window',
+          'kind': 'window',
+        }),
+        isNull,
+      );
+      expect(
+        ScreenSource.tryFromChannel({
+          'id': 'window-sidebar',
+          'name': 'Window',
+          'kind': 'window',
+          'applicationName': 'Sidebar',
+        }),
+        isNull,
+      );
+      expect(
+        ScreenSource.tryFromChannel({
+          'id': 'window-2',
+          'name': '',
+          'kind': 'window',
+        }),
+        isNull,
+      );
+      expect(
+        ScreenSource.listFromChannel([
+          {
+            'id': 'window-hidden',
+            'name': 'Window',
+            'kind': 'window',
+          },
+          {
+            'id': 'window-1',
+            'name': 'GitHub',
+            'kind': 'window',
+            'applicationName': 'Safari',
+          },
+          {
+            'id': 'display-0',
+            'name': 'DELL U3219Q',
+            'kind': 'display',
+          },
+        ]).map((source) => source.id),
+        ['window-1', 'display-0'],
+      );
+    });
+
     test('All-displays is a kind, not an application kind', () {
       const source = ScreenSource(
         id: 'all',

@@ -48,6 +48,7 @@ class ScreenGraph {
     std::string id;
     std::string name;
     std::string kind;
+    std::string applicationName;
     RECT bounds{};
     HWND hwnd = nullptr;
     HMONITOR monitor = nullptr;

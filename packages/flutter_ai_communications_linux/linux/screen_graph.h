@@ -45,6 +45,7 @@ class ScreenGraph {
     std::string id;
     std::string name;
     std::string kind;
+    std::string applicationName;
     int x = 0;
     int y = 0;
     int width = 0;

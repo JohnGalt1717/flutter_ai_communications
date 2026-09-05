@@ -186,28 +186,6 @@ final class MethodChannelScreenBackend {
     return out;
   }
 
-  List<ScreenSource> _readSources(List<dynamic>? raw) {
-    if (raw == null) {
-      return const [];
-    }
-    return [
-      for (final item in raw)
-        if (item is Map)
-          ScreenSource(
-            id: item['id'] as String? ?? '',
-            name: item['name'] as String? ?? '',
-            kind: switch (item['kind'] as String?) {
-              'window' => ScreenSourceKind.window,
-              'allDisplays' => ScreenSourceKind.allDisplays,
-              'systemPicker' => ScreenSourceKind.systemPicker,
-              _ => ScreenSourceKind.display,
-            },
-            x: item['x'] as int?,
-            y: item['y'] as int?,
-            width: item['width'] as int?,
-            height: item['height'] as int?,
-            canPreview: item['canPreview'] == true,
-          ),
-    ];
-  }
+  List<ScreenSource> _readSources(List<dynamic>? raw) =>
+      ScreenSource.listFromChannel(raw);
 }

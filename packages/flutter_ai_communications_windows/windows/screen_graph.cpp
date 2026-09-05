@@ -3,10 +3,13 @@
 #include "screen_graph.h"
 
 #include <dwmapi.h>
+#include <winver.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
+#include <vector>
 
 #ifndef WDA_EXCLUDEFROMCAPTURE
 #define WDA_EXCLUDEFROMCAPTURE 0x00000011
@@ -29,9 +32,107 @@ std::string WideToUtf8(const wchar_t* wide) {
   return out;
 }
 
+std::string StripExeSuffix(std::string name) {
+  if (name.size() >= 4) {
+    const char a = name[name.size() - 4];
+    const char b = name[name.size() - 3];
+    const char c = name[name.size() - 2];
+    const char d = name[name.size() - 1];
+    if (a == '.' && (b == 'e' || b == 'E') && (c == 'x' || c == 'X') &&
+        (d == 'e' || d == 'E')) {
+      name.resize(name.size() - 4);
+    }
+  }
+  return name;
+}
+
+std::string Utf8BaseNameNoExe(const wchar_t* path) {
+  const wchar_t* base = path;
+  for (const wchar_t* p = path; *p != 0; ++p) {
+    if (*p == L'\\' || *p == L'/') {
+      base = p + 1;
+    }
+  }
+  return StripExeSuffix(WideToUtf8(base));
+}
+
+std::string FileDescriptionUtf8(const wchar_t* path) {
+  DWORD handle = 0;
+  const DWORD size = GetFileVersionInfoSizeW(path, &handle);
+  if (size == 0) {
+    return {};
+  }
+  std::vector<uint8_t> block(size);
+  if (!GetFileVersionInfoW(path, 0, size, block.data())) {
+    return {};
+  }
+  struct LangCode {
+    WORD language;
+    WORD code_page;
+  };
+  LangCode* translate = nullptr;
+  UINT translate_bytes = 0;
+  if (!VerQueryValueW(block.data(), L"\\VarFileInfo\\Translation",
+                      reinterpret_cast<void**>(&translate), &translate_bytes) ||
+      translate == nullptr || translate_bytes < sizeof(LangCode)) {
+    return {};
+  }
+  wchar_t key[80];
+  wsprintfW(key, L"\\StringFileInfo\\%04x%04x\\FileDescription",
+            translate[0].language, translate[0].code_page);
+  wchar_t* desc = nullptr;
+  UINT desc_bytes = 0;
+  if (!VerQueryValueW(block.data(), key, reinterpret_cast<void**>(&desc),
+                      &desc_bytes) ||
+      desc == nullptr || desc[0] == 0) {
+    return {};
+  }
+  return WideToUtf8(desc);
+}
+
+std::string WindowApplicationName(HWND hwnd) {
+  DWORD pid = 0;
+  GetWindowThreadProcessId(hwnd, &pid);
+  if (pid == 0) {
+    return {};
+  }
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (process == nullptr) {
+    return {};
+  }
+  std::vector<wchar_t> path(MAX_PATH);
+  DWORD path_size = static_cast<DWORD>(path.size());
+  if (!QueryFullProcessImageNameW(process, 0, path.data(), &path_size)) {
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || path_size == 0) {
+      CloseHandle(process);
+      return {};
+    }
+    path.assign(path_size, L'\0');
+    path_size = static_cast<DWORD>(path.size());
+    if (!QueryFullProcessImageNameW(process, 0, path.data(), &path_size)) {
+      CloseHandle(process);
+      return {};
+    }
+  }
+  CloseHandle(process);
+  static std::unordered_map<std::wstring, std::string> cache;
+  const std::wstring key(path.data());
+  const auto found = cache.find(key);
+  if (found != cache.end()) {
+    return found->second;
+  }
+  std::string name = FileDescriptionUtf8(path.data());
+  if (name.empty()) {
+    name = Utf8BaseNameNoExe(path.data());
+  }
+  cache[key] = name;
+  return name;
+}
+
 flutter::EncodableMap SourceMap(const std::string& id, const std::string& name,
                                 const std::string& kind, const RECT& bounds,
-                                bool can_preview) {
+                                bool can_preview,
+                                const std::string& application_name) {
   flutter::EncodableMap map;
   map[flutter::EncodableValue("id")] = flutter::EncodableValue(id);
   map[flutter::EncodableValue("name")] = flutter::EncodableValue(name);
@@ -44,6 +145,10 @@ flutter::EncodableMap SourceMap(const std::string& id, const std::string& name,
       flutter::EncodableValue(bounds.bottom - bounds.top);
   map[flutter::EncodableValue("canPreview")] =
       flutter::EncodableValue(can_preview);
+  if (!application_name.empty()) {
+    map[flutter::EncodableValue("applicationName")] =
+        flutter::EncodableValue(application_name);
+  }
   return map;
 }
 
@@ -245,7 +350,9 @@ void ScreenGraph::RefreshSources() {
           return TRUE;
         }
         wchar_t title[512];
-        if (GetWindowTextW(hwnd, title, 512) <= 0) {
+        const int title_len = GetWindowTextW(hwnd, title, 512);
+        const std::string app = WindowApplicationName(hwnd);
+        if (title_len <= 0 && app.empty()) {
           return TRUE;
         }
         RECT bounds{};
@@ -254,8 +361,9 @@ void ScreenGraph::RefreshSources() {
         }
         Source source;
         source.id = "window-" + std::to_string(reinterpret_cast<uintptr_t>(hwnd));
-        source.name = WideToUtf8(title);
+        source.name = title_len > 0 ? WideToUtf8(title) : std::string();
         source.kind = "window";
+        source.applicationName = app;
         source.bounds = bounds;
         source.hwnd = hwnd;
         ctx->sources->push_back(source);
@@ -270,7 +378,8 @@ flutter::EncodableList ScreenGraph::Enumerate() {
   flutter::EncodableList list;
   for (const auto& source : sources_) {
     list.push_back(flutter::EncodableValue(
-        SourceMap(source.id, source.name, source.kind, source.bounds, true)));
+        SourceMap(source.id, source.name, source.kind, source.bounds, true,
+                  source.applicationName)));
   }
   return list;
 }

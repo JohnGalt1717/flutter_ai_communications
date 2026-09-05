@@ -361,7 +361,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   }
 
   private func refreshContent(_ completion: @escaping (SCShareableContent?, Error?) -> Void) {
-    SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: true) { content, error in
+    SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { content, error in
       self.mainAsync {
         if let content {
           self.content = content
@@ -401,27 +401,19 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
       )
     }
     let overlayIds = Set(overlayWindows.map { CGWindowID($0.windowNumber) })
+    let cg = Self.cgWindowMeta()
     for window in content.windows {
-      if overlayIds.contains(window.windowID) {
-        continue
-      }
-      if !window.isOnScreen {
-        continue
-      }
-      if window.frame.width < 64 || window.frame.height < 64 {
-        continue
-      }
-      let title = window.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      if title.isEmpty {
+      guard Self.shouldPublish(window, overlayIds: overlayIds, cg: cg) else {
         continue
       }
       items.append(
         sourceMap(
           id: "window-\(window.windowID)",
-          name: title,
+          name: window.title ?? "",
           kind: "window",
           frame: window.frame,
-          canPreview: true
+          canPreview: true,
+          applicationName: window.owningApplication?.applicationName
         )
       )
     }
@@ -433,9 +425,10 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     name: String,
     kind: String,
     frame: CGRect,
-    canPreview: Bool
+    canPreview: Bool,
+    applicationName: String? = nil
   ) -> [String: Any] {
-    [
+    var map: [String: Any] = [
       "id": id,
       "name": name,
       "kind": kind,
@@ -445,6 +438,84 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
       "height": Int(frame.height.rounded()),
       "canPreview": canPreview,
     ]
+    if let applicationName, !applicationName.isEmpty {
+      map["applicationName"] = applicationName
+    }
+    return map
+  }
+
+  private static func shouldPublish(
+    _ window: SCWindow,
+    overlayIds: Set<CGWindowID>,
+    cg: [CGWindowID: CGWindowMeta]
+  ) -> Bool {
+    if overlayIds.contains(window.windowID) {
+      return false
+    }
+    let meta = cg[window.windowID]
+    return shouldIncludeWindow(
+      title: window.title,
+      layer: window.windowLayer,
+      isOnScreen: window.isOnScreen && (meta?.onScreen ?? true),
+      width: window.frame.width,
+      height: window.frame.height,
+      appName: window.owningApplication?.applicationName,
+      alpha: meta?.alpha ?? 1,
+      sharingState: meta?.sharingState ?? 2
+    )
+  }
+
+  /// Off-screen, transparent, non-shareable, tiny, and non-normal-layer
+  /// windows (menus, HUD, Stage Manager strips) are omitted. Cocoa's
+  /// default title "Window" is not a shareable source. Empty titles are
+  /// kept only when the owning app is known so Dart can label them.
+  static func shouldIncludeWindow(
+    title: String?,
+    layer: Int,
+    isOnScreen: Bool,
+    width: CGFloat,
+    height: CGFloat,
+    appName: String?,
+    alpha: Double = 1,
+    sharingState: Int = 2
+  ) -> Bool {
+    if !isOnScreen || layer != 0 || width < 64 || height < 64 {
+      return false
+    }
+    if alpha < 0.05 || sharingState == 0 {
+      return false
+    }
+    let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if trimmed.caseInsensitiveCompare("Window") == .orderedSame {
+      return false
+    }
+    let app = appName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return !trimmed.isEmpty || !app.isEmpty
+  }
+
+  private struct CGWindowMeta {
+    var alpha: Double
+    var onScreen: Bool
+    var sharingState: Int
+  }
+
+  private static func cgWindowMeta() -> [CGWindowID: CGWindowMeta] {
+    guard let info = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]]
+    else {
+      return [:]
+    }
+    var map: [CGWindowID: CGWindowMeta] = [:]
+    for item in info {
+      guard let number = item[kCGWindowNumber as String] as? NSNumber else {
+        continue
+      }
+      map[CGWindowID(truncating: number)] = CGWindowMeta(
+        alpha: (item[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
+        onScreen: (item[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false,
+        sharingState: (item[kCGWindowSharingState as String] as? NSNumber)?.intValue ?? 2
+      )
+    }
+    return map
   }
 
   private func displayName(_ display: SCDisplay) -> String {
@@ -476,12 +547,10 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
         }
       }
     }
+    let overlayIds = Set(overlayWindows.map { CGWindowID($0.windowNumber) })
+    let cg = Self.cgWindowMeta()
     for window in content.windows.prefix(48) {
-      if !window.isOnScreen || window.frame.width < 64 || window.frame.height < 64 {
-        continue
-      }
-      let title = window.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-      if title.isEmpty {
+      guard Self.shouldPublish(window, overlayIds: overlayIds, cg: cg) else {
         continue
       }
       let id = "window-\(window.windowID)"

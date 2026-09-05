@@ -32,6 +32,15 @@ void main() {
                 'canPreview': false,
               },
               {
+                'id': 'window-1',
+                'name': 'GitHub',
+                'kind': 'window',
+                'applicationName': 'firefox',
+                'width': 800,
+                'height': 600,
+                'canPreview': true,
+              },
+              {
                 'id': 'system-picker',
                 'name': 'System picker',
                 'kind': 'systemPicker',
@@ -52,8 +61,11 @@ void main() {
     expect(catalog.map((source) => source.kind).toSet(), {
       ScreenSourceKind.display,
       ScreenSourceKind.allDisplays,
+      ScreenSourceKind.window,
       ScreenSourceKind.systemPicker,
     });
+    expect(catalog[2].name, 'firefox — GitHub');
+    expect(catalog[2].applicationName, 'firefox');
   });
 
   test('Linux beginScreenPick maps preview textures', () async {
