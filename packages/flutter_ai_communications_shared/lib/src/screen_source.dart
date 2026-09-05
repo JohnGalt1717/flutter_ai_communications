@@ -106,7 +106,7 @@ final class ScreenSource {
   /// Stable id for this catalog snapshot.
   final String id;
 
-  /// Advertised name. Window sources include the owning application.
+  /// Advertised name. Window sources include the owning application when known.
   final String name;
 
   /// Owning application for a window source, when known.

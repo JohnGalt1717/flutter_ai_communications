@@ -99,14 +99,23 @@ std::string WindowApplicationName(HWND hwnd) {
   if (process == nullptr) {
     return {};
   }
-  wchar_t path[MAX_PATH];
-  DWORD path_size = MAX_PATH;
-  std::string name;
-  if (QueryFullProcessImageNameW(process, 0, path, &path_size)) {
-    name = FileDescriptionUtf8(path);
-    if (name.empty()) {
-      name = Utf8BaseNameNoExe(path);
+  std::vector<wchar_t> path(MAX_PATH);
+  DWORD path_size = static_cast<DWORD>(path.size());
+  if (!QueryFullProcessImageNameW(process, 0, path.data(), &path_size)) {
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || path_size == 0) {
+      CloseHandle(process);
+      return {};
     }
+    path.assign(path_size, L'\0');
+    path_size = static_cast<DWORD>(path.size());
+    if (!QueryFullProcessImageNameW(process, 0, path.data(), &path_size)) {
+      CloseHandle(process);
+      return {};
+    }
+  }
+  std::string name = FileDescriptionUtf8(path.data());
+  if (name.empty()) {
+    name = Utf8BaseNameNoExe(path.data());
   }
   CloseHandle(process);
   return name;
