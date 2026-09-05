@@ -12,9 +12,63 @@
 
 namespace {
 
+std::string WindowTitle(Display* display, Window window, Atom net_wm_name,
+                        Atom utf8) {
+  if (net_wm_name != None) {
+    Atom actual = None;
+    int format = 0;
+    unsigned long nitems = 0;
+    unsigned long bytes = 0;
+    unsigned char* prop = nullptr;
+    const Atom type = utf8 != None ? utf8 : AnyPropertyType;
+    if (XGetWindowProperty(display, window, net_wm_name, 0, 1024, False, type,
+                           &actual, &format, &nitems, &bytes, &prop) ==
+            Success &&
+        prop != nullptr && nitems > 0) {
+      std::string name(reinterpret_cast<char*>(prop), nitems);
+      XFree(prop);
+      while (!name.empty() && name.back() == '\0') {
+        name.pop_back();
+      }
+      if (!name.empty()) {
+        return name;
+      }
+    } else if (prop != nullptr) {
+      XFree(prop);
+    }
+  }
+  char* name = nullptr;
+  if (XFetchName(display, window, &name) && name != nullptr) {
+    std::string out(name);
+    XFree(name);
+    return out;
+  }
+  return {};
+}
+
+std::string WindowApplicationName(Display* display, Window window) {
+  XClassHint hint{};
+  if (XGetClassHint(display, window, &hint) == 0) {
+    return {};
+  }
+  std::string name;
+  if (hint.res_class != nullptr && hint.res_class[0] != '\0') {
+    name = hint.res_class;
+  } else if (hint.res_name != nullptr && hint.res_name[0] != '\0') {
+    name = hint.res_name;
+  }
+  if (hint.res_class != nullptr) {
+    XFree(hint.res_class);
+  }
+  if (hint.res_name != nullptr) {
+    XFree(hint.res_name);
+  }
+  return name;
+}
+
 FlValue* SourceValue(const std::string& id, const std::string& name,
                      const std::string& kind, int x, int y, int w, int h,
-                     bool preview) {
+                     bool preview, const std::string& application_name) {
   g_autoptr(FlValue) map = fl_value_new_map();
   fl_value_set_string_take(map, "id", fl_value_new_string(id.c_str()));
   fl_value_set_string_take(map, "name", fl_value_new_string(name.c_str()));
@@ -24,6 +78,10 @@ FlValue* SourceValue(const std::string& id, const std::string& name,
   fl_value_set_string_take(map, "width", fl_value_new_int(w));
   fl_value_set_string_take(map, "height", fl_value_new_int(h));
   fl_value_set_string_take(map, "canPreview", fl_value_new_bool(preview));
+  if (!application_name.empty()) {
+    fl_value_set_string_take(map, "applicationName",
+                             fl_value_new_string(application_name.c_str()));
+  }
   return fl_value_clone(map);
 }
 
@@ -181,6 +239,8 @@ void ScreenGraph::RefreshSources() {
   Window parent = 0;
   Window* children = nullptr;
   unsigned int count = 0;
+  const Atom net_wm_name = XInternAtom(display, "_NET_WM_NAME", True);
+  const Atom utf8 = XInternAtom(display, "UTF8_STRING", True);
   if (XQueryTree(display, root_window, &root_ret, &parent, &children, &count)) {
     for (unsigned int i = 0; i < count; i++) {
       XWindowAttributes attrs{};
@@ -192,21 +252,23 @@ void ScreenGraph::RefreshSources() {
           attrs.height < 64) {
         continue;
       }
-      char* name = nullptr;
-      if (!XFetchName(display, children[i], &name) || name == nullptr) {
+      const std::string title =
+          WindowTitle(display, children[i], net_wm_name, utf8);
+      const std::string app = WindowApplicationName(display, children[i]);
+      if (title.empty() && app.empty()) {
         continue;
       }
       Source source;
       source.id = "window-" + std::to_string(children[i]);
-      source.name = name;
+      source.name = title;
       source.kind = "window";
+      source.applicationName = app;
       source.x = attrs.x;
       source.y = attrs.y;
       source.width = attrs.width;
       source.height = attrs.height;
       source.window = children[i];
       sources_.push_back(source);
-      XFree(name);
     }
     if (children != nullptr) {
       XFree(children);
@@ -224,7 +286,7 @@ FlValue* ScreenGraph::Enumerate() {
         list,
         SourceValue(source.id, source.name, source.kind, source.x, source.y,
                     source.width, source.height,
-                    source.kind != "systemPicker"));
+                    source.kind != "systemPicker", source.applicationName));
   }
   return fl_value_clone(list);
 }

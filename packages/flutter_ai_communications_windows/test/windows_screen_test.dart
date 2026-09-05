@@ -37,8 +37,9 @@ void main() {
               },
               {
                 'id': 'window-1',
-                'name': 'Notepad',
+                'name': 'untitled.txt',
                 'kind': 'window',
+                'applicationName': 'Notepad',
                 'width': 800,
                 'height': 600,
                 'canPreview': true,
@@ -60,6 +61,8 @@ void main() {
       ScreenSourceKind.allDisplays,
       ScreenSourceKind.window,
     ]);
+    expect(catalog.last.name, 'Notepad — untitled.txt');
+    expect(catalog.last.applicationName, 'Notepad');
   });
 
   test('Windows startScreenShare maps a texture handle', () async {

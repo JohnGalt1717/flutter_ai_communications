@@ -29,7 +29,7 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 target_link_libraries(${PLUGIN_NAME} PRIVATE mf mfplat mfreadwrite mfuuid ole32
-  gdi32 user32 dwmapi d3d11 dxgi windowsapp)
+  gdi32 user32 dwmapi d3d11 dxgi windowsapp version)
 
 set(flutter_ai_communications_windows_bundled_libraries
   ""

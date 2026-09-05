@@ -181,7 +181,7 @@ Stops the outbound video stream entirely. Remotes see no video (host thumbnail /
 _Avoid_: mute-video, stop (that ends the Session)
 
 **Screen source**:
-One display, one window, or an All-displays viewport that can be captured. Distinct from a Camera Endpoint. A Session may send screen-only, camera-only, or both. Kinds a platform cannot offer are omitted, not faked. On platforms that refuse a catalog, the catalog is one system-picker Screen source; the OS picker runs when screen send starts. An inbound presentation is an inbound video stream on a Video surface, not a Screen source in the local catalog. `screenSources()` is a snapshot; a live catalog stream updates during Screen pick and during screen send.
+One display, one window, or an All-displays viewport that can be captured. Distinct from a Camera Endpoint. A Session may send screen-only, camera-only, or both. Kinds a platform cannot offer are omitted, not faked. Window sources advertise the owning application name in addition to the window title. On platforms that refuse a catalog, the catalog is one system-picker Screen source; the OS picker runs when screen send starts and is the UI that lists applications. An inbound presentation is an inbound video stream on a Video surface, not a Screen source in the local catalog. `screenSources()` is a snapshot; a live catalog stream updates during Screen pick and during screen send.
 _Avoid_: camera, display camera, monitor (as the type name), application (as a kind), region, display region, tab (a browser tab is a window)
 
 **All-displays**:

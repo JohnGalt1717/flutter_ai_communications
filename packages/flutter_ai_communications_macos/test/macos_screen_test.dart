@@ -33,8 +33,9 @@ void main() {
               },
               {
                 'id': 'window-42',
-                'name': 'Finder',
+                'name': 'Documents',
                 'kind': 'window',
+                'applicationName': 'Finder',
                 'width': 800,
                 'height': 600,
                 'canPreview': true,
@@ -56,6 +57,8 @@ void main() {
       ScreenSourceKind.allDisplays,
       ScreenSourceKind.window,
     ]);
+    expect(catalog.last.name, 'Finder — Documents');
+    expect(catalog.last.applicationName, 'Finder');
   });
 
   test('macOS startScreenShare maps a texture handle', () async {
