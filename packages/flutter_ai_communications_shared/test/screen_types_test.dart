@@ -41,6 +41,10 @@ void main() {
         windowShareLabel(title: 'TextEdit', applicationName: 'TextEdit'),
         'TextEdit',
       );
+      expect(
+        windowShareLabel(title: 'Firefox', applicationName: 'firefox'),
+        'firefox',
+      );
       expect(windowShareLabel(title: 'Window', applicationName: ''), isNull);
       expect(windowShareLabel(title: '', applicationName: ''), isNull);
     });

@@ -22,7 +22,7 @@ String? windowShareLabel({String? title, String? applicationName}) {
   if (app.isEmpty) {
     return generic ? null : raw;
   }
-  if (generic || raw == app) {
+  if (generic || raw.toLowerCase() == app.toLowerCase()) {
     return app;
   }
   return '$app — $raw';

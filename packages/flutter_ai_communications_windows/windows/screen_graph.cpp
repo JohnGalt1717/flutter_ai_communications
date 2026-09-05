@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #ifndef WDA_EXCLUDEFROMCAPTURE
@@ -113,11 +114,18 @@ std::string WindowApplicationName(HWND hwnd) {
       return {};
     }
   }
+  CloseHandle(process);
+  static std::unordered_map<std::wstring, std::string> cache;
+  const std::wstring key(path.data());
+  const auto found = cache.find(key);
+  if (found != cache.end()) {
+    return found->second;
+  }
   std::string name = FileDescriptionUtf8(path.data());
   if (name.empty()) {
     name = Utf8BaseNameNoExe(path.data());
   }
-  CloseHandle(process);
+  cache[key] = name;
   return name;
 }
 

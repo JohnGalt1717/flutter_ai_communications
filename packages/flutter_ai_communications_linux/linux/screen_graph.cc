@@ -24,7 +24,7 @@ std::string WindowTitle(Display* display, Window window, Atom net_wm_name,
     if (XGetWindowProperty(display, window, net_wm_name, 0, 1024, False, type,
                            &actual, &format, &nitems, &bytes, &prop) ==
             Success &&
-        prop != nullptr && nitems > 0) {
+        prop != nullptr && nitems > 0 && format == 8) {
       std::string name(reinterpret_cast<char*>(prop), nitems);
       XFree(prop);
       while (!name.empty() && name.back() == '\0') {
