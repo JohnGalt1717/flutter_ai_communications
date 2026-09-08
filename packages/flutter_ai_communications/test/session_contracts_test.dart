@@ -362,7 +362,12 @@ void main() {
         platform.osRouteController.add(
           const OsRouteChange(captureId: 'airpods-in', renderId: 'airpods-out'),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await _waitUntil(
+          () =>
+              session.status.code == SessionStatusCode.routeMismatch &&
+              session.status.severity == StatusSeverity.error,
+          description: 'explicit Desired exhausts to routeMismatch error',
+        );
         expect(session.diagnostics.desired.renderId, 'speaker-out');
         expect(session.diagnostics.preferenceControlled, isFalse);
         expect(session.status.code, SessionStatusCode.routeMismatch);
@@ -381,7 +386,10 @@ void main() {
       platform.osRouteController.add(
         const OsRouteChange(captureId: 'speaker-in', renderId: 'speaker-out'),
       );
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await _waitUntil(
+        () => session.diagnostics.desired.captureId != 'airpods-in',
+        description: 'preference walk off airpods-in',
+      );
       expect(session.diagnostics.desired.captureId, isNot('airpods-in'));
       expect(session.diagnostics.preferenceControlled, isTrue);
     });
@@ -458,6 +466,24 @@ void main() {
 }
 
 Future<void> _microtask() => Future<void>.delayed(Duration.zero);
+
+/// Poll until [condition], instead of guessing Timer/CI wall-clock delay.
+Future<void> _waitUntil(
+  bool Function() condition, {
+  required String description,
+  Duration timeout = const Duration(seconds: 2),
+  Duration poll = const Duration(milliseconds: 10),
+}) async {
+  final watch = Stopwatch()..start();
+  while (!condition()) {
+    if (watch.elapsed >= timeout) {
+      fail(
+        'Timed out waiting for $description after ${timeout.inMilliseconds}ms',
+      );
+    }
+    await Future<void>.delayed(poll);
+  }
+}
 
 Uint8List _voiceFrame() {
   const sampleRate = 24000;
