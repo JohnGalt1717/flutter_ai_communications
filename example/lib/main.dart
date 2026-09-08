@@ -645,10 +645,14 @@ final class _SessionPageState extends State<SessionPage> {
           onTap: session == null
               ? null
               : () async {
-                  await session.select(
-                    captureId: endpoint.isCapture ? endpoint.id : null,
-                    renderId: endpoint.isCapture ? null : endpoint.id,
-                  );
+                  try {
+                    await session.select(
+                      captureId: endpoint.isCapture ? endpoint.id : null,
+                      renderId: endpoint.isCapture ? null : endpoint.id,
+                    );
+                  } on Object {
+                    // Platform select can fail; keep the live diagnostics.
+                  }
                   if (mounted) {
                     setState(() {
                       _diagnostics = session.diagnostics;
