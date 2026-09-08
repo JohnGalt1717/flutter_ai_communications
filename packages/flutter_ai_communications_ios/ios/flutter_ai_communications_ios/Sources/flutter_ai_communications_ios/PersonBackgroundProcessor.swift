@@ -3,7 +3,7 @@ import CoreVideo
 import Foundation
 import Vision
 
-/// Person isolation for blur and still replace on the Production video path.
+/// Background blur and still replace on the Production video path.
 final class PersonBackgroundProcessor {
   enum Kind {
     case none

@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
     name: "IosRoutePolicy",
     platforms: [
-        .macOS("15.0"),
-        .iOS("18.0"),
+        .macOS("13.0"),
+        .iOS("13.0"),
     ],
     products: [
         .library(name: "IosRoutePolicy", targets: ["IosRoutePolicy"]),

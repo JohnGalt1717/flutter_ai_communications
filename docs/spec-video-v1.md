@@ -19,7 +19,7 @@ video stream is a Video surface.
 
 Camera Endpoints and Screen sources are catalogs separate from audio Endpoints.
 v1 Video processor is none (pass-through). Blur and replace are
-`.agents/plans/video-processors-blur-replace.md`.
+GitHub issue #63 (iOS 18+, macOS 15+, Android, web).
 
 The first host is `example/`. It ships a Zoom/Teams-class lobby subsection
 (device picks, permission via `start()`, mute, Join). Orchestration drives

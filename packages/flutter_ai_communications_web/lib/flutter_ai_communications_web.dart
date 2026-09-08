@@ -462,8 +462,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   web.HTMLCanvasElement? _videoCanvas;
   web.HTMLCanvasElement? _personCanvas;
   web.HTMLImageElement? _stillImage;
-  VideoProcessor _videoFx = const NoneVideoProcessor();
-  int _videoFxFrame = 0;
+  VideoProcessor _webVideoProcessor = const NoneVideoProcessor();
+  int _webProcessorFrame = 0;
   JSObject? _selfie;
   var _selfieFailed = false;
   web.CanvasImageSource? _lastMask;
@@ -578,7 +578,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<void> stopCameraNative() async {
-    _stopVideoFx();
+    _stopWebProcessor();
     _videoStream?.getTracks().toDart.forEach((track) => track.stop());
     _videoStream = null;
     _videoEl = null;
@@ -646,20 +646,20 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       final image = web.HTMLImageElement()..src = url;
       _stillImage = image;
     }
-    _videoFx = processor;
+    _webVideoProcessor = processor;
     if (processor is NoneVideoProcessor) {
-      _stopVideoFx();
+      _stopWebProcessor();
       return NativeProcessorResult.ready;
     }
     if (!await _ensureSelfieSegmentation()) {
-      _videoFx = const NoneVideoProcessor();
-      _stopVideoFx();
+      _webVideoProcessor = const NoneVideoProcessor();
+      _stopWebProcessor();
       return NativeProcessorResult.unavailable;
     }
     if (_videoEl == null) {
       return NativeProcessorResult.ready;
     }
-    _startVideoFx();
+    _startWebProcessor();
     return NativeProcessorResult.ready;
   }
 
@@ -737,7 +737,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     await done.future.timeout(const Duration(seconds: 8));
   }
 
-  void _startVideoFx() {
+  void _startWebProcessor() {
     final video = _videoEl;
     if (video == null) {
       return;
@@ -763,19 +763,19 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
     video.style.setProperty('opacity', '0');
     canvas.style.setProperty('display', 'block');
-    _pumpVideoFx();
+    _pumpWebProcessor();
   }
 
-  void _stopVideoFx() {
-    _videoFxFrame++;
+  void _stopWebProcessor() {
+    _webProcessorFrame++;
     _videoEl?.style.setProperty('opacity', '1');
     _videoCanvas?.style.setProperty('display', 'none');
   }
 
-  void _pumpVideoFx() {
-    final token = ++_videoFxFrame;
+  void _pumpWebProcessor() {
+    final token = ++_webProcessorFrame;
     void frame(num _) {
-      if (token != _videoFxFrame) {
+      if (token != _webProcessorFrame) {
         return;
       }
       final video = _videoEl;
@@ -786,7 +786,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       final width = canvas.width;
       final height = canvas.height;
       final ctx = canvas.context2D;
-      final fx = _videoFx;
+      final fx = _webVideoProcessor;
       final selfie = _selfie;
       if (selfie != null) {
         final input = JSObject();
