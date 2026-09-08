@@ -6,8 +6,9 @@ Host-integration tickets live in `.scratch/video-host-issues/` and the host plan
 `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 Both are in this repository. First host surface is `example/`.
 
-Status as of 2026-09-03. HEAD `4f38598`. Tickets 04 (#45 / PR #46) and 12
-(#47 / PR #48) on `main`.
+Status as of 2026-09-08. HEAD `5642764`. Tickets 04 (#45 / PR #46) and 12
+(#47 / PR #48) on `main`. **Open:** Linux camera receipts; tickets 10–11
+deferred; ticket 14 host guide.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |

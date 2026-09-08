@@ -1,10 +1,10 @@
 # Video Capture, Processors, and Sink Providers Plan
 
-**Status (2026-09-03):** Camera graphs shipped on six platforms. Video sink
-seam #45 / #46 and WebRTC Send-track package #47 / #48 are on `main`
-(`4f38598`). Linux camera compile + physical receipt remain. Processors
-blur/replace stay deferred. Screen send is a separate plan (PR #39 on
-`main`; Apple graphs #43).
+**Status (2026-09-08):** Camera graphs shipped on six platforms. Video sink
+seam #45 / #46 and WebRTC Send-track package #47 / #48 are on `main`.
+**Remaining:** Linux camera compile + physical receipt. Processors
+blur/replace stay deferred (`.agents/plans/video-processors-blur-replace.md`).
+Screen send receipts: #44.
 **Tickets:** `.scratch/video-v1-issues/`.
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.

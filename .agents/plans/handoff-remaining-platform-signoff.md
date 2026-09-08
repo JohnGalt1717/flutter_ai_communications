@@ -2,9 +2,23 @@
 
 Hand this file to the next agent. Do not reopen the “unplug USB” path. USB staying attached is the Mac proof, not a blocker.
 
-Read first: `CONTEXT.md`, `AGENTS.md`, this file, then the ADRs for the area you touch (`0006`, `0007`, `0004`). Load `device-agent-lens` and `device-permission-prompts` before any exclusive drive. Load `tdd` / `dart-add-unit-test` before product edits. The suite is Orchestration, not Marionette.
+Read first: `CONTEXT.md`, `AGENTS.md`, this file, then the ADRs for the area you touch (`0006`, `0007`, `0004`). Load `device-agent-lens` and `device-permission-prompts` before any exclusive drive. OS sheets: `fac-os-sheets`. Load `tdd` / `dart-add-unit-test` before product edits. The suite is Orchestration, not Marionette.
 
-## Current status (2026-09-03)
+## Current remaining (2026-09-08)
+
+HEAD: `5642764` on `main`. #43 and #51 closed. #26 and #44 are **open**
+(GitHub auto-closed them from “does not close #N” in PR bodies; reopened).
+
+Human testing is the close bar. Do not close #26 or #44 from this file.
+
+| Ticket | Remaining |
+| --- | --- |
+| #26 | Physical iPhone speakerphone↔handset, AirPods, interruption. Chrome `flutter drive` capture×render + `devicechange`. Audio loopback identity. Accessory rows (BT / CarPlay / Android Auto). |
+| #44 | Linux X11 `skipped=false`. Android Include-sound sheet on SM A176U1. |
+
+Already receipted (do not re-run unless product code in that graph changed): Android SM A176U1 audio 20-cycles; macOS audio 20-cycles; iOS sim audio 20-cycles (not handset proof); Android MediaProjection video; Chrome getDisplayMedia; macOS screen; physical iOS Broadcast; Windows screen.
+
+## Historical status (2026-09-03)
 
 This handoff was written against `10f9c2c` / PR #30. **The matrix and
 working-tree sections below are historical.** Verify against `main`.
@@ -15,8 +29,7 @@ Live on 2026-09-03, HEAD `4f38598`:
   `native_marionette_test.dart` does not exist.
 - GitHub issues #1 and #16–#25, #27–#29, #35, #45, #47 are **CLOSED**.
   Do not reopen them from this file.
-- Open: #26 (`ready-for-human`, physical iPhone / Android / Chrome),
-  #43 (Apple screen send), #44 (screen send receipts).
+- Open then: #26, #43, #44. **#43 later closed (PR #52).**
 - Video sink seam #46 and WebRTC Send-track package #48 are on `main`.
 - Screen send Windows/Linux/Android/web: PR #39 on `main`.
 

@@ -1,6 +1,6 @@
 ---
 name: device-permission-prompts
-description: Grant OS permission prompts during Flutter debug and Agent Lens / flutter-skill device runs. Use when start() hangs on a microphone Allow dialog, Android pm grant, iOS simctl privacy, physical-device TCC, Mac Automation, Patrol grantPermissionWhenInUse, or XCTest addUIInterruptionMonitor.
+description: Grant OS permission prompts during Flutter debug and Agent Lens / flutter-skill device runs. Use when start() hangs on a microphone Allow dialog, Android pm grant, iOS simctl privacy, physical-device TCC, Mac Automation, Patrol grantPermissionWhenInUse, or XCTest addUIInterruptionMonitor. Live sheets that need a tap go through fac-os-sheets (Appium).
 ---
 
 # Device permission prompts
@@ -15,9 +15,9 @@ Receipts stay in [real-device-orchestration.md](../../workflows/real-device-orch
 | --- | --- | --- |
 | Android phone / emulator / tablet | `adb pm grant` after the APK exists | Run [grant-device-permissions.sh](../../workflows/grant-device-permissions.sh) |
 | iOS / iPadOS **simulator** | `xcrun simctl privacy … grant microphone` | Same script |
-| Physical iPhone / iPad | First `start()` shows Allow. Later runs reuse TCC | Tell the human to tap **Allow**. Isolation Open is not this prompt |
+| Live OS sheet (mic Allow, MediaProjection, ReplayKit, TCC, nearby devices) | Appium attach | Load [fac-os-sheets](../fac-os-sheets/SKILL.md). Do not adb-tap Start on the home picker. |
+| Physical iPhone / iPad when Appium WDA is not signed | First `start()` shows Allow. Later runs reuse TCC | Tell the human to tap **Allow**. Isolation Open is not this prompt |
 | Host Mac controlling Xcode | Privacy & Security → Automation | Tell the human to allow Terminal / VS Code / dart to control Xcode |
-| Future native-dialog suite | Patrol `$.platform.mobile.grantPermissionWhenInUse()` | See Patrol below. Do not add Patrol during an exclusive receipt run |
 
 Done when `start()` returns `StartReady` (or the grant command exits 0 and the next `start()` will not show a sheet).
 
@@ -47,13 +47,13 @@ xcrun simctl privacy <udid> reset microphone com.example.flutterAiCommunications
 
 ## Physical iOS / iPadOS
 
-There is no `devicectl` / `simctl` grant for microphone on hardware. XCTest `addUIInterruptionMonitor` and Appium `autoAcceptAlerts` run only inside an XCUITest / WebDriverAgent process. `flutter drive`, `flutter test integration_test/…`, flutter-skill, and Agent Lens are not that process.
+There is no `simctl` grant for microphone on hardware. flutter-skill cannot tap the sheet. Appium XCUITest (`fac-os-sheets`, `autoAcceptAlerts`) can, once WDA is signed via `appium_prepare_ios_real_device`.
 
-1. Keep the exclusive `flutter drive` / `flutter run` alive.
-2. Ask the human: tap **Allow** on the microphone sheet. Isolation Open is host UI — leave it; it is not a suite gate.
-3. Wait for `StartReady`. Later installs that keep the same bundle id reuse TCC. A delete/reinstall resets it.
+If WDA is not signed: keep the exclusive `flutter run` alive and ask the human to tap **Allow**. Isolation Open is host UI — leave it.
 
 Wireless Local Network is a different sheet (debug VM). Grant that too if `flutter run` cannot discover the Dart VM.
+
+**Do not uninstall** `com.example.flutterAiCommunications` on hardware. Deleting the app clears developer trust; the next install asks to re-approve the developer account. Retry with `flutter run` over the existing install. `ideviceinstaller -U`, `devicectl device uninstall`, and Xcode “Delete App” are the same mistake.
 
 ## Host Mac Automation
 

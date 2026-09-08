@@ -10,8 +10,9 @@ are done. Do not create GitHub issues for these until a human asks.
 
 Library tickets stay in `.scratch/video-v1-issues/`.
 
-Status as of 2026-09-03, HEAD `4f38598`. First host surface is `example/`.
-Library 04 and 12 are on `main`.
+Status as of 2026-09-08, HEAD `5642764`. First host surface is `example/`.
+Library 04 and 12 are on `main`. **Open:** host ticket 03 (preference
+persistence), 08 inbound RTCVideoView, 09 Linux camera receipt, 10 docs.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |

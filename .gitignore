@@ -43,3 +43,9 @@ packages/**/pubspec.lock
 
 # Local Orchestration screenshots (may contain desktop contents)
 .scratch/screen-proof/
+
+# Codebase-memory graph snapshot (regenerate locally; see DEVELOPER.md)
+.codebase-memory/graph.db.zst
+.codebase-memory/*.db
+.codebase-memory/artifact.json
+

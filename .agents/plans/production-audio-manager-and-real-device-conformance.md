@@ -1,9 +1,15 @@
 # Production Audio Manager and Real-Device Conformance Plan
 
-**Status (2026-09-03):** Code for issues #16–#29 is on `main`. Those issues
-are **CLOSED** except #26 (`ready-for-human`: physical iPhone, physical
-Android, Chrome). Do not reopen #16–#25 or #27–#29 from this file. Fieldist
-is still blocked on #26.
+**Status (2026-09-08):** Code for issues #16–#29 is on `main`. Those issues
+are **CLOSED** except #26 (`ready-for-human`). Do not reopen #16–#25 or
+#27–#29 from this file. Fieldist is still blocked on #26.
+
+Automatable receipts collected on this Mac (comment on #26): Android
+SM A176U1 speaker↔handset 20 cycles; macOS 20 cycles; iOS sim 20 cycles
+(handset Observed stays speaker — not physical proof); widget mute/route
+(#59). **Human remaining:** physical iPhone speakerphone↔handset / AirPods /
+interruption; Chrome `flutter drive` combos + `devicechange`; audio
+loopback identity; accessory rows.
 
 Verified evidence (do not treat as close):
 

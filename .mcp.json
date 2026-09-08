@@ -1,5 +1,26 @@
 {
     "mcpServers": {
+        "github": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/"
+        },
+        "codebase-memory-mcp": {
+            "command": "codebase-memory-mcp"
+        },
+        "appium-mcp": {
+            "disabled": false,
+            "timeout": 100,
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "appium-mcp@latest"
+            ],
+            "env": {
+                "CAPABILITIES_CONFIG": ".appium.capabilities.json",
+                "APPIUM_MCP_DOCS_ENABLED": "true",
+                "APPIUM_MCP_ON_CLIENT_DISCONNECT": "delete_all"
+            }
+        },
         "flutter_agent_lens": {
             "command": "flutter-agent-lens"
         },
