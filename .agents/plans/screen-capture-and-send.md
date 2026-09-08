@@ -1,19 +1,23 @@
 # Screen Capture and Send Plan
 
-**Status (2026-09-03):** v1 Session API and native graphs shipped on
-Windows, Linux X11, Android, web, macOS, and iOS. Squash-merged as PR #39
-/ `588618d`. Apple graphs on #43. Receipts on remaining heads:
-[#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44).
+**Status (2026-09-08):** Native graphs shipped on six platforms. Apple #43
+closed (PR #52). Android Include sound shipped (#51 / PR #58). Receipts
+[#44](https://github.com/JohnGalt1717/flutter_ai_communications/issues/44):
+Windows, macOS, Chrome, Android video, physical iOS Broadcast are
+`skipped=false`. **Remaining:** Linux X11 automated share; Android
+Include-sound sheet on SM A176U1. Ticket 12 (Transport second send path)
+is not a receipt gate.
 **Tickets:** `.scratch/screen-v1-issues/`.
 **Host narrative:** `docs/host-screen-share-narrative.md`.
 **Camera track:** `.agents/plans/video-capture-and-sinks.md` (do not regress).
 **Video sink / Transport plugin:** tickets 04 (#46) and 12 (#48) are on `main`.
 
-## Current slice (2026-09-03)
+## Current slice (2026-09-08)
 
-HEAD: `588618d` on `main` (PR #39). Domain, Session contracts, fake adapter,
-example Screen send subsection, and native graphs for Windows GDI, Linux
-X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
+HEAD: `6dd3c10` on `main`. Domain, Session contracts, fake adapter,
+example Screen send subsection, and native graphs for Windows WGC, Linux
+X11, Android MediaProjection + AudioPlaybackCapture, web `getDisplayMedia`,
+macOS ScreenCaptureKit, and iOS ReplayKit are in tree.
 
 ### Done
 
@@ -27,22 +31,25 @@ X11, Android MediaProjection, and web `getDisplayMedia` are in tree.
 - Windows GDI catalog, thumbs, Share frame, send Texture; JamieDesktop
   `native_screen_test` `skipped=false` (20 cycles, camera+screen, 1920×1080@5)
 - Linux X11 catalog + send; Wayland catalog is one system-picker source
-- Android MediaProjection + FGS; OS-stop via `MediaProjection.Callback`
+- Android MediaProjection + FGS; OS-stop via `MediaProjection.Callback`;
+  AudioPlaybackCapture Include sound (#51 / PR #58)
 - Web `getDisplayMedia` + HtmlElementView; track `ended` is source-gone
 - Camera Production video path per platform (do not reuse as a screen graph)
 - Video sink seam (#46) and WebrtcVideoSink Send tracks (#48)
+- Apple ScreenCaptureKit / ReplayKit (#43 / PR #52)
+- Window catalog labels with owning app names (PR #57)
 
 ### Shipped vs remaining (native)
 
-| Platform | Shipped | Remaining |
+| Platform | Shipped | Remaining on #44 |
 | --- | --- | --- |
-| Windows | GDI thumbs + Share frame; WGC production; WASAPI FFI Include sound | WGC-border receipt note on #44 |
-| Linux X11 | catalog, send, thumbs, Share frame | Pulse/PipeWire loopback, receipt |
-| Linux Wayland | system-picker catalog + portal ScreenCast | PipeWire frame pull when libpipewire is present; receipt |
-| Web | system-picker + `getDisplayMedia` | Chrome/Edge receipt (#44) |
-| Android | MediaProjection Texture | AudioPlaybackCapture ([#51](https://github.com/JohnGalt1717/flutter_ai_communications/issues/51)), SM-class receipt (#44) |
-| macOS | ScreenCaptureKit catalog, thumbs, Share frame, send | `native_screen_test` `skipped=false` |
-| iOS | system-picker + ReplayKit Broadcast | physical Broadcast receipt (#44) |
+| Windows | WGC production; WASAPI FFI Include sound; `skipped=false` | WGC-border screenshot note (optional) |
+| Linux X11 | catalog, send, thumbs, Share frame | **automated `skipped=false` receipt** (not this Mac) |
+| Linux Wayland | system-picker catalog + portal ScreenCast | portal pick receipt when a Wayland head exists |
+| Web | system-picker + `getDisplayMedia` | Chrome `skipped=false` collected; Edge not required |
+| Android | MediaProjection Texture + AudioPlaybackCapture | **Include-sound sheet** on SM A176U1 |
+| macOS | ScreenCaptureKit; `native_screen_test` `skipped=false` | none |
+| iOS | ReplayKit Broadcast; physical receipt `skipped=false` | none |
 
 ### Not in this slice
 

@@ -10,6 +10,7 @@ Functional Teams/Zoom-class communications for Flutter. The host owns signaling,
 4. `docs/agents/issue-tracker.md` — GitHub Issues via `gh`.
 5. `docs/agents/triage-labels.md` — triage vocabulary.
 6. `.agents/workflows/` — how to run a named job (device matrix, receipts).
+7. `DEVELOPER.md` — graph index, Appium MCP, device stack. Index with codebase-memory-mcp if `.codebase-memory/graph.db.zst` is missing.
 
 If a term is missing from `CONTEXT.md`, stop and add it with `/domain-modeling` before inventing a synonym.
 
@@ -63,8 +64,9 @@ Load the skill before the work it covers:
 | Analyze | Dart MCP / `mcp_dart_and_flut_analyze_files` — not routine `dart analyze` |
 | This file or a skill | `writing-for-agents` |
 | Grill / plan | `grill-with-docs` (`grilling` + `domain-modeling`) |
-| Attach/debug via flutter_agent_lens; UI drive via flutter-skill | `device-agent-lens` |
+| Attach/debug via flutter_agent_lens; Flutter UI via flutter-skill | `device-agent-lens` |
 | Mic / OS permission sheets, `pm grant`, `simctl privacy`, first-start Allow | `device-permission-prompts` |
+| Live system dialogs (MediaProjection, ReplayKit, TCC, Allow) | `fac-os-sheets` (Appium). Never Appium for Flutter keys. After iOS WDA create, activate the example — do not leave **Automation is running** covering the harness. |
 | Physical iOS/Android native receipts | `.agents/workflows/real-device-orchestration.md` |
 | Screen send receipts (six platforms) | `.agents/workflows/screen-send-orchestration.md` |
 | Ship PR → CI → Copilot review → squash-merge | `/ship-pr-review-loop` |
@@ -78,9 +80,10 @@ Load the skill before the work it covers:
 - Isolation is an event. No user-facing strings in the library (ADR-0005).
 - No `record`, `flutter_recorder`, or `flutter_soloud`. No ISpect dependency; log with `package:logging`.
 - Device-order preference persistence is host-owned. Camera is in scope (catalog, Session video, Camera preview, Transport plugin). Screen send is in scope: catalog, Screen pick, Share frame, native Production video path. Spec: `docs/spec-screen-v1.md`.
+- Never uninstall the iOS example on hardware. Deleting the app forces a developer-account / Untrusted Developer re-approve. `flutter run` over the existing install is the retry. Android `adb uninstall` is only for an explicit OS-sheet reset.
 
 ## Testing
 
 Test at public seams (`CommunicationsManager` / today's `CommunicationsManager`, `Session`, `CoverageSource`, platform interface). Prefer a fake platform adapter over mocks of internals. Fixture PCM/WAV in, assert bytes and events out. The example is the AI-voice agent harness for iOS, Android, web, macOS, Windows, and Linux — not a SignalR demo. Its lobby subsection is the Orchestration e2e path (permission, device picks, Join).
 
-Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-orchestration.md` (audio receipts) and `device-agent-lens` (flutter_agent_lens + flutter-skill). Screen send receipts: `.agents/workflows/screen-send-orchestration.md`. `flutter test` from a package dir. Loopback identity is not native proof.
+Physical iOS, Android, and Chrome: follow `.agents/workflows/real-device-orchestration.md` (audio receipts) and `device-agent-lens` (flutter_agent_lens + flutter-skill). OS sheets: `fac-os-sheets`. Screen send receipts: `.agents/workflows/screen-send-orchestration.md`. `flutter test` from a package dir. Loopback identity is not native proof.

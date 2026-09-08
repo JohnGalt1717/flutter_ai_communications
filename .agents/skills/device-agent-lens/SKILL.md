@@ -10,7 +10,8 @@ No VS Code debug session. No Marionette. No DebugMCP.
 | Tool | Role |
 | --- | --- |
 | **flutter_agent_lens** | Launch/attach, discover apps, `ws://` URI, console logs, breakpoints, evaluate, hot reload/restart |
-| **flutter-skill** | See and drive the UI: inspect, tap, type, scroll, screenshot |
+| **flutter-skill** | See and drive the **Flutter** UI: inspect, tap, type, scroll, screenshot |
+| **Appium (`fac-os-sheets`)** | System sheets only (Allow, MediaProjection, ReplayKit, TCC) |
 
 ## Preconditions
 
@@ -53,7 +54,7 @@ If `inspect` is empty after taps, Agent Lens `hot_restart` usually restores the 
 
 - **Start / attach / logs / breakpoints / evaluate / hot reload** → Agent Lens
 - **Tap Start/Mute/Pause, pick endpoints, screenshots** → flutter-skill
-- **Mic Allow sheet** → human (physical) or `device-permission-prompts`
+- **Mic Allow / MediaProjection / ReplayKit / TCC** → `fac-os-sheets` (Appium attach). `device-permission-prompts` for `pm grant` / `simctl privacy` first.
 
 ## Do not
 

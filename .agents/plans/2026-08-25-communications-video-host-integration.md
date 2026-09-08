@@ -1,9 +1,10 @@
 # Plan: Host communications video (example first)
 
-**Status (2026-09-03):** Example lobby + Session contracts shipped. Library
+**Status (2026-09-08):** Example lobby + Session contracts shipped. Library
 tickets 04 (#46) and 12 (#48) are on `main`. Example meeting Join attaches
-`WebrtcVideoSink`. Remaining host work: preference persistence in `example/`,
-RTCVideoView loopback (host ticket 08), Linux camera compile + receipt.
+`WebrtcVideoSink`. Loopback meeting chrome after Join is on `main` (PR #56).
+**Remaining host work:** preference persistence in `example/` (ticket 03),
+RTCVideoView inbound (ticket 08), Linux camera compile + receipt (ticket 09).
 Do not start native camera work in a host app.
 **Audience:** Fresh agent working in `JohnGalt1717/flutter_ai_communications`.
 **Date:** 2026-08-25

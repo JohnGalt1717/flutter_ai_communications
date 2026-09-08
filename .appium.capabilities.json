@@ -1,0 +1,34 @@
+{
+  "android": {
+    "platformName": "Android",
+    "appium:automationName": "UiAutomator2",
+    "appium:appPackage": "com.example.flutter_ai_communications",
+    "appium:appActivity": "com.example.flutter_ai_communications.MainActivity",
+    "appium:noReset": true,
+    "appium:dontStopAppOnReset": true,
+    "appium:autoLaunch": false,
+    "appium:autoGrantPermissions": true,
+    "appium:skipUnlock": true
+  },
+  "ios": {
+    "platformName": "iOS",
+    "appium:automationName": "XCUITest",
+    "appium:bundleId": "com.example.flutterAiCommunications",
+    "appium:noReset": true,
+    "appium:autoLaunch": false,
+    "appium:dontStopAppOnReset": true,
+    "appium:skipUninstall": true,
+    "appium:autoAcceptAlerts": true,
+    "appium:xcodeOrgId": "3RQSQYAB58",
+    "appium:xcodeSigningId": "Apple Development",
+    "appium:updatedWDABundleId": "com.example.flutterAiCommunications.wda",
+    "appium:allowProvisioningUpdates": true,
+    "appium:forceAppLaunch": false,
+    "appium:shouldTerminateApp": false
+  },
+  "general": {
+    "platformName": "Mac",
+    "appium:automationName": "Mac2",
+    "appium:bundleId": "com.example.flutterAiCommunications"
+  }
+}
