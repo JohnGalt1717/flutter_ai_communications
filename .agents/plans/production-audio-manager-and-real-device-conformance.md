@@ -1,8 +1,9 @@
 # Production Audio Manager and Real-Device Conformance Plan
 
-**Status (2026-09-08):** Code for issues #16–#29 is on `main`. Those issues
-are **CLOSED** except #26 (`ready-for-human`). Do not reopen #16–#25 or
-#27–#29 from this file. Fieldist is still blocked on #26.
+**Status (2026-09-08):** HEAD `6dd3c10` on `main`. Code for issues #16–#29
+is on `main`. Those issues are **CLOSED** except #26 (`ready-for-human`).
+Do not reopen #16–#25 or #27–#29 from this file. Fieldist is still blocked
+on #26.
 
 Automatable receipts collected on this Mac (comment on #26): Android
 SM A176U1 speaker↔handset 20 cycles; macOS 20 cycles; iOS sim 20 cycles
@@ -19,8 +20,9 @@ Verified evidence (do not treat as close):
 - Suite file: `example/integration_test/native_orchestration_test.dart`
   (Marionette was renamed Orchestration).
 - Chrome 20-cycle + 45 capture×render receipts at commit `10f9c2c`
-  (comments on #21). Repeat at `5642764` via flutter-skill CLI (no
-  chromedriver). `devicechange` still `skipped=capability`.
+  (comments on #21). Repeat via flutter-skill CLI (no chromedriver);
+  receipt file stamped `5642764` (Session product HEAD at the run; later
+  flake fix is `6dd3c10`). `devicechange` still `skipped=capability`.
 - Windows exclusive audio 20-cycles: extra desktop evidence (PR #32
   comment on #26). Linux/WSLg 20-cycles ran in the PR #33 window
   (Plantronics/WASAPI on Windows; Pulse `RDPSource`/`RDPSink` on WSL).
