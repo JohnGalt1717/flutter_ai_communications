@@ -13,6 +13,7 @@
             "type": "stdio",
             "command": "npx",
             "args": [
+                "-y",
                 "appium-mcp@latest"
             ],
             "env": {
