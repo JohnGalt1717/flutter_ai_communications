@@ -92,7 +92,6 @@ internal class AndroidPlaybackCapture {
                 live.stop()
             } catch (_: IllegalStateException) {
             }
-            live.release()
         }
         try {
             drain?.join(250)
@@ -100,5 +99,6 @@ internal class AndroidPlaybackCapture {
             Thread.currentThread().interrupt()
         }
         drain = null
+        live?.release()
     }
 }
