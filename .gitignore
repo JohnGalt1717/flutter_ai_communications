@@ -43,3 +43,5 @@ packages/**/pubspec.lock
 
 # Local Orchestration screenshots (may contain desktop contents)
 .scratch/screen-proof/
+
+.git_credentials
