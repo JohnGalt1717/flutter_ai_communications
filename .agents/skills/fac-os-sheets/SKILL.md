@@ -60,9 +60,10 @@ clears developer trust and forces a developer-account re-approve.
    - Prefer **Share one app** (entire screen backgrounds the app and can
      drop the debug VM). Tap **Next**.
    - Pick `flutter_ai_communications_example`. Tap **Start**.
-4. iOS ReplayKit (SpringBoard, not the Flutter app): tap **Start Sharing**
-   (iOS 27) or **Start Broadcast**. Prefer the extension row
-   `AI Communications Screen`. Isolation Open is host UI — leave it.
+4. iOS ReplayKit (SpringBoard, not the Flutter app): tap **Start Broadcast**.
+   Prerelease lab iOS may show **Start Sharing** instead — that is not a
+   shipping OS label. Prefer the extension row `AI Communications Screen`.
+   Isolation Open is host UI — leave it.
 5. macOS Screen Recording TCC: Allow this time / this app.
 
 Done when flutter-skill `screen-status` is `sharing` or `start()` returned
