@@ -7,16 +7,20 @@ are **CLOSED** except #26 (`ready-for-human`). Do not reopen #16–#25 or
 Automatable receipts collected on this Mac (comment on #26): Android
 SM A176U1 speaker↔handset 20 cycles; macOS 20 cycles; iOS sim 20 cycles
 (handset Observed stays speaker — not physical proof); widget mute/route
-(#59). **Human remaining:** physical iPhone speakerphone↔handset / AirPods /
-interruption; Chrome `flutter drive` combos + `devicechange`; audio
-loopback identity; accessory rows.
+(#59); Chrome capture×render via flutter-skill CLI (four fake getUserMedia
+combos, Desired=Applied=Observed, mute while live;
+`/tmp/flutter_ai_communications_receipts/5642764-chrome-web.json`).
+**Human remaining:** physical iPhone speakerphone↔handset / AirPods /
+interruption; audio loopback identity; accessory rows. Chrome
+`devicechange` is still `skipped=capability` under fake-device.
 
 Verified evidence (do not treat as close):
 
 - Suite file: `example/integration_test/native_orchestration_test.dart`
   (Marionette was renamed Orchestration).
 - Chrome 20-cycle + 45 capture×render receipts at commit `10f9c2c`
-  (comments on #21). `devicechange` still `skipped=capability`.
+  (comments on #21). Repeat at `5642764` via flutter-skill CLI (no
+  chromedriver). `devicechange` still `skipped=capability`.
 - Windows exclusive audio 20-cycles: extra desktop evidence (PR #32
   comment on #26). Linux/WSLg 20-cycles ran in the PR #33 window
   (Plantronics/WASAPI on Windows; Pulse `RDPSource`/`RDPSink` on WSL).

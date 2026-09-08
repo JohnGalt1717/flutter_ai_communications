@@ -6,17 +6,18 @@ Read first: `CONTEXT.md`, `AGENTS.md`, this file, then the ADRs for the area you
 
 ## Current remaining (2026-09-08)
 
-HEAD: `5642764` on `main`. #43 and #51 closed. #26 and #44 are **open**
+HEAD: `6dd3c10` on `main`. #43 and #51 closed. #26 and #44 are **open**
 (GitHub auto-closed them from “does not close #N” in PR bodies; reopened).
+Session contract CI flake is fixed (#61).
 
 Human testing is the close bar. Do not close #26 or #44 from this file.
 
 | Ticket | Remaining |
 | --- | --- |
-| #26 | Physical iPhone speakerphone↔handset, AirPods, interruption. Chrome `flutter drive` capture×render + `devicechange`. Audio loopback identity. Accessory rows (BT / CarPlay / Android Auto). |
-| #44 | Linux X11 `skipped=false`. Android Include-sound sheet on SM A176U1. |
+| #26 | Physical iPhone speakerphone↔handset, AirPods, interruption. Audio loopback identity. Accessory rows (BT / CarPlay / Android Auto). Chrome `devicechange` still `skipped=capability`. |
+| #44 | Linux X11 `skipped=false` (dedicated Linux later). Android Include-sound sheet on SM A176U1. |
 
-Already receipted (do not re-run unless product code in that graph changed): Android SM A176U1 audio 20-cycles; macOS audio 20-cycles; iOS sim audio 20-cycles (not handset proof); Android MediaProjection video; Chrome getDisplayMedia; macOS screen; physical iOS Broadcast; Windows screen.
+Already receipted (do not re-run unless product code in that graph changed): Android SM A176U1 audio 20-cycles; macOS audio 20-cycles; iOS sim audio 20-cycles (not handset proof); Android MediaProjection video; Chrome getDisplayMedia; Chrome capture×render via flutter-skill CLI (`5642764-chrome-web.json`, four fake getUserMedia combos, mute while live); macOS screen; physical iOS Broadcast; Windows screen.
 
 ## Historical status (2026-09-03)
 

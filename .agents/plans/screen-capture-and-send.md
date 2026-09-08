@@ -14,7 +14,7 @@ is not a receipt gate.
 
 ## Current slice (2026-09-08)
 
-HEAD: `5642764` on `main`. Domain, Session contracts, fake adapter,
+HEAD: `6dd3c10` on `main`. Domain, Session contracts, fake adapter,
 example Screen send subsection, and native graphs for Windows WGC, Linux
 X11, Android MediaProjection + AudioPlaybackCapture, web `getDisplayMedia`,
 macOS ScreenCaptureKit, and iOS ReplayKit are in tree.

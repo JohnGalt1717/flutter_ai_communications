@@ -9,9 +9,9 @@ Screen send receipts: #44.
 **Host plan:** `.agents/plans/2026-08-25-communications-video-host-integration.md`.
 **Host tickets:** `.scratch/video-host-issues/`.
 
-## Current slice (2026-09-03)
+## Current slice (2026-09-08)
 
-HEAD: `4f38598` on `main` (includes #46 Video sinks, #48 WebrtcVideoSink,
+HEAD: `6dd3c10` on `main` (includes #46 Video sinks, #48 WebrtcVideoSink,
 #39 screen send on Windows/Linux/Android/web).
 
 Linux remains: compile the V4L2 graph on a machine with clang/cmake/GTK/v4l
