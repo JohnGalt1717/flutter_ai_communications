@@ -568,6 +568,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           track.enabled = false;
         });
       }
+      if (_webVideoProcessor is! NoneVideoProcessor) {
+        _startWebProcessor();
+      }
       return NativeGraphStart.started;
     } on Object {
       _cameraSurface = null;
@@ -583,7 +586,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _videoStream = null;
     _videoEl = null;
     _videoCanvas = null;
-    _stillImage = null;
+    _personCanvas = null;
     _cameraSurface = null;
     _cameraFormat = null;
   }

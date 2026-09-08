@@ -393,11 +393,11 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _setProcessor(VideoProcessor processor) async {
-    final session = _session;
-    if (session != null) {
-      await session.setVideoProcessor(processor);
+    final preview = _manager.cameraPreview;
+    if (preview != null) {
+      await preview.setVideoProcessor(processor);
     } else {
-      await _manager.cameraPreview?.setVideoProcessor(processor);
+      await _session?.setVideoProcessor(processor);
     }
     if (mounted) {
       setState(() {});
@@ -522,6 +522,8 @@ final class _SessionPageState extends State<SessionPage> {
     IsolationEvent? isolation,
   ) {
     final failure = startFailureCopy(_status);
+    final processor =
+        _manager.cameraPreview?.videoProcessor ?? session?.videoProcessor;
     final isolationRequired = isolation?.state == IsolationState.required;
     return [
       if (_phase != _HarnessPhase.meeting)
@@ -652,31 +654,27 @@ final class _SessionPageState extends State<SessionPage> {
             FilterChip(
               key: const Key('processor-none'),
               label: const Text('None'),
-              selected: session.videoProcessor is NoneVideoProcessor,
+              selected: processor is NoneVideoProcessor,
               onSelected: (_) => _setProcessor(const NoneVideoProcessor()),
             ),
             FilterChip(
               key: const Key('processor-blur-50'),
               label: const Text('Some'),
-              selected:
-                  session.videoProcessor ==
-                  const BlurVideoProcessor(intensity: 50),
+              selected: processor == const BlurVideoProcessor(intensity: 50),
               onSelected: (_) =>
                   _setProcessor(const BlurVideoProcessor(intensity: 50)),
             ),
             FilterChip(
               key: const Key('processor-blur-100'),
               label: const Text('Lots'),
-              selected:
-                  session.videoProcessor ==
-                  const BlurVideoProcessor(intensity: 100),
+              selected: processor == const BlurVideoProcessor(intensity: 100),
               onSelected: (_) =>
                   _setProcessor(const BlurVideoProcessor(intensity: 100)),
             ),
             FilterChip(
               key: const Key('processor-replace'),
               label: const Text('Replace'),
-              selected: session.videoProcessor is ReplaceVideoProcessor,
+              selected: processor is ReplaceVideoProcessor,
               onSelected: (_) =>
                   _setProcessor(ReplaceVideoProcessor(bytes: _replaceStillPng)),
             ),

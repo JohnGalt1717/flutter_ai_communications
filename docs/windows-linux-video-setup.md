@@ -32,7 +32,8 @@ Linux/WSLg (PR #33). Those are not camera receipts.
 - Windows camera: permission granted, catalog, 640×480@30 Texture, live
   non-black frames, Mute-video vs Camera-off, join via Session settings,
   enable-video-later (LifeCam Studio)
-- v1 Video processor is `none` only
+- Video processor blur/replace is GitHub issue #63. Windows and Linux stay
+  `none` plus `processorUnavailable` until those graphs grow a segmenter.
 - Missing/denied camera does not fail `start()`
 
 ## Shared machine setup

@@ -23,7 +23,7 @@ final class PersonBackgroundProcessor {
       still = nil
       return "ready"
     case "blur":
-      let intensity = args["intensity"] as? Int ?? 50
+      let intensity = intArg(args, "intensity", 50)
       guard (0...100).contains(intensity) else {
         return "invalid"
       }
@@ -46,6 +46,16 @@ final class PersonBackgroundProcessor {
     default:
       return "unavailable"
     }
+  }
+
+  private func intArg(_ args: [String: Any], _ key: String, _ fallback: Int) -> Int {
+    if let number = args[key] as? NSNumber {
+      return number.intValue
+    }
+    if let value = args[key] as? Int {
+      return value
+    }
+    return fallback
   }
 
   func process(_ buffer: CVPixelBuffer) -> CVPixelBuffer {

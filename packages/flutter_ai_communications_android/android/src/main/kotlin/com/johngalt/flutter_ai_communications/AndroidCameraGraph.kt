@@ -87,8 +87,11 @@ class AndroidCameraGraph(
         enabled: Boolean,
         muted: Boolean,
         onResult: (Map<String, Any>) -> Unit,
+        keepTexture: Boolean = false,
     ) {
-        stop()
+        val kept = if (keepTexture) entry else null
+        stop(releaseTexture = !keepTexture)
+        entry = kept
         val id = startId.incrementAndGet()
         cameraEnabled = enabled
         videoMuted = muted
@@ -108,7 +111,7 @@ class AndroidCameraGraph(
                 }
                 ?: ids.first()
         selectedId = chosen
-        val entry = textures.createSurfaceTexture()
+        val entry = this.entry ?: textures.createSurfaceTexture()
         this.entry = entry
         val texture: SurfaceTexture = entry.surfaceTexture()
         texture.setDefaultBufferSize(width, height)
@@ -238,7 +241,15 @@ class AndroidCameraGraph(
         }
         val nowProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
         if (wasProcessed != nowProcessed && selectedId != null && cameraEnabled) {
-            start(selectedId, lastWidth, lastHeight, cameraEnabled, videoMuted) { }
+            start(
+                selectedId,
+                lastWidth,
+                lastHeight,
+                cameraEnabled,
+                videoMuted,
+                { },
+                keepTexture = true,
+            )
         }
         return status
     }
@@ -266,7 +277,7 @@ class AndroidCameraGraph(
         }
     }
 
-    fun stop() {
+    fun stop(releaseTexture: Boolean = true) {
         startId.incrementAndGet()
         stopRepeatingLocked()
         closeCameraLocked()
@@ -276,8 +287,10 @@ class AndroidCameraGraph(
         outputSurface = null
         reader?.close()
         reader = null
-        entry?.release()
-        entry = null
+        if (releaseTexture) {
+            entry?.release()
+            entry = null
+        }
     }
 
     private fun onProcessedImage(imageReader: ImageReader) {
