@@ -65,13 +65,19 @@ class AndroidScreenGraph(
     fun permission(): String = "granted"
 
     fun setIncludeSystemAudio(enabled: Boolean): Boolean {
-        includeAudio = enabled
         if (!enabled) {
+            includeAudio = false
             playback.stop()
             return false
         }
-        val live = projection ?: return false
-        return playback.start(live)
+        val live = projection
+        if (live == null) {
+            includeAudio = false
+            return false
+        }
+        val started = playback.start(live)
+        includeAudio = started
+        return started
     }
 
     fun start(

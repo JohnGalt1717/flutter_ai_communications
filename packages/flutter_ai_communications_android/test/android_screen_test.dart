@@ -104,7 +104,7 @@ void main() {
     expect(await adapter.setIncludeSystemAudioNative(true), isFalse);
   });
 
-  test('Mute does not disable Include sound', () async {
+  test('setIncludeSystemAudioNative true keeps Include sound attached', () async {
     var includeEnabled = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

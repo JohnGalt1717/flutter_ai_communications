@@ -63,7 +63,18 @@ internal class AndroidPlaybackCapture {
                 val buffer = ByteArray(min)
                 while (running.get()) {
                     val live = record ?: break
-                    live.read(buffer, 0, buffer.size)
+                    val n = live.read(buffer, 0, buffer.size)
+                    if (n < 0) {
+                        break
+                    }
+                    if (n == 0) {
+                        try {
+                            Thread.sleep(10)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
                 }
             }, "fac-playback-capture").apply {
                 isDaemon = true
@@ -83,7 +94,11 @@ internal class AndroidPlaybackCapture {
             }
             live.release()
         }
-        drain?.join(250)
+        try {
+            drain?.join(250)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         drain = null
     }
 }
