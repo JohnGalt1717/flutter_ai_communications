@@ -206,6 +206,9 @@ final class _SessionPageState extends State<SessionPage> {
     final meeting = _session;
     if (muted && meeting != null) {
       meeting.mute();
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -641,10 +644,17 @@ final class _SessionPageState extends State<SessionPage> {
               endpoint.id == session?.selectedRenderId,
           onTap: session == null
               ? null
-              : () => session.select(
-                  captureId: endpoint.isCapture ? endpoint.id : null,
-                  renderId: endpoint.isCapture ? null : endpoint.id,
-                ),
+              : () async {
+                  await session.select(
+                    captureId: endpoint.isCapture ? endpoint.id : null,
+                    renderId: endpoint.isCapture ? null : endpoint.id,
+                  );
+                  if (mounted) {
+                    setState(() {
+                      _diagnostics = session.diagnostics;
+                    });
+                  }
+                },
         ),
       const SizedBox(height: 24),
       Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
