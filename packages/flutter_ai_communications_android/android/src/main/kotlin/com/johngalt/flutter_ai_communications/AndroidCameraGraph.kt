@@ -231,8 +231,13 @@ class AndroidCameraGraph(
     }
 
     fun setProcessor(args: Map<String, Any?>): String {
+        val wasProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
         val status = processor.apply(args)
-        if (status == "ready" && selectedId != null && cameraEnabled) {
+        if (status != "ready") {
+            return status
+        }
+        val nowProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
+        if (wasProcessed != nowProcessed && selectedId != null && cameraEnabled) {
             start(selectedId, lastWidth, lastHeight, cameraEnabled, videoMuted) { }
         }
         return status
@@ -291,20 +296,40 @@ class AndroidCameraGraph(
     }
 
     private fun yuvToBitmap(image: Image): Bitmap? {
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-        val nv21 = ByteArray(ySize + uSize + vSize)
-        yBuffer.get(nv21, 0, ySize)
-        vBuffer.get(nv21, ySize, vSize)
-        uBuffer.get(nv21, ySize + vSize, uSize)
-        val yuv = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuv.compressToJpeg(Rect(0, 0, image.width, image.height), 90, out)
-        val bytes = out.toByteArray()
+        val width = image.width
+        val height = image.height
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
+        val ySize = width * height
+        val nv21 = ByteArray(ySize + width * height / 2)
+        val yBuffer = yPlane.buffer
+        val yRowStride = yPlane.rowStride
+        var out = 0
+        for (row in 0 until height) {
+            val rowStart = row * yRowStride
+            for (col in 0 until width) {
+                nv21[out++] = yBuffer.get(rowStart + col)
+            }
+        }
+        val vBuffer = vPlane.buffer
+        val uBuffer = uPlane.buffer
+        val vRowStride = vPlane.rowStride
+        val vPixelStride = vPlane.pixelStride
+        val uRowStride = uPlane.rowStride
+        val uPixelStride = uPlane.pixelStride
+        val chromaHeight = height / 2
+        val chromaWidth = width / 2
+        for (row in 0 until chromaHeight) {
+            for (col in 0 until chromaWidth) {
+                nv21[out++] = vBuffer.get(row * vRowStride + col * vPixelStride)
+                nv21[out++] = uBuffer.get(row * uRowStride + col * uPixelStride)
+            }
+        }
+        val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        val jpeg = ByteArrayOutputStream()
+        yuv.compressToJpeg(Rect(0, 0, width, height), 90, jpeg)
+        val bytes = jpeg.toByteArray()
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 

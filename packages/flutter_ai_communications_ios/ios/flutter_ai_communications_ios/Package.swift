@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "flutter_ai_communications_ios",
     platforms: [
-        .iOS("13.0")
+        .iOS("18.0")
     ],
     products: [
         .library(name: "flutter-ai-communications-ios", targets: ["flutter_ai_communications_ios"]),

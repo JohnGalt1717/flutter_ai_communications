@@ -442,8 +442,13 @@ final class CommunicationsManager {
       surface: surface,
       cameraId: resolved,
       onStopped: () => _preview = null,
+      videoProcessor: live?.videoProcessor ?? const NoneVideoProcessor(),
     );
     _preview = preview;
+    final inherited = live?.videoProcessor;
+    if (inherited != null && inherited is! NoneVideoProcessor) {
+      await preview.setVideoProcessor(inherited);
+    }
     return PreviewReady(preview);
   }
 

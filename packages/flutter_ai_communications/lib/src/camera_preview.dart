@@ -33,13 +33,11 @@ final class CameraPreview {
     if (_stopped) {
       return const ProcessorInvalid();
     }
-    if (processor is BlurVideoProcessor && !processor.isValid) {
+    final resolved = await _readyProcessor(processor);
+    if (resolved == null) {
       return const ProcessorInvalid();
     }
-    if (processor is ReplaceVideoProcessor && !processor.isValid) {
-      return const ProcessorInvalid();
-    }
-    final native = await _platform.setVideoProcessorNative(processor);
+    final native = await _platform.setVideoProcessorNative(resolved);
     switch (native) {
       case NativeProcessorResult.invalid:
         return const ProcessorInvalid();
@@ -47,8 +45,8 @@ final class CameraPreview {
         _videoProcessor = const NoneVideoProcessor();
         return const ProcessorUnavailable();
       case NativeProcessorResult.ready:
-        _videoProcessor = processor;
-        return ProcessorReady(processor);
+        _videoProcessor = resolved;
+        return ProcessorReady(resolved);
     }
   }
 
@@ -69,5 +67,36 @@ final class CameraPreview {
     _stopped = true;
     await _platform.stopCameraNative();
     _onStopped();
+  }
+}
+
+Future<VideoProcessor?> _readyProcessor(VideoProcessor processor) async {
+  if (processor is BlurVideoProcessor && !processor.isValid) {
+    return null;
+  }
+  if (processor is! ReplaceVideoProcessor) {
+    return processor;
+  }
+  if (!processor.isValid) {
+    return null;
+  }
+  final bytes = processor.bytes;
+  if (bytes != null && bytes.isNotEmpty) {
+    return processor;
+  }
+  final asset = processor.asset!;
+  if (asset.startsWith('/') ||
+      asset.contains(':\\') ||
+      asset.startsWith('file:')) {
+    return processor;
+  }
+  try {
+    final data = await rootBundle.load(asset);
+    return ReplaceVideoProcessor(
+      bytes: data.buffer.asUint8List(),
+      asset: asset,
+    );
+  } on Object {
+    return null;
   }
 }

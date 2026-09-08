@@ -213,7 +213,7 @@ A Session attachment that observes one Production video path: generation, Mute-v
 _Avoid_: PeerConnection, MediaStream, RTCVideoView, sink (alone)
 
 **Video processor**:
-A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 15+, macOS 12+, Android (ML Kit selfie segmentation), and web (canvas). Windows and Linux fall back to none with a structured warning. Hosts do not inject a processor object.
+A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), and web (MediaPipe selfie segmentation when the model loads). Windows and Linux, and web when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object.
 _Avoid_: filter, effect, beauty
 
 **Production video path**:

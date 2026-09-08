@@ -460,9 +460,13 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   web.MediaStream? _videoStream;
   web.HTMLVideoElement? _videoEl;
   web.HTMLCanvasElement? _videoCanvas;
+  web.HTMLCanvasElement? _personCanvas;
   web.HTMLImageElement? _stillImage;
   VideoProcessor _videoFx = const NoneVideoProcessor();
   int _videoFxFrame = 0;
+  JSObject? _selfie;
+  var _selfieFailed = false;
+  web.CanvasImageSource? _lastMask;
   var _cameraViewId = 0;
   VideoSurface? _cameraSurface;
   VideoFormat? _cameraFormat;
@@ -647,11 +651,90 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       _stopVideoFx();
       return NativeProcessorResult.ready;
     }
+    if (!await _ensureSelfieSegmentation()) {
+      _videoFx = const NoneVideoProcessor();
+      _stopVideoFx();
+      return NativeProcessorResult.unavailable;
+    }
     if (_videoEl == null) {
       return NativeProcessorResult.ready;
     }
     _startVideoFx();
     return NativeProcessorResult.ready;
+  }
+
+  Future<bool> _ensureSelfieSegmentation() async {
+    if (_selfie != null) {
+      return true;
+    }
+    if (_selfieFailed) {
+      return false;
+    }
+    try {
+      await _injectScript(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js',
+      );
+      final ctor = globalContext.getProperty('SelfieSegmentation'.toJS);
+      if (ctor == null) {
+        _selfieFailed = true;
+        return false;
+      }
+      final config = JSObject();
+      config.setProperty(
+        'locateFile'.toJS,
+        ((JSString file) {
+          return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file.toDart}'
+              .toJS;
+        }).toJS,
+      );
+      final selfie = (ctor as JSFunction).callAsConstructor(config);
+      final options = JSObject();
+      options.setProperty('modelSelection'.toJS, 1.toJS);
+      options.setProperty('selfieMode'.toJS, true.toJS);
+      selfie.callMethod('setOptions'.toJS, options);
+      selfie.callMethod(
+        'onResults'.toJS,
+        ((JSObject results) {
+          final mask = results.getProperty('segmentationMask'.toJS);
+          if (mask != null) {
+            _lastMask = mask as web.CanvasImageSource;
+          }
+        }).toJS,
+      );
+      _selfie = selfie;
+      return true;
+    } on Object {
+      _selfieFailed = true;
+      return false;
+    }
+  }
+
+  Future<void> _injectScript(String src) async {
+    if (web.document.querySelector('script[src="$src"]') != null) {
+      return;
+    }
+    final script = web.HTMLScriptElement()
+      ..src = src
+      ..async = true;
+    final done = Completer<void>();
+    script.addEventListener(
+      'load',
+      ((web.Event _) {
+        if (!done.isCompleted) {
+          done.complete();
+        }
+      }).toJS,
+    );
+    script.addEventListener(
+      'error',
+      ((web.Event _) {
+        if (!done.isCompleted) {
+          done.completeError(StateError('script'));
+        }
+      }).toJS,
+    );
+    web.document.head!.append(script);
+    await done.future.timeout(const Duration(seconds: 8));
   }
 
   void _startVideoFx() {
@@ -663,17 +746,20 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     var canvas = _videoCanvas;
     if (canvas == null) {
       canvas = web.HTMLCanvasElement()
-        ..width = 320
-        ..height = 220;
+        ..width = 1280
+        ..height = 720;
       canvas.style
-        ..setProperty('width', '320px')
-        ..setProperty('height', '220px')
+        ..setProperty('width', '100%')
+        ..setProperty('height', '100%')
         ..setProperty('object-fit', 'cover')
         ..setProperty('display', 'block')
         ..setProperty('position', 'absolute')
         ..setProperty('inset', '0');
       parent?.append(canvas);
       _videoCanvas = canvas;
+      _personCanvas = web.HTMLCanvasElement()
+        ..width = 1280
+        ..height = 720;
     }
     video.style.setProperty('opacity', '0');
     canvas.style.setProperty('display', 'block');
@@ -697,27 +783,43 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       if (video == null || canvas == null) {
         return;
       }
+      final width = canvas.width;
+      final height = canvas.height;
       final ctx = canvas.context2D;
       final fx = _videoFx;
+      final selfie = _selfie;
+      if (selfie != null) {
+        final input = JSObject();
+        input.setProperty('image'.toJS, video);
+        selfie.callMethod('send'.toJS, input);
+      }
       switch (fx) {
         case BlurVideoProcessor(:final intensity):
           ctx.filter = 'blur(${intensity / 5}px)';
-          ctx.drawImage(video, 0, 0, 320, 220);
+          ctx.drawImage(video, 0, 0, width, height);
           ctx.filter = 'none';
         case ReplaceVideoProcessor():
           ctx.filter = 'none';
           final still = _stillImage;
           if (still != null && still.complete && still.naturalWidth > 0) {
-            ctx.drawImage(still, 0, 0, 320, 220);
+            ctx.drawImage(still, 0, 0, width, height);
           } else {
             ctx.fillStyle = '#1a1a28'.toJS;
-            ctx.fillRect(0, 0, 320, 220);
+            ctx.fillRect(0, 0, width, height);
           }
-          ctx.globalAlpha = 0.45;
-          ctx.drawImage(video, 0, 0, 320, 220);
-          ctx.globalAlpha = 1;
         case NoneVideoProcessor():
           break;
+      }
+      final mask = _lastMask;
+      final person = _personCanvas;
+      if (mask != null && person != null) {
+        final pctx = person.context2D;
+        pctx.globalCompositeOperation = 'copy';
+        pctx.drawImage(video, 0, 0, width, height);
+        pctx.globalCompositeOperation = 'destination-in';
+        pctx.drawImage(mask, 0, 0, width, height);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.drawImage(person, 0, 0);
       }
       web.window.requestAnimationFrame(frame.toJS);
     }

@@ -56,7 +56,7 @@ internal class AndroidVideoProcessor {
                 if (!available) {
                     return "unavailable"
                 }
-                val bytes = args["bytes"] as? ByteArray
+                val bytes = bytesOf(args["bytes"])
                 val bitmap =
                     if (bytes != null) {
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -88,6 +88,13 @@ internal class AndroidVideoProcessor {
             } ?: return bitmap
         return composite(bitmap, background, mask)
     }
+
+    private fun bytesOf(value: Any?): ByteArray? =
+        when (value) {
+            is ByteArray -> value
+            is List<*> -> ByteArray(value.size) { index -> (value[index] as Number).toByte() }
+            else -> null
+        }
 
     private fun personMask(bitmap: Bitmap): ByteBuffer? {
         val client = segmenter ?: return null

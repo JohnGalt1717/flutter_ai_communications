@@ -14,12 +14,6 @@ final class PersonBackgroundProcessor {
   private let context = CIContext(options: [.cacheIntermediates: false])
   private var kind: Kind = .none
   private var still: CIImage?
-  var available: Bool {
-    if #available(iOS 15.0, macOS 12.0, *) {
-      return true
-    }
-    return false
-  }
 
   func apply(_ args: [String: Any]) -> String {
     let kindName = args["kind"] as? String ?? "none"
@@ -29,9 +23,6 @@ final class PersonBackgroundProcessor {
       still = nil
       return "ready"
     case "blur":
-      guard available else {
-        return "unavailable"
-      }
       let intensity = args["intensity"] as? Int ?? 50
       guard (0...100).contains(intensity) else {
         return "invalid"
@@ -39,9 +30,6 @@ final class PersonBackgroundProcessor {
       kind = .blur(intensity)
       return "ready"
     case "replace":
-      guard available else {
-        return "unavailable"
-      }
       if let bytes = args["bytes"] as? Data, let image = CIImage(data: bytes) {
         still = image
         kind = .replace
@@ -130,21 +118,18 @@ final class PersonBackgroundProcessor {
   }
 
   private func personMask(_ buffer: CVPixelBuffer) -> CIImage? {
-    if #available(iOS 15.0, macOS 12.0, *) {
-      let request = VNGeneratePersonSegmentationRequest()
-      request.qualityLevel = .balanced
-      request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-      let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
-      do {
-        try handler.perform([request])
-        guard let pixel = request.results?.first?.pixelBuffer else {
-          return nil
-        }
-        return CIImage(cvPixelBuffer: pixel)
-      } catch {
+    let request = VNGeneratePersonSegmentationRequest()
+    request.qualityLevel = .balanced
+    request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+    let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
+    do {
+      try handler.perform([request])
+      guard let pixel = request.results?.first?.pixelBuffer else {
         return nil
       }
+      return CIImage(cvPixelBuffer: pixel)
+    } catch {
+      return nil
     }
-    return nil
   }
 }

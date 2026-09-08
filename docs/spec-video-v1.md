@@ -58,9 +58,10 @@ in the federated packages.
   higher resolution if any, else the next lower; fps closest to the request.
 - Mute-video is in-session black frames. Camera-off stops outbound video.
   Lobby has Camera-off / camera on, not Mute-video.
-- v1 processor is none. Blur and replace are GitHub issue #63: iOS 15+,
-  macOS 12+, Android ML Kit, web canvas. Windows/Linux fall back to none
-  plus `processorUnavailable`.
+- v1 processor is none. Blur and replace are GitHub issue #63: iOS 18+,
+  macOS 15+ (current and previous), Android ML Kit, web MediaPipe selfie
+  segmentation. Windows/Linux and a web model miss fall back to none plus
+  `processorUnavailable`.
 - Hosts attach Video sinks on Session (`attachVideoSink` / `detachVideoSink`).
   Mute-video and Camera-off notify differently. Detach does not end the
   Session or replace the Capture stream. Native consumers bind with

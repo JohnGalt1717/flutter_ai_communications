@@ -186,6 +186,36 @@ void main() {
     expect(session.isStopped, isFalse);
   });
 
+  test('Camera preview inherits the Session Video processor', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    await session.setVideoProcessor(const BlurVideoProcessor(intensity: 50));
+    await session.setCameraEnabled(false);
+    final preview =
+        ((await manager.startCameraPreview()) as PreviewReady).preview;
+    expect(preview.videoProcessor, const BlurVideoProcessor(intensity: 50));
+    expect(platform.appliedProcessor, const BlurVideoProcessor(intensity: 50));
+  });
+
+  test(
+    'missing replace asset fails the call and keeps the previous processor',
+    () async {
+      final session =
+          ((await manager.start(
+                    cameraSend: true,
+                    videoProcessor: const BlurVideoProcessor(intensity: 50),
+                  ))
+                  as StartReady)
+              .session;
+      final result = await session.setVideoProcessor(
+        const ReplaceVideoProcessor(asset: 'assets/missing-still.png'),
+      );
+      expect(result, isA<ProcessorInvalid>());
+      expect(session.videoProcessor, const BlurVideoProcessor(intensity: 50));
+      expect(session.isStopped, isFalse);
+    },
+  );
+
   test(
     'Camera preview setVideoProcessor uses the same native processor',
     () async {

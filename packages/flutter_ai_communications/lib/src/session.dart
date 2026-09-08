@@ -442,13 +442,11 @@ final class Session {
     if (_stopped) {
       return const ProcessorInvalid();
     }
-    if (processor is BlurVideoProcessor && !processor.isValid) {
+    final resolved = await _readyProcessor(processor);
+    if (resolved == null) {
       return const ProcessorInvalid();
     }
-    if (processor is ReplaceVideoProcessor && !processor.isValid) {
-      return const ProcessorInvalid();
-    }
-    final native = await _platform.setVideoProcessorNative(processor);
+    final native = await _platform.setVideoProcessorNative(resolved);
     switch (native) {
       case NativeProcessorResult.invalid:
         return const ProcessorInvalid();
@@ -458,9 +456,9 @@ final class Session {
         _publishStatus(SessionStatus.processorUnavailable(purpose: purpose));
         return const ProcessorUnavailable();
       case NativeProcessorResult.ready:
-        _videoProcessor = processor;
+        _videoProcessor = resolved;
         _notifyVideoSinks();
-        return ProcessorReady(processor);
+        return ProcessorReady(resolved);
     }
   }
 
