@@ -1,10 +1,10 @@
-/// Library-owned send-path transform. v1 implements only [NoneVideoProcessor].
+/// Library-owned send-path transform: none, blur, or replace.
 sealed class VideoProcessor {
   /// Creates a processor.
   const VideoProcessor();
 }
 
-/// Pass-through. The only production Video processor in v1.
+/// Pass-through.
 final class NoneVideoProcessor extends VideoProcessor {
   /// Creates a none processor.
   const NoneVideoProcessor();
@@ -16,7 +16,7 @@ final class NoneVideoProcessor extends VideoProcessor {
   int get hashCode => 0;
 }
 
-/// Blur with intensity 0–100. Not implemented in v1.
+/// Blur with intensity 0–100.
 final class BlurVideoProcessor extends VideoProcessor {
   /// Creates a blur processor. [intensity] is 0–100 inclusive.
   const BlurVideoProcessor({this.intensity = 50});
@@ -35,7 +35,7 @@ final class BlurVideoProcessor extends VideoProcessor {
   int get hashCode => intensity;
 }
 
-/// Replace the background with a still. Not implemented in v1.
+/// Replace the background with a still.
 final class ReplaceVideoProcessor extends VideoProcessor {
   /// Creates a replace processor from still [bytes] or an [asset] path.
   const ReplaceVideoProcessor({this.bytes, this.asset});

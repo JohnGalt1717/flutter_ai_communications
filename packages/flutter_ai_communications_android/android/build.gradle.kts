@@ -67,6 +67,8 @@ dependencies {
     }
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+    implementation("com.google.android.gms:play-services-tasks:18.2.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.20")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }

@@ -8,6 +8,7 @@ import 'flutter_ai_communications_platform.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
+import 'native_processor_result.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
 
@@ -487,6 +488,12 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Whether Mute-video is substituting black frames.
   bool muteVideo = false;
 
+  /// Result [setVideoProcessorNative] returns.
+  NativeProcessorResult processorResult = NativeProcessorResult.ready;
+
+  /// Last processor applied natively.
+  VideoProcessor? appliedProcessor;
+
   /// Tokens passed to [attachProductionVideoPathNative].
   final List<String> attachedProductionVideoPathTokens = <String>[];
 
@@ -591,6 +598,23 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     if (muted) {
       _cameraLiveFrames = 0;
     }
+  }
+
+  @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) async {
+    if (processor is BlurVideoProcessor && !processor.isValid) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processor is ReplaceVideoProcessor && !processor.isValid) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processorResult != NativeProcessorResult.ready) {
+      return processorResult;
+    }
+    appliedProcessor = processor;
+    return NativeProcessorResult.ready;
   }
 
   @override
@@ -700,12 +724,14 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     _screenPreviews
       ..clear()
       ..addEntries(
-        screenSources.where((source) => source.canPreview).map(
-          (source) => MapEntry(
-            source.id,
-            VideoSurface(handle: 100 + source.id.hashCode.abs() % 50),
-          ),
-        ),
+        screenSources
+            .where((source) => source.canPreview)
+            .map(
+              (source) => MapEntry(
+                source.id,
+                VideoSurface(handle: 100 + source.id.hashCode.abs() % 50),
+              ),
+            ),
       );
     return NativeGraphStart.started;
   }
@@ -755,7 +781,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     }
     var id = sourceId;
     if (id == 'system-picker') {
-      id = screenSources
+      id =
+          screenSources
               .where((source) => source.kind == ScreenSourceKind.display)
               .firstOrNull
               ?.id ??

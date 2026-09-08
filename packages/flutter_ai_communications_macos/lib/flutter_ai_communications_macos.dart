@@ -323,6 +323,14 @@ final class FlutterAiCommunicationsMacos
   }
 
   @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) async {
+    return await _channel?.setVideoProcessorNative(processor) ??
+        NativeProcessorResult.unavailable;
+  }
+
+  @override
   VideoSurface? get lastVideoSurface => _channel?.lastVideoSurface;
 
   @override

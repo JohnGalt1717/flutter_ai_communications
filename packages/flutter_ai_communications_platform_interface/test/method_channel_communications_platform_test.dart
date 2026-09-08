@@ -266,6 +266,42 @@ void main() {
     messenger.setMockStreamHandler(events, null);
   });
 
+  test('setVideoProcessorNative maps ready invalid and unavailable', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'setVideoProcessorNative') {
+        return 'ready';
+      }
+      return null;
+    });
+    expect(
+      await platform.setVideoProcessorNative(
+        const BlurVideoProcessor(intensity: 50),
+      ),
+      NativeProcessorResult.ready,
+    );
+    expect(calls.last.method, 'setVideoProcessorNative');
+    expect(calls.last.arguments, {'kind': 'blur', 'intensity': 50});
+
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      return 'invalid';
+    });
+    expect(
+      await platform.setVideoProcessorNative(const ReplaceVideoProcessor()),
+      NativeProcessorResult.invalid,
+    );
+
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      return 'unavailable';
+    });
+    expect(
+      await platform.setVideoProcessorNative(
+        const BlurVideoProcessor(intensity: 100),
+      ),
+      NativeProcessorResult.unavailable,
+    );
+  });
+
   test('startCameraNative maps failed separately from unavailable', () async {
     messenger.setMockMethodCallHandler(methods, (call) async {
       calls.add(call);

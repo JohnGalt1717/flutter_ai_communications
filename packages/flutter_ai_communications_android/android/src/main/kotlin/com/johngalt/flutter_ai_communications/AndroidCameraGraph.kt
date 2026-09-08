@@ -4,17 +4,25 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
+import android.graphics.YuvImage
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.media.Image
+import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.view.Surface
 import androidx.core.content.ContextCompat
 import io.flutter.view.TextureRegistry
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -27,7 +35,12 @@ class AndroidCameraGraph(
     private var camera: CameraDevice? = null
     private var session: android.hardware.camera2.CameraCaptureSession? = null
     private var surface: Surface? = null
+    private var outputSurface: Surface? = null
+    private var reader: ImageReader? = null
     private var selectedId: String? = null
+    private val processor = AndroidVideoProcessor()
+    private var lastWidth = 1280
+    private var lastHeight = 720
     var cameraEnabled = true
     var videoMuted = false
     private val startId = AtomicInteger(0)
@@ -79,6 +92,8 @@ class AndroidCameraGraph(
         val id = startId.incrementAndGet()
         cameraEnabled = enabled
         videoMuted = muted
+        lastWidth = width
+        lastHeight = height
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val ids = manager.cameraIdList
         if (ids.isEmpty()) {
@@ -97,7 +112,20 @@ class AndroidCameraGraph(
         this.entry = entry
         val texture: SurfaceTexture = entry.surfaceTexture()
         texture.setDefaultBufferSize(width, height)
-        val surface = Surface(texture)
+        val flutterSurface = Surface(texture)
+        val captureSurface: Surface
+        if (processor.mode !is AndroidVideoProcessor.Mode.None) {
+            val imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
+            imageReader.setOnImageAvailableListener({ onProcessedImage(it) }, cameraHandler)
+            reader = imageReader
+            outputSurface = flutterSurface
+            captureSurface = imageReader.surface
+        } else {
+            reader = null
+            outputSurface = null
+            captureSurface = flutterSurface
+        }
+        val surface = captureSurface
         this.surface = surface
         val started =
             mapOf(
@@ -202,6 +230,14 @@ class AndroidCameraGraph(
         }
     }
 
+    fun setProcessor(args: Map<String, Any?>): String {
+        val status = processor.apply(args)
+        if (status == "ready" && selectedId != null && cameraEnabled) {
+            start(selectedId, lastWidth, lastHeight, cameraEnabled, videoMuted) { }
+        }
+        return status
+    }
+
     fun setMuted(muted: Boolean) {
         videoMuted = muted
         val captureSession = session ?: return
@@ -231,8 +267,45 @@ class AndroidCameraGraph(
         closeCameraLocked()
         surface?.release()
         surface = null
+        outputSurface?.release()
+        outputSurface = null
+        reader?.close()
+        reader = null
         entry?.release()
         entry = null
+    }
+
+    private fun onProcessedImage(imageReader: ImageReader) {
+        val image = imageReader.acquireLatestImage() ?: return
+        try {
+            val bitmap = yuvToBitmap(image) ?: return
+            val processed = processor.process(bitmap)
+            val dest = outputSurface ?: return
+            val canvas = dest.lockHardwareCanvas()
+            canvas.drawBitmap(processed, null, Rect(0, 0, lastWidth, lastHeight), null)
+            dest.unlockCanvasAndPost(canvas)
+        } catch (_: Exception) {
+        } finally {
+            image.close()
+        }
+    }
+
+    private fun yuvToBitmap(image: Image): Bitmap? {
+        val yBuffer = image.planes[0].buffer
+        val uBuffer = image.planes[1].buffer
+        val vBuffer = image.planes[2].buffer
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+        val yuv = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
+        val out = ByteArrayOutputStream()
+        yuv.compressToJpeg(Rect(0, 0, image.width, image.height), 90, out)
+        val bytes = out.toByteArray()
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 
     private fun stopRepeatingLocked() {

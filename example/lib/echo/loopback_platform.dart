@@ -117,13 +117,15 @@ final class LoopbackCommunicationsPlatform
         : renderId;
     NativeGraphStart started = NativeGraphStart.unavailable;
     try {
-      started = await inner.startNative(
-        captureId: innerCapture,
-        renderId: innerRender,
-        captureFormat: captureFormat,
-        playbackFormat: playbackFormat,
-        noiseCancelling: noiseCancelling,
-      ).timeout(const Duration(seconds: 3));
+      started = await inner
+          .startNative(
+            captureId: innerCapture,
+            renderId: innerRender,
+            captureFormat: captureFormat,
+            playbackFormat: playbackFormat,
+            noiseCancelling: noiseCancelling,
+          )
+          .timeout(const Duration(seconds: 3));
     } on Object {
       started = NativeGraphStart.failed;
     }
@@ -238,6 +240,11 @@ final class LoopbackCommunicationsPlatform
   @override
   Future<void> setMuteVideoNative(bool muted) =>
       inner.setMuteVideoNative(muted);
+
+  @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) => inner.setVideoProcessorNative(processor);
 
   @override
   VideoSurface? get lastVideoSurface => inner.lastVideoSurface;

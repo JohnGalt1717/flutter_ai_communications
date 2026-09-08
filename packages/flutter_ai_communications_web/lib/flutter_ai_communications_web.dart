@@ -459,6 +459,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   web.MediaStream? _videoStream;
   web.HTMLVideoElement? _videoEl;
+  web.HTMLCanvasElement? _videoCanvas;
+  web.HTMLImageElement? _stillImage;
+  VideoProcessor _videoFx = const NoneVideoProcessor();
+  int _videoFxFrame = 0;
   var _cameraViewId = 0;
   VideoSurface? _cameraSurface;
   VideoFormat? _cameraFormat;
@@ -570,9 +574,12 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<void> stopCameraNative() async {
+    _stopVideoFx();
     _videoStream?.getTracks().toDart.forEach((track) => track.stop());
     _videoStream = null;
     _videoEl = null;
+    _videoCanvas = null;
+    _stillImage = null;
     _cameraSurface = null;
     _cameraFormat = null;
   }
@@ -610,6 +617,112 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _videoStream?.getVideoTracks().toDart.forEach((track) {
       track.enabled = !muted;
     });
+  }
+
+  @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) async {
+    if (processor is BlurVideoProcessor && !processor.isValid) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processor is ReplaceVideoProcessor && !processor.isValid) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processor is ReplaceVideoProcessor) {
+      final bytes = processor.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        return NativeProcessorResult.invalid;
+      }
+      final blob = web.Blob(
+        [Uint8List.fromList(bytes).toJS].toJS,
+        web.BlobPropertyBag(type: 'image/png'),
+      );
+      final url = web.URL.createObjectURL(blob);
+      final image = web.HTMLImageElement()..src = url;
+      _stillImage = image;
+    }
+    _videoFx = processor;
+    if (processor is NoneVideoProcessor) {
+      _stopVideoFx();
+      return NativeProcessorResult.ready;
+    }
+    if (_videoEl == null) {
+      return NativeProcessorResult.ready;
+    }
+    _startVideoFx();
+    return NativeProcessorResult.ready;
+  }
+
+  void _startVideoFx() {
+    final video = _videoEl;
+    if (video == null) {
+      return;
+    }
+    final parent = video.parentElement;
+    var canvas = _videoCanvas;
+    if (canvas == null) {
+      canvas = web.HTMLCanvasElement()
+        ..width = 320
+        ..height = 220;
+      canvas.style
+        ..setProperty('width', '320px')
+        ..setProperty('height', '220px')
+        ..setProperty('object-fit', 'cover')
+        ..setProperty('display', 'block')
+        ..setProperty('position', 'absolute')
+        ..setProperty('inset', '0');
+      parent?.append(canvas);
+      _videoCanvas = canvas;
+    }
+    video.style.setProperty('opacity', '0');
+    canvas.style.setProperty('display', 'block');
+    _pumpVideoFx();
+  }
+
+  void _stopVideoFx() {
+    _videoFxFrame++;
+    _videoEl?.style.setProperty('opacity', '1');
+    _videoCanvas?.style.setProperty('display', 'none');
+  }
+
+  void _pumpVideoFx() {
+    final token = ++_videoFxFrame;
+    void frame(num _) {
+      if (token != _videoFxFrame) {
+        return;
+      }
+      final video = _videoEl;
+      final canvas = _videoCanvas;
+      if (video == null || canvas == null) {
+        return;
+      }
+      final ctx = canvas.context2D;
+      final fx = _videoFx;
+      switch (fx) {
+        case BlurVideoProcessor(:final intensity):
+          ctx.filter = 'blur(${intensity / 5}px)';
+          ctx.drawImage(video, 0, 0, 320, 220);
+          ctx.filter = 'none';
+        case ReplaceVideoProcessor():
+          ctx.filter = 'none';
+          final still = _stillImage;
+          if (still != null && still.complete && still.naturalWidth > 0) {
+            ctx.drawImage(still, 0, 0, 320, 220);
+          } else {
+            ctx.fillStyle = '#1a1a28'.toJS;
+            ctx.fillRect(0, 0, 320, 220);
+          }
+          ctx.globalAlpha = 0.45;
+          ctx.drawImage(video, 0, 0, 320, 220);
+          ctx.globalAlpha = 1;
+        case NoneVideoProcessor():
+          break;
+      }
+      web.window.requestAnimationFrame(frame.toJS);
+    }
+
+    web.window.requestAnimationFrame(frame.toJS);
   }
 
   web.MediaStream? _screenStream;
@@ -681,7 +794,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           .timeout(const Duration(seconds: 60));
       _screenStream = stream;
       if (!_screenFactoryRegistered) {
-        ui_web.platformViewRegistry.registerViewFactory('fac-screen-1', (int _) {
+        ui_web.platformViewRegistry.registerViewFactory('fac-screen-1', (
+          int _,
+        ) {
           final element = web.HTMLVideoElement()
             ..autoplay = true
             ..muted = true

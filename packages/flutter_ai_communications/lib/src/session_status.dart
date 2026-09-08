@@ -83,6 +83,9 @@ enum SessionStatusCode {
 
   /// Include-sound was requested but loopback is unavailable.
   screenAudioUnavailable,
+
+  /// Native person segmentation is unavailable. Processor is none.
+  processorUnavailable,
 }
 
 /// What the host or user must do, if anything. No user-facing copy.
@@ -172,6 +175,16 @@ final class SessionStatus {
        action = SessionAction.none,
        attempt = 0,
        maxAttempts = 0;
+
+  /// Person segmentation is unavailable; processor is none.
+  const SessionStatus.processorUnavailable({this.purpose, this.generation = 0})
+    : severity = StatusSeverity.warning,
+      code = SessionStatusCode.processorUnavailable,
+      recoverability = StatusRecoverability.none,
+      usability = StatusUsability.usable,
+      action = SessionAction.none,
+      attempt = 0,
+      maxAttempts = 0;
 
   /// No usable Pair remains.
   const SessionStatus.noUsablePair({this.purpose, this.generation = 0})

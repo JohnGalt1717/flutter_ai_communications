@@ -41,14 +41,17 @@ void main() {
     expect((result as StartReady).session.videoUnavailableReason, 'denied');
   });
 
-  test('granted camera yields a Video surface and nearest Native Video Format', () async {
-    final result = await manager.start(cameraSend: true);
-    final session = (result as StartReady).session;
-    expect(session.videoSurface?.handle, 1);
-    expect(session.selectedCameraId, 'front');
-    expect(session.nativeVideoFormat, VideoFormat.defaultFormat);
-    expect(session.videoUnavailableReason, isNull);
-  });
+  test(
+    'granted camera yields a Video surface and nearest Native Video Format',
+    () async {
+      final result = await manager.start(cameraSend: true);
+      final session = (result as StartReady).session;
+      expect(session.videoSurface?.handle, 1);
+      expect(session.selectedCameraId, 'front');
+      expect(session.nativeVideoFormat, VideoFormat.defaultFormat);
+      expect(session.videoUnavailableReason, isNull);
+    },
+  );
 
   test('Mute-video keeps the surface; Camera-off clears it', () async {
     final session =
@@ -65,22 +68,28 @@ void main() {
     expect(platform.cameraEnabled, isFalse);
   });
 
-  test('selectCamera is ephemeral and does not write Camera preference', () async {
-    manager.bindCameraPreference(
-      const CameraPreference(entries: [CameraPreferenceEntry(id: 'front')]),
-    );
-    final session =
-        ((await manager.start(cameraSend: true)) as StartReady).session;
-    await session.selectCamera('back');
-    expect(session.selectedCameraId, 'back');
-    expect(manager.boundCameraPreference.entries.single.id, 'front');
-  });
+  test(
+    'selectCamera is ephemeral and does not write Camera preference',
+    () async {
+      manager.bindCameraPreference(
+        const CameraPreference(entries: [CameraPreferenceEntry(id: 'front')]),
+      );
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      await session.selectCamera('back');
+      expect(session.selectedCameraId, 'back');
+      expect(manager.boundCameraPreference.entries.single.id, 'front');
+    },
+  );
 
-  test('Camera preview is blocked while the Session is sending video', () async {
-    await manager.start(cameraSend: true);
-    final preview = await manager.startCameraPreview();
-    expect(preview, isA<PreviewBlocked>());
-  });
+  test(
+    'Camera preview is blocked while the Session is sending video',
+    () async {
+      await manager.start(cameraSend: true);
+      final preview = await manager.startCameraPreview();
+      expect(preview, isA<PreviewBlocked>());
+    },
+  );
 
   test('Camera preview starts after Camera-off', () async {
     final session =
@@ -126,4 +135,74 @@ void main() {
     expect(session.isStopped, isFalse);
     expect(manager.session, session);
   });
+
+  test(
+    'setVideoProcessor blur is selectable mid-Session without restart',
+    () async {
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      final capture = session.capture;
+      final result = await session.setVideoProcessor(
+        const BlurVideoProcessor(intensity: 50),
+      );
+      expect(result, isA<ProcessorReady>());
+      expect(session.videoProcessor, const BlurVideoProcessor(intensity: 50));
+      expect(identical(session.capture, capture), isTrue);
+      expect(session.isStopped, isFalse);
+      expect(
+        platform.appliedProcessor,
+        const BlurVideoProcessor(intensity: 50),
+      );
+    },
+  );
+
+  test('invalid still keeps the previous processor and Session', () async {
+    final session =
+        ((await manager.start(
+                  cameraSend: true,
+                  videoProcessor: const BlurVideoProcessor(intensity: 50),
+                ))
+                as StartReady)
+            .session;
+    final result = await session.setVideoProcessor(
+      const ReplaceVideoProcessor(),
+    );
+    expect(result, isA<ProcessorInvalid>());
+    expect(session.videoProcessor, const BlurVideoProcessor(intensity: 50));
+    expect(session.isStopped, isFalse);
+    expect(manager.cameraPreview, isNull);
+  });
+
+  test('unavailable segmentation falls back to none with a warning', () async {
+    platform.processorResult = NativeProcessorResult.unavailable;
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    final result = await session.setVideoProcessor(
+      const BlurVideoProcessor(intensity: 100),
+    );
+    expect(result, isA<ProcessorUnavailable>());
+    expect(session.videoProcessor, const NoneVideoProcessor());
+    expect(session.status.code, SessionStatusCode.processorUnavailable);
+    expect(session.isStopped, isFalse);
+  });
+
+  test(
+    'Camera preview setVideoProcessor uses the same native processor',
+    () async {
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      await session.setCameraEnabled(false);
+      final preview =
+          ((await manager.startCameraPreview()) as PreviewReady).preview;
+      final result = await preview.setVideoProcessor(
+        const BlurVideoProcessor(intensity: 100),
+      );
+      expect(result, isA<ProcessorReady>());
+      expect(preview.videoProcessor, const BlurVideoProcessor(intensity: 100));
+      expect(
+        platform.appliedProcessor,
+        const BlurVideoProcessor(intensity: 100),
+      );
+    },
+  );
 }
