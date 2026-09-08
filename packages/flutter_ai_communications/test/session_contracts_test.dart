@@ -474,10 +474,12 @@ Future<void> _waitUntil(
   Duration timeout = const Duration(seconds: 2),
   Duration poll = const Duration(milliseconds: 10),
 }) async {
-  final end = DateTime.now().add(timeout);
+  final watch = Stopwatch()..start();
   while (!condition()) {
-    if (DateTime.now().isAfter(end)) {
-      fail('Timed out waiting for $description');
+    if (watch.elapsed >= timeout) {
+      fail(
+        'Timed out waiting for $description after ${timeout.inMilliseconds}ms',
+      );
     }
     await Future<void>.delayed(poll);
   }
