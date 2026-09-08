@@ -8,6 +8,8 @@ The host app owns the Transport (SignalR, WebRTC, or anything else), Endpoint-pr
 
 This repository is being built from a grilled spec ([#1](https://github.com/JohnGalt1717/flutter_ai_communications/issues/1)). The public API below is the contract.
 
+**Working in this repo:** [DEVELOPER.md](DEVELOPER.md) (graph index, Appium MCP, device stack).
+
 ## What you get
 
 - Enumerate capture and render **Endpoints**, including **handset** and **speakerphone** as separate items on iOS and Android

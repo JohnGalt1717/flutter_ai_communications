@@ -1,6 +1,6 @@
 # Plan stub: blur and replace Video processors
 
-**Status (2026-09-01):** Later. Do not implement in the v1 camera slice.
+**Status (2026-09-08):** Later. Do not implement in the v1 camera slice.
 Native Production video path with processor `none` now exists on iOS,
 Android, macOS, web, Windows, and Linux (in tree, PR #34 / `e6b37b4`).
 This plan stays unscheduled; it is not unblocked merely because graphs

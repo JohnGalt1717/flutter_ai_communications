@@ -109,8 +109,9 @@ Sequence:
 2. Scroll to Screen send. Screenshot catalog.
 3. Enumerable: tap `screen-source-*`, confirm Share frame on the real
    window/display, screenshot thumbs (`screen-preview-*`).
-4. Tap `screen-share`. On OS-picker platforms wait for the human to pick
-   a display/window/tab in the OS sheet.
+4. Tap `screen-share`. On OS-picker platforms load `fac-os-sheets` and
+   tap the OS sheet (MediaProjection / ReplayKit / getDisplayMedia /
+   portal). Do not adb-tap **Start** on the Android home picker.
 5. Assert `screen-loopback` is a live surface, not `Not sharing`.
 6. If a camera is on, `self-view` stays up (two Production paths).
 7. Toggle Include sound / Optimize / Cursor.
