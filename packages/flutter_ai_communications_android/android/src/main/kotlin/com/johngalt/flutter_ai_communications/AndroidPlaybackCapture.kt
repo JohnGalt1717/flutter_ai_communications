@@ -93,8 +93,9 @@ internal class AndroidPlaybackCapture {
             } catch (_: IllegalStateException) {
             }
         }
+        drain?.interrupt()
         try {
-            drain?.join(250)
+            drain?.join()
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }
