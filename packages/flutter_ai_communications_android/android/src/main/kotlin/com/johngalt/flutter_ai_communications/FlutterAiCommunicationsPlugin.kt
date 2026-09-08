@@ -243,7 +243,12 @@ class FlutterAiCommunicationsPlugin :
                 screenGraph?.stop()
                 result.success(null)
             }
-            "setIncludeSystemAudioNative" -> result.success(false)
+            "setIncludeSystemAudioNative" ->
+                result.success(
+                    screenGraph?.setIncludeSystemAudio(
+                        call.argument<Boolean>("enabled") ?: false,
+                    ) == true,
+                )
             "setScreenMotionNative" -> result.success(null)
             "setScreenCursorNative" -> result.success(null)
             else -> result.notImplemented()

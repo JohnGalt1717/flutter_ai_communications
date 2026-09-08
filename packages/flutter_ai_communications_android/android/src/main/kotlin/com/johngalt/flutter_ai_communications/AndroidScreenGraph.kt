@@ -32,6 +32,7 @@ class AndroidScreenGraph(
     private var surface: Surface? = null
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
+    private val playback = AndroidPlaybackCapture()
     private val startReplied = AtomicBoolean(true)
     private val requestCode = 0xFAC4
     private val projectionCallback =
@@ -62,6 +63,16 @@ class AndroidScreenGraph(
         )
 
     fun permission(): String = "granted"
+
+    fun setIncludeSystemAudio(enabled: Boolean): Boolean {
+        includeAudio = enabled
+        if (!enabled) {
+            playback.stop()
+            return false
+        }
+        val live = projection ?: return false
+        return playback.start(live)
+    }
 
     fun start(
         includeSystemAudio: Boolean,
@@ -95,6 +106,8 @@ class AndroidScreenGraph(
     }
 
     private fun teardown() {
+        playback.stop()
+        includeAudio = false
         virtualDisplay?.release()
         virtualDisplay = null
         val live = projection
@@ -199,6 +212,8 @@ class AndroidScreenGraph(
                 null,
                 main,
             )
+        val systemAudio = includeAudio && playback.start(projection)
+        includeAudio = systemAudio
         replyOnce(
             mapOf(
                 "status" to "started",
@@ -206,7 +221,7 @@ class AndroidScreenGraph(
                 "width" to width,
                 "height" to height,
                 "frameRate" to if (motion) 30 else 5,
-                "systemAudio" to false,
+                "systemAudio" to systemAudio,
             ),
         )
     }
