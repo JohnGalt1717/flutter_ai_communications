@@ -35,11 +35,8 @@ the variable is unset in the MCP process.
 ## Codebase memory
 
 Graph tools (`search_graph`, `trace_path`, `get_architecture`) beat grep
-for callers, packages, and impact. Project name after index:
-
-`Users-jameshancock-Repos-flutter_ai_communications`
-
-(derived from the repo path). Confirm with `list_projects`.
+for callers, packages, and impact. The project name is derived from the
+repo path. Confirm with `list_projects`; do not hard-code a machine path.
 
 ### Generate / refresh the index
 
@@ -77,8 +74,11 @@ Appium sessions that attach to an already-running `flutter run` must set
 `appium:autoLaunch` false, `appium:noReset` true, and
 `appium:dontStopAppOnReset` true so the Dart VM stays up. Presets live in
 [`.appium.capabilities.json`](.appium.capabilities.json). Pass `appium:udid`
-at session create (SM A176U1 `R5GL63B3GWV`, iPhone 17 sim
-`4A99E018-E415-496E-BE37-5BC143084B6B`).
+at session create from `flutter devices` (this lab’s known ids live in
+`device-agent-lens`). iOS WDA signing values in the capability preset and
+[`.appium.wda.xcconfig`](.appium.wda.xcconfig) are this repository’s
+Development team. Other contributors override `appium:xcodeOrgId` at
+session create.
 
 ## Example harness
 

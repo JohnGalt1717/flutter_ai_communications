@@ -13,16 +13,16 @@ Keep the exclusive `flutter run` / `flutter drive` alive. Appium must
 
 ## Setup once per device
 
-1. `select_device` with `platform` android|ios and `deviceUdid` (SM A176U1
-   `R5GL63B3GWV`; iPhone 17 sim `4A99E018-E415-496E-BE37-5BC143084B6B`;
-   iOS sim also needs `iosDeviceType=simulator`).
+1. `select_device` with `platform` android|ios and `deviceUdid` from
+   `flutter devices` (this lab’s known ids: `device-agent-lens`). iOS sim
+   also needs `iosDeviceType=simulator`.
 2. iOS **simulator**: `prepare_ios_simulator` then pass `capabilitiesHint`
    into create. If WDA “launched but did not become ready”, do not create a
-   session — iOS sheets stay blocked until WDA answers. iOS **hardware**
-   (James’s iPhone `00008150-000664981A38401C`): create XCUITest with
-   `appium:xcodeOrgId=3RQSQYAB58`, `appium:xcodeSigningId=Apple Development`,
-   `appium:updatedWDABundleId=com.example.flutterAiCommunications.wda`,
-   `appium:xcodeConfigFile` = [`.appium.wda.xcconfig`](../../../.appium.wda.xcconfig),
+   session — iOS sheets stay blocked until WDA answers. iOS **hardware**:
+   create XCUITest with `appium:xcodeOrgId` / `appium:xcodeSigningId` from
+   [`.appium.wda.xcconfig`](../../../.appium.wda.xcconfig) (this lab’s
+   Development team), `appium:updatedWDABundleId=com.example.flutterAiCommunications.wda`,
+   `appium:xcodeConfigFile` = that xcconfig,
    `appium:allowProvisioningUpdates=true`. Do not wait for a human to pick a
    profile. `appium_prepare_ios_real_device` is optional; there is no
    wildcard `*` profile. macOS TCC: `platform=general` + Mac2.

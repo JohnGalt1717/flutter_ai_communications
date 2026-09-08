@@ -1,3 +1,6 @@
+// This repository's Apple Development team (WDA for lab iPhones).
+// Other contributors: copy locally and set DEVELOPMENT_TEAM, or pass
+// appium:xcodeOrgId at session create.
 DEVELOPMENT_TEAM = 3RQSQYAB58
 CODE_SIGN_STYLE = Automatic
 CODE_SIGN_IDENTITY = Apple Development

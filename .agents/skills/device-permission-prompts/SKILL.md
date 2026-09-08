@@ -47,7 +47,7 @@ xcrun simctl privacy <udid> reset microphone com.example.flutterAiCommunications
 
 ## Physical iOS / iPadOS
 
-There is no `simctl` grant for microphone on hardware. flutter-skill cannot tap the sheet. Appium XCUITest (`fac-os-sheets`, `autoAcceptAlerts`) can, once WDA is signed via `appium_prepare_ios_real_device`.
+There is no `simctl` grant for microphone on hardware. flutter-skill cannot tap the sheet. Appium XCUITest (`fac-os-sheets`, `autoAcceptAlerts`) can once WDA is signed: pass `xcodeOrgId` / `.appium.wda.xcconfig` at session create. `appium_prepare_ios_real_device` is optional.
 
 If WDA is not signed: keep the exclusive `flutter run` alive and ask the human to tap **Allow**. Isolation Open is host UI — leave it.
 
