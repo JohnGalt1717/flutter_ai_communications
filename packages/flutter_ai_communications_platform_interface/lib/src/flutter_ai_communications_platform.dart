@@ -7,6 +7,7 @@ import 'camera_permission.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
+import 'native_processor_result.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
 
@@ -211,6 +212,14 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   Future<void> setMuteVideoNative(bool muted) {
     throw UnimplementedError('setMuteVideoNative() has not been implemented.');
   }
+
+  /// Applies a Video processor on the live Production video path.
+  ///
+  /// Does not restart the Session. Invalid still or intensity is [invalid].
+  /// Missing segmentation is [unavailable]; the caller falls back to none.
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) async => NativeProcessorResult.unavailable;
 
   /// Last Video surface from camera start, if any.
   ///

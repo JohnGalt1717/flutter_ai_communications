@@ -185,12 +185,8 @@ final class CommunicationsManager {
       final NativeGraphStart native;
       try {
         native = await _platform.startNative(
-          captureId: direction.hasCapture
-              ? resolution.desired.captureId
-              : null,
-          renderId: direction.hasPlayback
-              ? resolution.desired.renderId
-              : null,
+          captureId: direction.hasCapture ? resolution.desired.captureId : null,
+          renderId: direction.hasPlayback ? resolution.desired.renderId : null,
           captureFormat: capture,
           playbackFormat: playback,
           noiseCancelling: preference.noiseCancelling,
@@ -260,16 +256,23 @@ final class CommunicationsManager {
     if (muted) {
       ready.session.mute();
     }
+    if (cameraSend &&
+        cameraEnabledOut &&
+        videoProcessor is! NoneVideoProcessor) {
+      await ready.session.setVideoProcessor(videoProcessor);
+    }
     return ready;
   }
 
-  Future<({
-    String? cameraId,
-    bool enabled,
-    VideoSurface? surface,
-    VideoFormat? nativeFormat,
-    String? reason,
-  })>
+  Future<
+    ({
+      String? cameraId,
+      bool enabled,
+      VideoSurface? surface,
+      VideoFormat? nativeFormat,
+      String? reason,
+    })
+  >
   _startCamera({
     required String? cameraId,
     required VideoFormat videoFormat,
@@ -439,8 +442,13 @@ final class CommunicationsManager {
       surface: surface,
       cameraId: resolved,
       onStopped: () => _preview = null,
+      videoProcessor: live?.videoProcessor ?? const NoneVideoProcessor(),
     );
     _preview = preview;
+    final inherited = live?.videoProcessor;
+    if (inherited != null && inherited is! NoneVideoProcessor) {
+      await preview.setVideoProcessor(inherited);
+    }
     return PreviewReady(preview);
   }
 

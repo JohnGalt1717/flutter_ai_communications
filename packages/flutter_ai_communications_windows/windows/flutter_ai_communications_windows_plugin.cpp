@@ -123,6 +123,10 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
       result->Success();
       return;
     }
+    if (method == "setVideoProcessorNative") {
+      result->Success(flutter::EncodableValue(camera_.SetProcessor(map)));
+      return;
+    }
     if (method == "cameraGraphStats") {
       result->Success(flutter::EncodableValue(camera_.Stats()));
       return;

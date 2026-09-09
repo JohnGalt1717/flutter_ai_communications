@@ -221,6 +221,15 @@ class FlutterAiCommunicationsPlugin :
                 cameraGraph?.setMuted(call.argument<Boolean>("muted") ?: false)
                 result.success(null)
             }
+            "setVideoProcessorNative" -> {
+                @Suppress("UNCHECKED_CAST")
+                val args = (call.arguments as? Map<*, *>)?.mapKeys { it.key.toString() } ?: emptyMap()
+                val converted = args.mapValues { entry ->
+                    val value = entry.value
+                    if (value is ByteArray) value else value
+                }
+                result.success(cameraGraph?.setProcessor(converted) ?: "unavailable")
+            }
             "enumerateScreenSources" ->
                 result.success(screenGraph?.enumerate() ?: emptyList<Any>())
             "requestScreenPermission" -> result.success("granted")

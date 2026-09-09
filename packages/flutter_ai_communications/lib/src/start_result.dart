@@ -154,3 +154,31 @@ final class ScreenShareFailed extends ScreenShareResult {
   /// Optional cause.
   final Object? cause;
 }
+
+/// Outcome of [Session.setVideoProcessor] / [CameraPreview.setVideoProcessor].
+sealed class ProcessorSetResult {
+  /// Creates a processor result.
+  const ProcessorSetResult();
+}
+
+/// The processor is running on the Production video path.
+final class ProcessorReady extends ProcessorSetResult {
+  /// Creates a ready result.
+  const ProcessorReady(this.processor);
+
+  /// Applied processor.
+  final VideoProcessor processor;
+}
+
+/// The still or intensity was invalid, or the Session / Camera preview is
+/// stopped. Previous processor stays when the graph is still live.
+final class ProcessorInvalid extends ProcessorSetResult {
+  /// Creates an invalid result.
+  const ProcessorInvalid();
+}
+
+/// Native segmentation is unavailable. Processor is none.
+final class ProcessorUnavailable extends ProcessorSetResult {
+  /// Creates an unavailable result.
+  const ProcessorUnavailable();
+}

@@ -8,6 +8,8 @@ import 'flutter_ai_communications_platform.dart';
 import 'isolation.dart';
 import 'microphone_permission.dart';
 import 'native_graph_start.dart';
+import 'native_processor_result.dart';
+import 'video_processor_codec.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
 
@@ -435,6 +437,28 @@ class MethodChannelCommunicationsPlatform
   }
 
   @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) async {
+    try {
+      final value = await _methods.invokeMethod<Object?>(
+        'setVideoProcessorNative',
+        videoProcessorToMap(processor),
+      );
+      return switch (value) {
+        'invalid' => NativeProcessorResult.invalid,
+        'unavailable' => NativeProcessorResult.unavailable,
+        'ready' => NativeProcessorResult.ready,
+        _ => NativeProcessorResult.unavailable,
+      };
+    } on MissingPluginException {
+      return NativeProcessorResult.unavailable;
+    } on PlatformException {
+      return NativeProcessorResult.unavailable;
+    }
+  }
+
+  @override
   Future<void> pollCameraNative() async {
     try {
       final value = await _methods.invokeMethod<Object?>('cameraGraphStats');
@@ -547,15 +571,13 @@ class MethodChannelCommunicationsPlatform
   }) async {
     _ensureListening();
     try {
-      final value = await _methods.invokeMethod<Object?>(
-        'startScreenShareNative',
-        {
-          'sourceId': sourceId,
-          'includeSystemAudio': includeSystemAudio,
-          'cursor': cursor,
-          'motion': motion,
-        },
-      );
+      final value = await _methods
+          .invokeMethod<Object?>('startScreenShareNative', {
+            'sourceId': sourceId,
+            'includeSystemAudio': includeSystemAudio,
+            'cursor': cursor,
+            'motion': motion,
+          });
       if (value is Map) {
         final status = value['status'] as String? ?? 'started';
         if (status != 'started') {

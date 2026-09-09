@@ -19,7 +19,7 @@ video stream is a Video surface.
 
 Camera Endpoints and Screen sources are catalogs separate from audio Endpoints.
 v1 Video processor is none (pass-through). Blur and replace are
-`.agents/plans/video-processors-blur-replace.md`.
+GitHub issue #63 (iOS 18+, macOS 15+, Android, web, Windows).
 
 The first host is `example/`. It ships a Zoom/Teams-class lobby subsection
 (device picks, permission via `start()`, mute, Join). Orchestration drives
@@ -58,7 +58,10 @@ in the federated packages.
   higher resolution if any, else the next lower; fps closest to the request.
 - Mute-video is in-session black frames. Camera-off stops outbound video.
   Lobby has Camera-off / camera on, not Mute-video.
-- v1 processor is none only.
+- v1 processor is none. Blur and replace are GitHub issue #63: iOS 18+,
+  macOS 15+ (current and previous), Android ML Kit, web MediaPipe selfie
+  segmentation, Windows WinML MediaPipe selfie segmentation. Linux and a
+  web or Windows model miss fall back to none plus `processorUnavailable`.
 - Hosts attach Video sinks on Session (`attachVideoSink` / `detachVideoSink`).
   Mute-video and Camera-off notify differently. Detach does not end the
   Session or replace the Capture stream. Native consumers bind with

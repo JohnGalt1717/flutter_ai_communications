@@ -14,6 +14,7 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   private(set) var textureId: Int64 = -1
   var muted = false
   var enabled = true
+  private let processor = PersonBackgroundProcessor()
   private(set) var width = 1280
   private(set) var height = 720
   private(set) var frameRate = 30
@@ -166,6 +167,10 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     textures?.textureFrameAvailable(textureId)
   }
 
+  func setProcessor(_ args: [String: Any]) -> String {
+    processor.apply(args)
+  }
+
   func stop() {
     queue.sync { stopLocked() }
   }
@@ -178,7 +183,8 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     guard enabled, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else {
       return
     }
-    pixelBuffer = copyBuffer(image)
+    let copied = copyBuffer(image)
+    pixelBuffer = copied.map { processor.process($0) } ?? copied
     textures?.textureFrameAvailable(textureId)
   }
 

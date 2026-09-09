@@ -1,10 +1,10 @@
 # Plan stub: blur and replace Video processors
 
-**Status (2026-09-08):** Later. Do not implement in the v1 camera slice.
-Native Production video path with processor `none` now exists on iOS,
-Android, macOS, web, Windows, and Linux (in tree, PR #34 / `e6b37b4`).
-This plan stays unscheduled; it is not unblocked merely because graphs
-exist.
+**Status (2026-09-09):** In progress on `feat/video-processors-blur-replace`
+(GitHub issue #63). Blur and replace run on the Production video path on
+iOS 18+, macOS 15+, Android (ML Kit), web (MediaPipe when the model loads),
+and Windows (WinML MediaPipe selfie segmentation). Linux falls back to
+none plus `processorUnavailable`.
 **Depends on:** native Production video path and Camera preview shipping with processor `none` only (that dependency is met).
 **Glossary:** `CONTEXT.md` **Video processor**. ADR-0017.
 
@@ -34,7 +34,7 @@ v1 must not block cameras, lobby Session, Transport plugins, or Camera preview o
 
 ## Tickets
 
-Not opened. When this plan is scheduled, split mobile vs desktop/web the way `video-capture-and-sinks.md` tickets 10–11 did, after at least one native camera graph is real.
+GitHub issue #63. Linux remains `none` plus `processorUnavailable`.
 
 ## Gate
 

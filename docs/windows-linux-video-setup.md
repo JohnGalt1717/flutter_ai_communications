@@ -32,7 +32,9 @@ Linux/WSLg (PR #33). Those are not camera receipts.
 - Windows camera: permission granted, catalog, 640×480@30 Texture, live
   non-black frames, Mute-video vs Camera-off, join via Session settings,
   enable-video-later (LifeCam Studio)
-- v1 Video processor is `none` only
+- Video processor blur/replace is GitHub issue #63. Windows runs WinML
+  MediaPipe selfie segmentation on the Production video path. Linux stays
+  `none` plus `processorUnavailable` until that graph grows a segmenter.
 - Missing/denied camera does not fail `start()`
 
 ## Shared machine setup
@@ -157,7 +159,7 @@ Orchestration.
 - Do not add Melos, `flutter_recorder`, `flutter_soloud`, or a second camera
   plugin
 - Do not put PeerConnection types on Session
-- Do not implement blur/replace processors
+- Do not implement Linux blur/replace processors in this Windows slice
 - Do not treat empty `cameras()` as Orchestration failure
 - Do not copy production frames through Dart (ADR-0013)
 - Do not re-implement the Windows Media Foundation graph; it is on `main`

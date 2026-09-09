@@ -114,6 +114,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     case "setMuteVideoNative":
       camera.setMuted((call.arguments as? [String: Any])?["muted"] as? Bool ?? false)
       result(nil)
+    case "setVideoProcessorNative":
+      var args = call.arguments as? [String: Any] ?? [:]
+      if let typed = args["bytes"] as? FlutterStandardTypedData {
+        args["bytes"] = typed.data
+      }
+      result(camera.setProcessor(args))
     case "enumerateScreenSources":
       result(screen.enumerate())
     case "requestScreenPermission":

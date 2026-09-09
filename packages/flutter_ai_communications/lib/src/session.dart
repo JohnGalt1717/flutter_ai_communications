@@ -24,7 +24,7 @@ final class Session {
     this.cameraSend = false,
     this.videoFormat = VideoFormat.defaultFormat,
     this.cameraPreference = const CameraPreference(),
-    this.videoProcessor = const NoneVideoProcessor(),
+    VideoProcessor videoProcessor = const NoneVideoProcessor(),
     String? cameraId,
     bool cameraEnabled = true,
     bool videoMuted = false,
@@ -47,6 +47,7 @@ final class Session {
        _isolationController = StreamController<IsolationEvent>.broadcast(),
        _coverageController = StreamController<Coverage>.broadcast(),
        _statusController = StreamController<SessionStatus>.broadcast(),
+       _videoProcessor = videoProcessor,
        _cameraId = cameraId,
        _cameraEnabled = cameraEnabled,
        _videoMuted = videoMuted,
@@ -204,8 +205,9 @@ final class Session {
   /// Camera preference used at start.
   final CameraPreference cameraPreference;
 
-  /// v1 is [NoneVideoProcessor].
-  final VideoProcessor videoProcessor;
+  /// Selected Video processor. None is the fallback.
+  VideoProcessor get videoProcessor => _videoProcessor;
+  VideoProcessor _videoProcessor;
 
   /// Host-provided Session purpose. Named by [StartAlreadyActive].
   final String? purpose;
@@ -431,6 +433,35 @@ final class Session {
     });
   }
 
+  /// Selects a Video processor on the live Production video path.
+  ///
+  /// Intensity and still changes do not restart the Session. An invalid still
+  /// keeps the previous processor. Unavailable segmentation is none plus a
+  /// [SessionStatusCode.processorUnavailable] warning.
+  Future<ProcessorSetResult> setVideoProcessor(VideoProcessor processor) async {
+    if (_stopped) {
+      return const ProcessorInvalid();
+    }
+    final resolved = await _readyProcessor(processor);
+    if (resolved == null) {
+      return const ProcessorInvalid();
+    }
+    final native = await _platform.setVideoProcessorNative(resolved);
+    switch (native) {
+      case NativeProcessorResult.invalid:
+        return const ProcessorInvalid();
+      case NativeProcessorResult.unavailable:
+        _videoProcessor = const NoneVideoProcessor();
+        _notifyVideoSinks();
+        _publishStatus(SessionStatus.processorUnavailable(purpose: purpose));
+        return const ProcessorUnavailable();
+      case NativeProcessorResult.ready:
+        _videoProcessor = resolved;
+        _notifyVideoSinks();
+        return ProcessorReady(resolved);
+    }
+  }
+
   /// Live camera switch. Remotes see it. Does not write Camera preference.
   Future<void> selectCamera(String cameraId) async {
     if (_stopped) {
@@ -574,7 +605,9 @@ final class Session {
         final audio = await _platform.setIncludeSystemAudioNative(true);
         _includeSystemAudio = audio;
         if (!audio) {
-          _publishStatus(SessionStatus.screenAudioUnavailable(purpose: purpose));
+          _publishStatus(
+            SessionStatus.screenAudioUnavailable(purpose: purpose),
+          );
         }
       }
       if (_screenPickOpen) {
@@ -693,6 +726,9 @@ final class Session {
     _nativeVideoFormat = _platform.lastNativeVideoFormat;
     _videoPathGeneration++;
     _notifyVideoSinks();
+    if (processor is! NoneVideoProcessor) {
+      await setVideoProcessor(processor);
+    }
   }
 
   /// Attaches [sink] to this Session's Production video path.

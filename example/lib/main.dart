@@ -392,6 +392,18 @@ final class _SessionPageState extends State<SessionPage> {
     }
   }
 
+  Future<void> _setProcessor(VideoProcessor processor) async {
+    final preview = _manager.cameraPreview;
+    if (preview != null) {
+      await preview.setVideoProcessor(processor);
+    } else {
+      await _session?.setVideoProcessor(processor);
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _prove() async {
     final session = _session;
     if (session == null) {
@@ -510,6 +522,8 @@ final class _SessionPageState extends State<SessionPage> {
     IsolationEvent? isolation,
   ) {
     final failure = startFailureCopy(_status);
+    final processor =
+        _manager.cameraPreview?.videoProcessor ?? session?.videoProcessor;
     final isolationRequired = isolation?.state == IsolationState.required;
     return [
       if (_phase != _HarnessPhase.meeting)
@@ -630,6 +644,43 @@ final class _SessionPageState extends State<SessionPage> {
                   setState(() {});
                 },
         ),
+      if (session != null) ...[
+        const SizedBox(height: 16),
+        Text('Video processor', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilterChip(
+              key: const Key('processor-none'),
+              label: const Text('None'),
+              selected: processor is NoneVideoProcessor,
+              onSelected: (_) => _setProcessor(const NoneVideoProcessor()),
+            ),
+            FilterChip(
+              key: const Key('processor-blur-50'),
+              label: const Text('Some'),
+              selected: processor == const BlurVideoProcessor(intensity: 50),
+              onSelected: (_) =>
+                  _setProcessor(const BlurVideoProcessor(intensity: 50)),
+            ),
+            FilterChip(
+              key: const Key('processor-blur-100'),
+              label: const Text('Lots'),
+              selected: processor == const BlurVideoProcessor(intensity: 100),
+              onSelected: (_) =>
+                  _setProcessor(const BlurVideoProcessor(intensity: 100)),
+            ),
+            FilterChip(
+              key: const Key('processor-replace'),
+              label: const Text('Replace'),
+              selected: processor is ReplaceVideoProcessor,
+              onSelected: (_) =>
+                  _setProcessor(ReplaceVideoProcessor(bytes: _replaceStillPng)),
+            ),
+          ],
+        ),
+      ],
       Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 8),
       for (final endpoint in _endpoints)
@@ -924,6 +975,79 @@ final class _SessionPageState extends State<SessionPage> {
     ];
   }
 }
+
+/// 1×1 red PNG used as the example still for replace.
+const _replaceStillPng = <int>[
+  0x89,
+  0x50,
+  0x4E,
+  0x47,
+  0x0D,
+  0x0A,
+  0x1A,
+  0x0A,
+  0x00,
+  0x00,
+  0x00,
+  0x0D,
+  0x49,
+  0x48,
+  0x44,
+  0x52,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x08,
+  0x02,
+  0x00,
+  0x00,
+  0x00,
+  0x90,
+  0x77,
+  0x53,
+  0xDE,
+  0x00,
+  0x00,
+  0x00,
+  0x0C,
+  0x49,
+  0x44,
+  0x41,
+  0x54,
+  0x08,
+  0xD7,
+  0x63,
+  0xF8,
+  0xCF,
+  0xC0,
+  0x00,
+  0x00,
+  0x03,
+  0x01,
+  0x01,
+  0x00,
+  0x18,
+  0xDD,
+  0x8D,
+  0xB0,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x49,
+  0x45,
+  0x4E,
+  0x44,
+  0xAE,
+  0x42,
+  0x60,
+  0x82,
+];
 
 double _rms(Uint8List bytes) {
   if (bytes.length < 2) {

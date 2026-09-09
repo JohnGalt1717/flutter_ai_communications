@@ -4,11 +4,16 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.ImageFormat
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
+import android.media.Image
+import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -27,7 +32,12 @@ class AndroidCameraGraph(
     private var camera: CameraDevice? = null
     private var session: android.hardware.camera2.CameraCaptureSession? = null
     private var surface: Surface? = null
+    private var outputSurface: Surface? = null
+    private var reader: ImageReader? = null
     private var selectedId: String? = null
+    private val processor = AndroidVideoProcessor()
+    private var lastWidth = 1280
+    private var lastHeight = 720
     var cameraEnabled = true
     var videoMuted = false
     private val startId = AtomicInteger(0)
@@ -36,6 +46,8 @@ class AndroidCameraGraph(
         HandlerThread("fac-camera").also { it.start() }
     private val cameraHandler = Handler(cameraThread.looper)
     private var closeLatch: CountDownLatch? = null
+    private var argbScratch: IntArray? = null
+    private var frameBitmap: Bitmap? = null
 
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -74,11 +86,16 @@ class AndroidCameraGraph(
         enabled: Boolean,
         muted: Boolean,
         onResult: (Map<String, Any>) -> Unit,
+        keepTexture: Boolean = false,
     ) {
-        stop()
+        val kept = if (keepTexture) entry else null
+        stop(releaseTexture = !keepTexture)
+        entry = kept
         val id = startId.incrementAndGet()
         cameraEnabled = enabled
         videoMuted = muted
+        lastWidth = width
+        lastHeight = height
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val ids = manager.cameraIdList
         if (ids.isEmpty()) {
@@ -93,11 +110,24 @@ class AndroidCameraGraph(
                 }
                 ?: ids.first()
         selectedId = chosen
-        val entry = textures.createSurfaceTexture()
+        val entry = this.entry ?: textures.createSurfaceTexture()
         this.entry = entry
         val texture: SurfaceTexture = entry.surfaceTexture()
         texture.setDefaultBufferSize(width, height)
-        val surface = Surface(texture)
+        val flutterSurface = Surface(texture)
+        val captureSurface: Surface
+        if (processor.mode !is AndroidVideoProcessor.Mode.None) {
+            val imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
+            imageReader.setOnImageAvailableListener({ onProcessedImage(it) }, cameraHandler)
+            reader = imageReader
+            outputSurface = flutterSurface
+            captureSurface = imageReader.surface
+        } else {
+            reader = null
+            outputSurface = null
+            captureSurface = flutterSurface
+        }
+        val surface = captureSurface
         this.surface = surface
         val started =
             mapOf(
@@ -202,6 +232,27 @@ class AndroidCameraGraph(
         }
     }
 
+    fun setProcessor(args: Map<String, Any?>): String {
+        val wasProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
+        val status = processor.apply(args)
+        if (status != "ready") {
+            return status
+        }
+        val nowProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
+        if (wasProcessed != nowProcessed && selectedId != null && cameraEnabled) {
+            start(
+                selectedId,
+                lastWidth,
+                lastHeight,
+                cameraEnabled,
+                videoMuted,
+                { },
+                keepTexture = true,
+            )
+        }
+        return status
+    }
+
     fun setMuted(muted: Boolean) {
         videoMuted = muted
         val captureSession = session ?: return
@@ -225,14 +276,86 @@ class AndroidCameraGraph(
         }
     }
 
-    fun stop() {
+    fun stop(releaseTexture: Boolean = true) {
         startId.incrementAndGet()
         stopRepeatingLocked()
         closeCameraLocked()
         surface?.release()
         surface = null
-        entry?.release()
-        entry = null
+        outputSurface?.release()
+        outputSurface = null
+        reader?.close()
+        reader = null
+        if (releaseTexture) {
+            entry?.release()
+            entry = null
+        }
+    }
+
+    private fun onProcessedImage(imageReader: ImageReader) {
+        val image = imageReader.acquireLatestImage() ?: return
+        try {
+            val bitmap = yuvToBitmap(image) ?: return
+            val processed = processor.process(bitmap)
+            val dest = outputSurface ?: return
+            val canvas = dest.lockHardwareCanvas()
+            canvas.drawBitmap(processed, null, Rect(0, 0, lastWidth, lastHeight), null)
+            dest.unlockCanvasAndPost(canvas)
+        } catch (_: Exception) {
+        } finally {
+            image.close()
+        }
+    }
+
+    private fun yuvToBitmap(image: Image): Bitmap? {
+        if (image.planes.size < 3) {
+            return null
+        }
+        val width = image.width
+        val height = image.height
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
+        val yBuffer = yPlane.buffer
+        val uBuffer = uPlane.buffer
+        val vBuffer = vPlane.buffer
+        val yRowStride = yPlane.rowStride
+        val yPixelStride = yPlane.pixelStride
+        val uRowStride = uPlane.rowStride
+        val uPixelStride = uPlane.pixelStride
+        val vRowStride = vPlane.rowStride
+        val vPixelStride = vPlane.pixelStride
+        val count = width * height
+        val pixels =
+            argbScratch?.takeIf { it.size == count } ?: IntArray(count).also { argbScratch = it }
+        for (row in 0 until height) {
+            val yRow = row * yRowStride
+            val uRow = (row / 2) * uRowStride
+            val vRow = (row / 2) * vRowStride
+            val outRow = row * width
+            for (col in 0 until width) {
+                val y = yBuffer.get(yRow + col * yPixelStride).toInt() and 0xFF
+                val u = uBuffer.get(uRow + (col / 2) * uPixelStride).toInt() and 0xFF
+                val v = vBuffer.get(vRow + (col / 2) * vPixelStride).toInt() and 0xFF
+                val d = u - 128
+                val e = v - 128
+                val r = (y + ((351 * e) shr 8)).coerceIn(0, 255)
+                val g = (y - ((179 * e + 86 * d) shr 8)).coerceIn(0, 255)
+                val b = (y + ((443 * d) shr 8)).coerceIn(0, 255)
+                pixels[outRow + col] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            }
+        }
+        val cached = frameBitmap
+        val bitmap =
+            if (cached != null && cached.width == width && cached.height == height) {
+                cached
+            } else {
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+                    frameBitmap = it
+                }
+            }
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        return bitmap
     }
 
     private fun stopRepeatingLocked() {
