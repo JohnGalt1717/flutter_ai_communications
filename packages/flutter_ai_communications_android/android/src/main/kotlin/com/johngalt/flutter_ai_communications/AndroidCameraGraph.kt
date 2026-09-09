@@ -5,11 +5,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
-import android.graphics.YuvImage
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
@@ -22,7 +20,6 @@ import android.os.Looper
 import android.view.Surface
 import androidx.core.content.ContextCompat
 import io.flutter.view.TextureRegistry
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -49,6 +46,7 @@ class AndroidCameraGraph(
         HandlerThread("fac-camera").also { it.start() }
     private val cameraHandler = Handler(cameraThread.looper)
     private var closeLatch: CountDownLatch? = null
+    private var argbScratch: IntArray? = null
 
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -309,41 +307,46 @@ class AndroidCameraGraph(
     }
 
     private fun yuvToBitmap(image: Image): Bitmap? {
+        if (image.planes.size < 3) {
+            return null
+        }
         val width = image.width
         val height = image.height
         val yPlane = image.planes[0]
         val uPlane = image.planes[1]
         val vPlane = image.planes[2]
-        val ySize = width * height
-        val nv21 = ByteArray(ySize + width * height / 2)
         val yBuffer = yPlane.buffer
-        val yRowStride = yPlane.rowStride
-        var out = 0
-        for (row in 0 until height) {
-            val rowStart = row * yRowStride
-            for (col in 0 until width) {
-                nv21[out++] = yBuffer.get(rowStart + col)
-            }
-        }
-        val vBuffer = vPlane.buffer
         val uBuffer = uPlane.buffer
-        val vRowStride = vPlane.rowStride
-        val vPixelStride = vPlane.pixelStride
+        val vBuffer = vPlane.buffer
+        val yRowStride = yPlane.rowStride
+        val yPixelStride = yPlane.pixelStride
         val uRowStride = uPlane.rowStride
         val uPixelStride = uPlane.pixelStride
-        val chromaHeight = height / 2
-        val chromaWidth = width / 2
-        for (row in 0 until chromaHeight) {
-            for (col in 0 until chromaWidth) {
-                nv21[out++] = vBuffer.get(row * vRowStride + col * vPixelStride)
-                nv21[out++] = uBuffer.get(row * uRowStride + col * uPixelStride)
+        val vRowStride = vPlane.rowStride
+        val vPixelStride = vPlane.pixelStride
+        val count = width * height
+        val pixels =
+            argbScratch?.takeIf { it.size == count } ?: IntArray(count).also { argbScratch = it }
+        for (row in 0 until height) {
+            val yRow = row * yRowStride
+            val uRow = (row / 2) * uRowStride
+            val vRow = (row / 2) * vRowStride
+            val outRow = row * width
+            for (col in 0 until width) {
+                val y = yBuffer.get(yRow + col * yPixelStride).toInt() and 0xFF
+                val u = uBuffer.get(uRow + (col / 2) * uPixelStride).toInt() and 0xFF
+                val v = vBuffer.get(vRow + (col / 2) * vPixelStride).toInt() and 0xFF
+                val d = u - 128
+                val e = v - 128
+                val r = (y + ((351 * e) shr 8)).coerceIn(0, 255)
+                val g = (y - ((179 * e + 86 * d) shr 8)).coerceIn(0, 255)
+                val b = (y + ((443 * d) shr 8)).coerceIn(0, 255)
+                pixels[outRow + col] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
             }
         }
-        val yuv = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-        val jpeg = ByteArrayOutputStream()
-        yuv.compressToJpeg(Rect(0, 0, width, height), 90, jpeg)
-        val bytes = jpeg.toByteArray()
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        return bitmap
     }
 
     private fun stopRepeatingLocked() {

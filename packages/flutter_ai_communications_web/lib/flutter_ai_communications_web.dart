@@ -462,6 +462,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   web.HTMLCanvasElement? _videoCanvas;
   web.HTMLCanvasElement? _personCanvas;
   web.HTMLImageElement? _stillImage;
+  String? _stillObjectUrl;
   VideoProcessor _webVideoProcessor = const NoneVideoProcessor();
   int _webProcessorFrame = 0;
   JSObject? _selfie;
@@ -556,6 +557,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           ..setProperty('position', 'relative');
         wrap.append(video);
         _videoEl = video;
+        if (_webVideoProcessor is! NoneVideoProcessor) {
+          _startWebProcessor();
+        }
         return wrap;
       });
       _cameraSurface = VideoSurface(
@@ -582,6 +586,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> stopCameraNative() async {
     _stopWebProcessor();
+    _revokeStill();
     _videoStream?.getTracks().toDart.forEach((track) => track.stop());
     _videoStream = null;
     _videoEl = null;
@@ -641,16 +646,19 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       if (bytes == null || bytes.isEmpty) {
         return NativeProcessorResult.invalid;
       }
+      _revokeStill();
       final blob = web.Blob(
         [Uint8List.fromList(bytes).toJS].toJS,
         web.BlobPropertyBag(type: 'image/png'),
       );
       final url = web.URL.createObjectURL(blob);
+      _stillObjectUrl = url;
       final image = web.HTMLImageElement()..src = url;
       _stillImage = image;
     }
     _webVideoProcessor = processor;
     if (processor is NoneVideoProcessor) {
+      _revokeStill();
       _stopWebProcessor();
       return NativeProcessorResult.ready;
     }
@@ -773,6 +781,15 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _webProcessorFrame++;
     _videoEl?.style.setProperty('opacity', '1');
     _videoCanvas?.style.setProperty('display', 'none');
+  }
+
+  void _revokeStill() {
+    final url = _stillObjectUrl;
+    if (url != null) {
+      web.URL.revokeObjectURL(url);
+    }
+    _stillObjectUrl = null;
+    _stillImage = null;
   }
 
   void _pumpWebProcessor() {

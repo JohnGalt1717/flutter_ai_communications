@@ -12,6 +12,12 @@ final class PersonBackgroundProcessor {
   }
 
   private let context = CIContext(options: [.cacheIntermediates: false])
+  private let segmentationRequest: VNGeneratePersonSegmentationRequest = {
+    let request = VNGeneratePersonSegmentationRequest()
+    request.qualityLevel = .balanced
+    request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+    return request
+  }()
   private var kind: Kind = .none
   private var still: CIImage?
 
@@ -128,13 +134,10 @@ final class PersonBackgroundProcessor {
   }
 
   private func personMask(_ buffer: CVPixelBuffer) -> CIImage? {
-    let request = VNGeneratePersonSegmentationRequest()
-    request.qualityLevel = .balanced
-    request.outputPixelFormat = kCVPixelFormatType_OneComponent8
     let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
     do {
-      try handler.perform([request])
-      guard let pixel = request.results?.first?.pixelBuffer else {
+      try handler.perform([segmentationRequest])
+      guard let pixel = segmentationRequest.results?.first?.pixelBuffer else {
         return nil
       }
       return CIImage(cvPixelBuffer: pixel)
