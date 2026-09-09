@@ -47,6 +47,7 @@ class AndroidCameraGraph(
     private val cameraHandler = Handler(cameraThread.looper)
     private var closeLatch: CountDownLatch? = null
     private var argbScratch: IntArray? = null
+    private var frameBitmap: Bitmap? = null
 
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -344,7 +345,15 @@ class AndroidCameraGraph(
                 pixels[outRow + col] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
             }
         }
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val cached = frameBitmap
+        val bitmap =
+            if (cached != null && cached.width == width && cached.height == height) {
+                cached
+            } else {
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+                    frameBitmap = it
+                }
+            }
         bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
         return bitmap
     }

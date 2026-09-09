@@ -649,7 +649,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       _revokeStill();
       final blob = web.Blob(
         [Uint8List.fromList(bytes).toJS].toJS,
-        web.BlobPropertyBag(type: 'image/png'),
+        web.BlobPropertyBag(type: _stillMime(bytes)),
       );
       final url = web.URL.createObjectURL(blob);
       _stillObjectUrl = url;
@@ -683,7 +683,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
     try {
       await _injectScript(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.4.1675465747/selfie_segmentation.js',
       );
       final ctor = globalContext.getProperty('SelfieSegmentation'.toJS);
       if (ctor == null) {
@@ -694,7 +694,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       config.setProperty(
         'locateFile'.toJS,
         ((JSString file) {
-          return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file.toDart}'
+          return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.4.1675465747/${file.toDart}'
               .toJS;
         }).toJS,
       );
@@ -790,6 +790,22 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     }
     _stillObjectUrl = null;
     _stillImage = null;
+  }
+
+  String _stillMime(List<int> bytes) {
+    if (bytes.length >= 3 &&
+        bytes[0] == 0xFF &&
+        bytes[1] == 0xD8 &&
+        bytes[2] == 0xFF) {
+      return 'image/jpeg';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[8] == 0x57) {
+      return 'image/webp';
+    }
+    return 'image/png';
   }
 
   void _pumpWebProcessor() {

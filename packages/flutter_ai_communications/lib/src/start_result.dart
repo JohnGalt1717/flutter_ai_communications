@@ -170,7 +170,8 @@ final class ProcessorReady extends ProcessorSetResult {
   final VideoProcessor processor;
 }
 
-/// The still or intensity was invalid. Previous processor stays.
+/// The still or intensity was invalid, or the Session / Camera preview is
+/// stopped. Previous processor stays when the graph is still live.
 final class ProcessorInvalid extends ProcessorSetResult {
   /// Creates an invalid result.
   const ProcessorInvalid();
