@@ -56,7 +56,7 @@ Future<Session> requireReady(
   return (result as StartReady).session;
 }
 
-Future<void> waitForCameraStream(
+Future<bool> cameraStreamIsLive(
   FlutterAiCommunicationsPlatform platform, {
   int minFrames = 8,
   int minLive = 1,
@@ -72,12 +72,31 @@ Future<void> waitForCameraStream(
       nativeOrchestrationLog.info(
         'NATIVE_CAMERA_STREAM frames=$frames live=$live',
       );
-      return;
+      return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 50));
   }
+  nativeOrchestrationLog.info(
+    'NATIVE_CAMERA_STREAM_DEAD frames=$frames live=$live '
+    '(need frames>=$minFrames live>=$minLive)',
+  );
+  return false;
+}
+
+Future<void> waitForCameraStream(
+  FlutterAiCommunicationsPlatform platform, {
+  int minFrames = 8,
+  int minLive = 1,
+}) async {
+  if (await cameraStreamIsLive(
+    platform,
+    minFrames: minFrames,
+    minLive: minLive,
+  )) {
+    return;
+  }
   fail(
-    'camera stream not live after 5s frames=$frames live=$live '
+    'camera stream not live after 5s '
     '(need frames>=$minFrames live>=$minLive)',
   );
 }

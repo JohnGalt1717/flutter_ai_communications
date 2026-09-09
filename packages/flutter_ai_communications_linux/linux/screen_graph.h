@@ -39,6 +39,7 @@ class ScreenGraph {
   gboolean CopyPreviewPixels(const std::string& id, const uint8_t** buffer,
                              uint32_t* width, uint32_t* height, GError** error);
   FlValue* PortalStartedMap();
+  struct PortalState;
 
  private:
   struct Source {
@@ -86,7 +87,6 @@ class ScreenGraph {
   std::atomic<bool> cursor_{true};
   std::thread capture_thread_;
   std::thread portal_thread_;
-  struct PortalState;
   std::shared_ptr<PortalState> portal_state_;
   std::string send_id_;
   int send_width_ = 1280;

@@ -69,7 +69,7 @@ std::string WindowApplicationName(Display* display, Window window) {
 FlValue* SourceValue(const std::string& id, const std::string& name,
                      const std::string& kind, int x, int y, int w, int h,
                      bool preview, const std::string& application_name) {
-  g_autoptr(FlValue) map = fl_value_new_map();
+  FlValue* map = fl_value_new_map();
   fl_value_set_string_take(map, "id", fl_value_new_string(id.c_str()));
   fl_value_set_string_take(map, "name", fl_value_new_string(name.c_str()));
   fl_value_set_string_take(map, "kind", fl_value_new_string(kind.c_str()));
@@ -82,8 +82,10 @@ FlValue* SourceValue(const std::string& id, const std::string& name,
     fl_value_set_string_take(map, "applicationName",
                              fl_value_new_string(application_name.c_str()));
   }
-  return fl_value_clone(map);
+  return map;
 }
+
+int IgnoreXError(Display*, XErrorEvent*) { return 0; }
 
 }  // namespace
 
@@ -160,7 +162,10 @@ static void fac_preview_texture_init(FacPreviewTexture* self) {
   self->id = nullptr;
 }
 
-ScreenGraph::ScreenGraph(FlTextureRegistrar* textures) : textures_(textures) {}
+ScreenGraph::ScreenGraph(FlTextureRegistrar* textures) : textures_(textures) {
+  XInitThreads();
+  XSetErrorHandler(IgnoreXError);
+}
 
 void ScreenGraph::EnsureDisplay() {
   if (display_ != nullptr) {
@@ -195,10 +200,9 @@ ScreenGraph::~ScreenGraph() {
 }
 
 bool ScreenGraph::IsWaylandOnly() const {
+  // Xwayland still sets DISPLAY; XGetImage of the compositor root is BadMatch.
   const char* session = std::getenv("XDG_SESSION_TYPE");
-  const char* display = std::getenv("DISPLAY");
-  return session != nullptr && std::strcmp(session, "wayland") == 0 &&
-         (display == nullptr || display[0] == '\0');
+  return session != nullptr && std::strcmp(session, "wayland") == 0;
 }
 
 void ScreenGraph::RefreshSources() {
@@ -280,7 +284,7 @@ void ScreenGraph::RefreshSources() {
 FlValue* ScreenGraph::Enumerate() {
   std::lock_guard<std::mutex> lock(mutex_);
   RefreshSources();
-  g_autoptr(FlValue) list = fl_value_new_list();
+  FlValue* list = fl_value_new_list();
   for (const auto& source : sources_) {
     fl_value_append_take(
         list,
@@ -288,7 +292,7 @@ FlValue* ScreenGraph::Enumerate() {
                     source.width, source.height,
                     source.kind != "systemPicker", source.applicationName));
   }
-  return fl_value_clone(list);
+  return list;
 }
 
 std::string ScreenGraph::RequestPermission() { return "granted"; }
@@ -310,12 +314,12 @@ FlValue* ScreenGraph::BeginPick() {
   ClearPreviewsLocked();
   RefreshSources();
   if (IsWaylandOnly()) {
-    g_autoptr(FlValue) map = fl_value_new_map();
+    FlValue* map = fl_value_new_map();
     fl_value_set_string_take(map, "previews", fl_value_new_map());
-    return fl_value_clone(map);
+    return map;
   }
   EnsureDisplay();
-  g_autoptr(FlValue) previews = fl_value_new_map();
+  FlValue* previews = fl_value_new_map();
   for (const auto& source : sources_) {
     if (source.window == 0) {
       continue;
@@ -341,9 +345,9 @@ FlValue* ScreenGraph::BeginPick() {
         fl_value_new_int(fl_texture_get_id(FL_TEXTURE(preview->texture))));
     previews_[source.id] = std::move(preview);
   }
-  g_autoptr(FlValue) map = fl_value_new_map();
-  fl_value_set_string_take(map, "previews", fl_value_ref(previews));
-  return fl_value_clone(map);
+  FlValue* map = fl_value_new_map();
+  fl_value_set_string_take(map, "previews", previews);
+  return map;
 }
 
 void ScreenGraph::EndPick() {
@@ -424,23 +428,24 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
       break;
     }
   }
-  g_autoptr(FlValue) result = fl_value_new_map();
+  FlValue* result = fl_value_new_map();
   if (found != nullptr && found->kind == "systemPicker") {
     cursor_ = cursor;
     motion_ = motion;
     if (StartPortal(pending, cursor, motion)) {
+      fl_value_unref(result);
       return nullptr;
     }
     fl_value_set_string_take(result, "status",
                              fl_value_new_string("unavailable"));
     fl_value_set_string_take(result, "reason", fl_value_new_string("none"));
-    return fl_value_clone(result);
+    return result;
   }
   if (found == nullptr) {
     fl_value_set_string_take(result, "status",
                              fl_value_new_string("unavailable"));
     fl_value_set_string_take(result, "reason", fl_value_new_string("none"));
-    return fl_value_clone(result);
+    return result;
   }
   cursor_ = cursor;
   motion_ = motion;
@@ -464,7 +469,7 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
   fl_value_set_string_take(result, "height", fl_value_new_int(send_height_));
   fl_value_set_string_take(result, "frameRate",
                            fl_value_new_int(motion ? 30 : 5));
-  return fl_value_clone(result);
+  return result;
 }
 
 void ScreenGraph::Stop() {
@@ -645,14 +650,14 @@ FlValue* ScreenGraph::PortalStartedMap() {
     fl_texture_registrar_mark_texture_frame_available(textures_,
                                                       FL_TEXTURE(texture_));
   }
-  g_autoptr(FlValue) map = fl_value_new_map();
+  FlValue* map = fl_value_new_map();
   fl_value_set_string_take(map, "status", fl_value_new_string("started"));
   fl_value_set_string_take(map, "textureId", fl_value_new_int(texture_id_));
   fl_value_set_string_take(map, "width", fl_value_new_int(send_width_));
   fl_value_set_string_take(map, "height", fl_value_new_int(send_height_));
   fl_value_set_string_take(map, "frameRate",
                            fl_value_new_int(motion_ ? 30 : 5));
-  return fl_value_clone(map);
+  return map;
 }
 
 void ScreenGraph::CancelPortal() {
