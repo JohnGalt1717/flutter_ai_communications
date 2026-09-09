@@ -123,6 +123,7 @@ final class PersonBackgroundProcessor {
       kCVPixelFormatType_32BGRA,
       [
         kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+        kCVPixelBufferMetalCompatibilityKey: true,
       ] as CFDictionary,
       &dst
     )

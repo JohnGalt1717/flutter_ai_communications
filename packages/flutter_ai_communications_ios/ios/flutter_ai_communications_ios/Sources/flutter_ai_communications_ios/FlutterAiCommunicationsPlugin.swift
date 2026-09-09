@@ -120,6 +120,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         args["bytes"] = typed.data
       }
       result(camera.setProcessor(args))
+    case "cameraGraphStats":
+      result(camera.stats())
     case "enumerateScreenSources":
       result(screen.enumerate())
     case "requestScreenPermission":
