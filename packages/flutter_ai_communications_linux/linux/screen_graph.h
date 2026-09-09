@@ -74,6 +74,12 @@ class ScreenGraph {
   void HideFrame();
   bool StartPortal(FlMethodCall* pending, bool cursor, bool motion);
   void CancelPortal();
+  void StopPipeWire();
+  bool ConnectPipeWire(int fd, uint32_t node_id, int width, int height);
+  void CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h, int stride,
+                         uint32_t spa_format, const uint8_t* uv, int uv_stride);
+  static void OnPwProcess(void* data);
+  static void OnPwParamChanged(void* data, uint32_t id, const void* param);
 
   FlTextureRegistrar* textures_;
   Display* display_ = nullptr;
@@ -88,6 +94,9 @@ class ScreenGraph {
   std::thread capture_thread_;
   std::thread portal_thread_;
   std::shared_ptr<PortalState> portal_state_;
+  struct PwCapture;
+  std::unique_ptr<PwCapture> pw_;
+  std::string portal_session_;
   std::string send_id_;
   int send_width_ = 1280;
   int send_height_ = 720;

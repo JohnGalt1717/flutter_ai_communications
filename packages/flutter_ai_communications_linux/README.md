@@ -70,3 +70,12 @@ denied camera does not fail `start()`.
 Install `v4l-utils` on the Linux machine that collects receipts. The
 graph is written for a Linux VM compile; device receipts are not
 claimed from Windows.
+
+## Screen send
+
+Wayland is one system-picker source via xdg-desktop-portal ScreenCast.
+After the portal Start result, frames come from PipeWire
+(`libpipewire-0.3`). Install `libpipewire-0.3-dev` and `libspa-0.2-dev`
+to compile the frame pull. Unattended `native_screen_test` skips the OS
+picker (`skipped=os-picker`). X11 enumerable capture remains for
+`XDG_SESSION_TYPE=x11` only.

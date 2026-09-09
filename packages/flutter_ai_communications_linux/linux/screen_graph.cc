@@ -3,12 +3,35 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <gio/gio.h>
+#include <gio/gunixfdlist.h>
+#include <unistd.h>
+#include <mutex>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
+
+#ifdef FAC_HAS_PIPEWIRE
+#include <pipewire/pipewire.h>
+#include <spa/param/video/format-utils.h>
+#include <spa/param/video/raw.h>
+#include <spa/pod/builder.h>
+#endif
+
+struct ScreenGraph::PwCapture {
+#ifdef FAC_HAS_PIPEWIRE
+  pw_thread_loop* loop = nullptr;
+  pw_context* context = nullptr;
+  pw_core* core = nullptr;
+  pw_stream* stream = nullptr;
+  spa_hook listener{};
+  uint32_t spa_format = 0;
+  int src_w = 0;
+  int src_h = 0;
+#endif
+};
 
 namespace {
 
@@ -475,11 +498,24 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
 void ScreenGraph::Stop() {
   running_ = false;
   CancelPortal();
+  StopPipeWire();
   if (capture_thread_.joinable()) {
     capture_thread_.join();
   }
   HideFrame();
   send_id_.clear();
+  if (!portal_session_.empty()) {
+    g_autoptr(GError) error = nullptr;
+    g_autoptr(GDBusConnection) bus =
+        g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+    if (bus != nullptr) {
+      g_dbus_connection_call_sync(
+          bus, "org.freedesktop.portal.Desktop", portal_session_.c_str(),
+          "org.freedesktop.portal.Session", "Close", nullptr, nullptr,
+          G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error);
+    }
+    portal_session_.clear();
+  }
   CloseDisplay();
 }
 
@@ -546,6 +582,274 @@ bool ScreenGraph::CaptureX11(const Source& source, int out_w, int out_h,
   }
   XDestroyImage(image);
   return true;
+}
+
+void ScreenGraph::StopPipeWire() {
+#ifdef FAC_HAS_PIPEWIRE
+  if (!pw_) {
+    return;
+  }
+  if (pw_->loop != nullptr) {
+    pw_thread_loop_lock(pw_->loop);
+    if (pw_->stream != nullptr) {
+      pw_stream_disconnect(pw_->stream);
+      pw_stream_destroy(pw_->stream);
+      pw_->stream = nullptr;
+    }
+    if (pw_->core != nullptr) {
+      pw_core_disconnect(pw_->core);
+      pw_->core = nullptr;
+    }
+    if (pw_->context != nullptr) {
+      pw_context_destroy(pw_->context);
+      pw_->context = nullptr;
+    }
+    pw_thread_loop_unlock(pw_->loop);
+    pw_thread_loop_stop(pw_->loop);
+    pw_thread_loop_destroy(pw_->loop);
+    pw_->loop = nullptr;
+  }
+  pw_.reset();
+#endif
+}
+
+void ScreenGraph::OnPwParamChanged(void* data, uint32_t id, const void* param) {
+#ifdef FAC_HAS_PIPEWIRE
+  auto* self = static_cast<ScreenGraph*>(data);
+  if (self == nullptr || self->pw_ == nullptr || param == nullptr ||
+      id != SPA_PARAM_Format) {
+    return;
+  }
+  spa_video_info_raw raw{};
+  if (spa_format_video_raw_parse(static_cast<const spa_pod*>(param), &raw) <
+      0) {
+    return;
+  }
+  self->pw_->spa_format = raw.format;
+  self->pw_->src_w = static_cast<int>(raw.size.width);
+  self->pw_->src_h = static_cast<int>(raw.size.height);
+  int out_w = self->pw_->src_w;
+  int out_h = self->pw_->src_h;
+  if (out_w > 1920 || out_h > 1080) {
+    const double scale = std::min(1920.0 / out_w, 1080.0 / out_h);
+    out_w = std::max(1, static_cast<int>(out_w * scale));
+    out_h = std::max(1, static_cast<int>(out_h * scale));
+  }
+  std::lock_guard<std::mutex> lock(self->mutex_);
+  self->send_width_ = out_w;
+  self->send_height_ = out_h;
+  self->front_.assign(static_cast<size_t>(out_w) * out_h * 4, 0);
+#else
+  (void)data;
+  (void)id;
+  (void)param;
+#endif
+}
+
+void ScreenGraph::OnPwProcess(void* data) {
+#ifdef FAC_HAS_PIPEWIRE
+  auto* self = static_cast<ScreenGraph*>(data);
+  if (self == nullptr || self->pw_ == nullptr || self->pw_->stream == nullptr) {
+    return;
+  }
+  pw_buffer* buffer = pw_stream_dequeue_buffer(self->pw_->stream);
+  if (buffer == nullptr || buffer->buffer == nullptr ||
+      buffer->buffer->n_datas < 1) {
+    return;
+  }
+  spa_data* datas = buffer->buffer->datas;
+  if (datas[0].data == nullptr) {
+    pw_stream_queue_buffer(self->pw_->stream, buffer);
+    return;
+  }
+  const uint8_t* src =
+      static_cast<const uint8_t*>(datas[0].data) + datas[0].chunk->offset;
+  const int stride = datas[0].chunk->stride;
+  const uint8_t* uv = nullptr;
+  int uv_stride = 0;
+  if (self->pw_->spa_format == SPA_VIDEO_FORMAT_NV12) {
+    if (buffer->buffer->n_datas >= 2 && datas[1].data != nullptr) {
+      uv = static_cast<const uint8_t*>(datas[1].data) + datas[1].chunk->offset;
+      uv_stride = datas[1].chunk->stride;
+    } else {
+      uv = src + stride * self->pw_->src_h;
+      uv_stride = stride;
+    }
+  }
+  self->CopyPipeWireFrame(src, self->pw_->src_w, self->pw_->src_h, stride,
+                          self->pw_->spa_format, uv, uv_stride);
+  if (self->textures_ != nullptr && self->texture_ != nullptr) {
+    fl_texture_registrar_mark_texture_frame_available(self->textures_,
+                                                      FL_TEXTURE(self->texture_));
+  }
+  pw_stream_queue_buffer(self->pw_->stream, buffer);
+#else
+  (void)data;
+#endif
+}
+
+void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
+                                    int stride, uint32_t spa_format,
+                                    const uint8_t* uv, int uv_stride) {
+  if (src == nullptr || src_w < 1 || src_h < 1 || stride < 1) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  const int out_w = send_width_;
+  const int out_h = send_height_;
+  if (out_w < 1 || out_h < 1) {
+    return;
+  }
+  front_.assign(static_cast<size_t>(out_w) * out_h * 4, 255);
+#ifdef FAC_HAS_PIPEWIRE
+  auto clamp = [](int value) -> uint8_t {
+    if (value < 0) {
+      return 0;
+    }
+    if (value > 255) {
+      return 255;
+    }
+    return static_cast<uint8_t>(value);
+  };
+  for (int y = 0; y < out_h; y++) {
+    const int src_y = y * src_h / out_h;
+    uint8_t* out = front_.data() + static_cast<size_t>(y) * out_w * 4;
+    if (spa_format == SPA_VIDEO_FORMAT_NV12 && uv != nullptr) {
+      const uint8_t* y_row = src + static_cast<ptrdiff_t>(stride) * src_y;
+      const uint8_t* uv_row =
+          uv + static_cast<ptrdiff_t>(uv_stride) * (src_y / 2);
+      for (int x = 0; x < out_w; x++) {
+        const int src_x = x * src_w / out_w;
+        const int c = y_row[src_x] - 16;
+        const int d = uv_row[src_x & ~1] - 128;
+        const int e = uv_row[(src_x & ~1) + 1] - 128;
+        out[x * 4 + 0] = clamp((298 * c + 409 * e + 128) >> 8);
+        out[x * 4 + 1] = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
+        out[x * 4 + 2] = clamp((298 * c + 516 * d + 128) >> 8);
+        out[x * 4 + 3] = 255;
+      }
+      continue;
+    }
+    const uint8_t* row = src + static_cast<ptrdiff_t>(stride) * src_y;
+    const bool bgr = spa_format == SPA_VIDEO_FORMAT_BGRx ||
+                     spa_format == SPA_VIDEO_FORMAT_BGRA;
+    for (int x = 0; x < out_w; x++) {
+      const int src_x = x * src_w / out_w;
+      const uint8_t* px = row + src_x * 4;
+      if (bgr) {
+        out[x * 4 + 0] = px[2];
+        out[x * 4 + 1] = px[1];
+        out[x * 4 + 2] = px[0];
+      } else {
+        out[x * 4 + 0] = px[0];
+        out[x * 4 + 1] = px[1];
+        out[x * 4 + 2] = px[2];
+      }
+      out[x * 4 + 3] = 255;
+    }
+  }
+#else
+  (void)spa_format;
+  (void)uv;
+  (void)uv_stride;
+#endif
+}
+
+bool ScreenGraph::ConnectPipeWire(int fd, uint32_t node_id, int width,
+                                  int height) {
+#ifdef FAC_HAS_PIPEWIRE
+  if (fd < 0) {
+    return false;
+  }
+  StopPipeWire();
+  static std::once_flag pw_once;
+  std::call_once(pw_once, [] { pw_init(nullptr, nullptr); });
+  pw_ = std::make_unique<PwCapture>();
+  pw_->loop = pw_thread_loop_new("fac-screencast", nullptr);
+  if (pw_->loop == nullptr) {
+    close(fd);
+    pw_.reset();
+    return false;
+  }
+  pw_thread_loop_lock(pw_->loop);
+  pw_->context = pw_context_new(pw_thread_loop_get_loop(pw_->loop), nullptr, 0);
+  if (pw_->context == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    close(fd);
+    return false;
+  }
+  pw_->core = pw_context_connect_fd(pw_->context, fd, nullptr, 0);
+  if (pw_->core == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  char node[16];
+  g_snprintf(node, sizeof(node), "%u", node_id);
+  pw_properties* props = pw_properties_new(
+      PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture",
+      PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_TARGET_OBJECT, node, nullptr);
+  pw_->stream = pw_stream_new(pw_->core, "fac-screencast", props);
+  if (pw_->stream == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  pw_stream_events events{};
+  events.version = PW_VERSION_STREAM_EVENTS;
+  events.param_changed = [](void* data, uint32_t id, const spa_pod* param) {
+    ScreenGraph::OnPwParamChanged(data, id, param);
+  };
+  events.process = [](void* data) { ScreenGraph::OnPwProcess(data); };
+  pw_stream_add_listener(pw_->stream, &pw_->listener, &events, this);
+  uint8_t buffer[1024];
+  spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+  spa_rectangle def_size = SPA_RECTANGLE(
+      static_cast<uint32_t>(width > 0 ? width : 1920),
+      static_cast<uint32_t>(height > 0 ? height : 1080));
+  spa_rectangle min_size = SPA_RECTANGLE(1, 1);
+  spa_rectangle max_size = SPA_RECTANGLE(4096, 4096);
+  spa_fraction def_fps =
+      SPA_FRACTION(static_cast<uint32_t>(motion_ ? 30 : 5), 1);
+  spa_fraction min_fps = SPA_FRACTION(0, 1);
+  spa_fraction max_fps = SPA_FRACTION(60, 1);
+  const spa_pod* params[] = {
+      static_cast<spa_pod*>(spa_pod_builder_add_object(
+          &builder, SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
+          SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
+          SPA_FORMAT_mediaSubtype, SPA_POD_Id(SPA_MEDIA_SUBTYPE_raw),
+          SPA_FORMAT_VIDEO_format,
+          SPA_POD_CHOICE_ENUM_Id(5, SPA_VIDEO_FORMAT_BGRx, SPA_VIDEO_FORMAT_RGBx,
+                                 SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_RGBA,
+                                 SPA_VIDEO_FORMAT_NV12),
+          SPA_FORMAT_VIDEO_size,
+          SPA_POD_CHOICE_RANGE_Rectangle(&def_size, &min_size, &max_size),
+          SPA_FORMAT_VIDEO_framerate,
+          SPA_POD_CHOICE_RANGE_Fraction(&def_fps, &min_fps, &max_fps))),
+  };
+  const int connected = pw_stream_connect(
+      pw_->stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+      static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
+                                   PW_STREAM_FLAG_MAP_BUFFERS),
+      params, 1);
+  pw_thread_loop_unlock(pw_->loop);
+  if (connected < 0) {
+    StopPipeWire();
+    return false;
+  }
+  if (pw_thread_loop_start(pw_->loop) < 0) {
+    StopPipeWire();
+    return false;
+  }
+  return true;
+#else
+  (void)fd;
+  (void)node_id;
+  (void)width;
+  (void)height;
+  return false;
+#endif
 }
 
 gboolean ScreenGraph::CopyPreviewPixels(const std::string& id,
@@ -838,20 +1142,79 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
       finish("unavailable", code == 1 ? "denied" : "none");
       return;
     }
+    uint32_t node_id = 0;
+    int stream_w = 0;
+    int stream_h = 0;
+    bool have_stream = false;
+    GVariant* streams = g_variant_lookup_value(results, "streams", nullptr);
+    if (streams != nullptr) {
+      GVariantIter iter;
+      g_variant_iter_init(&iter, streams);
+      GVariant* child = g_variant_iter_next_value(&iter);
+      if (child != nullptr) {
+        GVariant* props = nullptr;
+        g_variant_get(child, "(u@a{sv})", &node_id, &props);
+        if (props != nullptr) {
+          g_variant_lookup(props, "size", "(ii)", &stream_w, &stream_h);
+          g_variant_unref(props);
+        }
+        have_stream = true;
+        g_variant_unref(child);
+      }
+      g_variant_unref(streams);
+    }
+    g_autoptr(GUnixFDList) fd_list = nullptr;
+    g_autoptr(GError) fd_error = nullptr;
+    GVariantBuilder fd_opts;
+    g_variant_builder_init(&fd_opts, G_VARIANT_TYPE_VARDICT);
+    g_autoptr(GVariant) fd_ret = g_dbus_proxy_call_with_unix_fd_list_sync(
+        proxy, "OpenPipeWireRemote",
+        g_variant_new("(oa{sv})", session.c_str(), &fd_opts),
+        G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &fd_list, nullptr, &fd_error);
+    int pw_fd = -1;
+    if (fd_ret != nullptr && fd_list != nullptr) {
+      gint32 handle = -1;
+      g_variant_get(fd_ret, "(h)", &handle);
+      pw_fd = g_unix_fd_list_get(fd_list, handle, &fd_error);
+    }
     UnrefResults(results);
-    if (state->cancel) {
+    if (state->cancel || !have_stream || pw_fd < 0) {
+      if (pw_fd >= 0) {
+        close(pw_fd);
+      }
       finish("unavailable", "none");
       return;
     }
-    send_width_ = 1920;
-    send_height_ = 1080;
     motion_ = motion;
+    int out_w = stream_w > 0 ? stream_w : 1920;
+    int out_h = stream_h > 0 ? stream_h : 1080;
+    if (out_w > 1920 || out_h > 1080) {
+      const double scale = std::min(1920.0 / out_w, 1080.0 / out_h);
+      out_w = std::max(1, static_cast<int>(out_w * scale));
+      out_h = std::max(1, static_cast<int>(out_h * scale));
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       send_id_ = "system-picker";
+      send_width_ = out_w;
+      send_height_ = out_h;
       running_ = true;
       front_.assign(static_cast<size_t>(send_width_) * send_height_ * 4, 0);
     }
+    if (!ConnectPipeWire(pw_fd, node_id, stream_w, stream_h)) {
+      g_autoptr(GError) close_error = nullptr;
+      g_autoptr(GDBusConnection) bus =
+          g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+      if (bus != nullptr) {
+        g_dbus_connection_call_sync(
+            bus, "org.freedesktop.portal.Desktop", session.c_str(),
+            "org.freedesktop.portal.Session", "Close", nullptr, nullptr,
+            G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &close_error);
+      }
+      finish("unavailable", "none");
+      return;
+    }
+    portal_session_ = session;
     finish("started", nullptr);
   });
   return true;
