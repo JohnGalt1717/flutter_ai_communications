@@ -281,6 +281,11 @@ final class FlutterAiCommunicationsLinux
   Future<void> setMuteVideoNative(bool muted) => _camera.setMuted(muted);
 
   @override
+  Future<NativeProcessorResult> setVideoProcessorNative(
+    VideoProcessor processor,
+  ) => _camera.setVideoProcessor(processor);
+
+  @override
   VideoSurface? get lastVideoSurface => _camera.lastSurface;
 
   @override

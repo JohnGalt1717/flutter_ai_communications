@@ -4,6 +4,8 @@
 #include <flutter_linux/flutter_linux.h>
 #include <linux/videodev2.h>
 
+#include "video_processor.h"
+
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -36,6 +38,7 @@ class CameraGraph {
   void Select(const std::string& camera_id);
   void SetEnabled(bool enabled);
   void SetMuted(bool muted);
+  std::string SetProcessor(FlValue* args);
   FlValue* Stats() const;
   gboolean CopyPixels(const uint8_t** buffer,
                       uint32_t* width,
@@ -77,6 +80,7 @@ class CameraGraph {
   int request_width_ = 1280;
   int request_height_ = 720;
   int request_frame_rate_ = 30;
+  PersonBackgroundProcessor processor_;
 };
 
 #endif  // FLUTTER_PLUGIN_LINUX_CAMERA_GRAPH_H_

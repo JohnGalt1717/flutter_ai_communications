@@ -99,6 +99,10 @@ static void HandleMethodCall(FlMethodChannel* channel,
   } else if (strcmp(method, "setMuteVideoNative") == 0) {
     self->camera->SetMuted(ReadBool(args, "muted", false));
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (strcmp(method, "setVideoProcessorNative") == 0) {
+    g_autoptr(FlValue) value =
+        fl_value_new_string(self->camera->SetProcessor(args).c_str());
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
   } else if (strcmp(method, "cameraGraphStats") == 0) {
     g_autoptr(FlValue) value = self->camera->Stats();
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));

@@ -57,6 +57,14 @@ void main() {
       'format=${lobby.nativeVideoFormat} id=${lobby.selectedCameraId}',
     );
     await waitForCameraStream(platform);
+    final blur = await lobby.setVideoProcessor(
+      const BlurVideoProcessor(intensity: 50),
+    );
+    expect(blur, isA<ProcessorReady>());
+    nativeOrchestrationLog.info(
+      'NATIVE_CAMERA_PROCESSOR blur=${blur.runtimeType}',
+    );
+    await waitForCameraStream(platform);
     await platform.pollCameraNative();
     final liveBeforeOff = platform.lastCameraFrameCount;
 

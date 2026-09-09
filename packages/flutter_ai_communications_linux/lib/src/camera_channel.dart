@@ -151,6 +151,28 @@ final class MethodChannelCameraBackend implements CameraBackend {
   }
 
   @override
+  Future<NativeProcessorResult> setVideoProcessor(
+    VideoProcessor processor,
+  ) async {
+    try {
+      final value = await _methods.invokeMethod<Object?>(
+        'setVideoProcessorNative',
+        videoProcessorToMap(processor),
+      );
+      return switch (value) {
+        'invalid' => NativeProcessorResult.invalid,
+        'unavailable' => NativeProcessorResult.unavailable,
+        'ready' => NativeProcessorResult.ready,
+        _ => NativeProcessorResult.unavailable,
+      };
+    } on MissingPluginException {
+      return NativeProcessorResult.unavailable;
+    } on PlatformException {
+      return NativeProcessorResult.unavailable;
+    }
+  }
+
+  @override
   Future<void> pollStats() async {
     try {
       final value = await _methods.invokeMethod<Object?>('cameraGraphStats');

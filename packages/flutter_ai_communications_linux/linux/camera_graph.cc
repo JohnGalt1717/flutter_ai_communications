@@ -255,6 +255,10 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
 
 void CameraGraph::Stop() { StopCapture(); }
 
+std::string CameraGraph::SetProcessor(FlValue* args) {
+  return processor_.Apply(args);
+}
+
 void CameraGraph::Select(const std::string& camera_id) {
   FlValue* result =
       Start(camera_id, request_width_, request_height_, request_frame_rate_,
@@ -572,6 +576,7 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
       }
     }
   }
+  processor_.Process(front_.data(), width_, height_);
   for (size_t i = 0; i + 3 < front_.size(); i += 64) {
     if (front_[i] > 8 || front_[i + 1] > 8 || front_[i + 2] > 8) {
       live_frames_.fetch_add(1);
