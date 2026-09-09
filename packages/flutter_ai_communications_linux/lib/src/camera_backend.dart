@@ -29,6 +29,9 @@ abstract class CameraBackend {
   /// Mute-video substitutes black frames; the graph stays up.
   Future<void> setMuted(bool muted);
 
+  /// Applies a Video processor on the live Production video path.
+  Future<NativeProcessorResult> setVideoProcessor(VideoProcessor processor);
+
   /// Last Video surface from camera start, if any.
   VideoSurface? get lastSurface;
 

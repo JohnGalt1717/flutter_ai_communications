@@ -137,15 +137,89 @@ void main() {
     await adapter.selectCameraNative('/dev/video0');
     expect(camera.selectedId, '/dev/video0');
   });
+
+  test('blur is selectable mid-preview without restarting capture', () async {
+    final camera = _RecordingCamera()..cameras = [usb];
+    final adapter = adapterFor(camera);
+    await adapter.startCameraNative(cameraId: '/dev/video0');
+    expect(
+      await adapter.setVideoProcessorNative(
+        const BlurVideoProcessor(intensity: 50),
+      ),
+      NativeProcessorResult.ready,
+    );
+    expect(camera.startCalls, 1);
+    expect(camera.appliedProcessor, const BlurVideoProcessor(intensity: 50));
+    expect(adapter.lastVideoSurface, isNotNull);
+  });
+
+  test('invalid still keeps the previous processor', () async {
+    final camera = _RecordingCamera()..cameras = [usb];
+    final adapter = adapterFor(camera);
+    await adapter.startCameraNative(cameraId: '/dev/video0');
+    await adapter.setVideoProcessorNative(
+      const BlurVideoProcessor(intensity: 50),
+    );
+    expect(
+      await adapter.setVideoProcessorNative(const ReplaceVideoProcessor()),
+      NativeProcessorResult.invalid,
+    );
+    expect(camera.appliedProcessor, const BlurVideoProcessor(intensity: 50));
+  });
+
+  test(
+    'unavailable segmentation is a typed result, not a start failure',
+    () async {
+      final camera = _RecordingCamera()
+        ..cameras = [usb]
+        ..processorResult = NativeProcessorResult.unavailable;
+      final adapter = adapterFor(camera);
+      await adapter.startCameraNative(cameraId: '/dev/video0');
+      expect(
+        await adapter.setVideoProcessorNative(
+          const BlurVideoProcessor(intensity: 100),
+        ),
+        NativeProcessorResult.unavailable,
+      );
+      expect(camera.appliedProcessor, isNull);
+      expect(adapter.lastVideoSurface, isNotNull);
+    },
+  );
+
+  test(
+    'setVideoProcessorNative maps channel ready invalid and unavailable',
+    () async {
+      const methods = MethodChannel('flutter_ai_communications/methods');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        if (call.method == 'setVideoProcessorNative') {
+          expect(call.arguments, {'kind': 'blur', 'intensity': 50});
+          return 'ready';
+        }
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(methods, null));
+      final backend = MethodChannelCameraBackend(methods: methods);
+      expect(
+        await backend.setVideoProcessor(
+          const BlurVideoProcessor(intensity: 50),
+        ),
+        NativeProcessorResult.ready,
+      );
+    },
+  );
 }
 
 final class _RecordingCamera implements CameraBackend {
   List<CameraEndpoint> cameras = const [];
   CameraPermission permission = CameraPermission.granted;
+  NativeProcessorResult processorResult = NativeProcessorResult.ready;
   var startCalls = 0;
   var enabled = true;
   var muted = false;
   String? selectedId;
+  VideoProcessor? appliedProcessor;
   @override
   VideoSurface? lastSurface;
   @override
@@ -210,6 +284,25 @@ final class _RecordingCamera implements CameraBackend {
   @override
   Future<void> setMuted(bool muted) async {
     this.muted = muted;
+  }
+
+  @override
+  Future<NativeProcessorResult> setVideoProcessor(
+    VideoProcessor processor,
+  ) async {
+    if (processor is ReplaceVideoProcessor &&
+        (processor.bytes == null || processor.bytes!.isEmpty) &&
+        (processor.asset == null || processor.asset!.isEmpty)) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processor is BlurVideoProcessor && !processor.isValid) {
+      return NativeProcessorResult.invalid;
+    }
+    if (processorResult != NativeProcessorResult.ready) {
+      return processorResult;
+    }
+    appliedProcessor = processor;
+    return NativeProcessorResult.ready;
   }
 
   @override
