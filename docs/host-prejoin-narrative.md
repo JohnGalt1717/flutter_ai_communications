@@ -85,7 +85,7 @@ says video is not running. The host (proctoring vs optional camera) decides.
 | Camera off / avatar | `session.setCameraEnabled(false)` |
 | Flip camera | `session.selectCamera(id)` live switch |
 | Camera settings | Camera-off, then Camera preview; host Apply/Cancel |
-| Blur / replace | later plan; v1 processor is none |
+| Blur / replace | `session.setVideoProcessor` / Camera preview; none remains fallback |
 | Speaker / headset | `session.selectRender(...)` live switch |
 | Leave | `session.stop()` |
 | Screen send | in-session only; `docs/host-screen-share-narrative.md` |
@@ -110,6 +110,6 @@ Host copy only:
 - camera denied / restricted / none / no-mode (Session up; status says so)
 - screen denied / none (Session up; status says so; never auto-share on Join)
 - already-active Session (show the other purpose)
-- processor unavailable (later: warn, stay on none)
+- processor unavailable (warn, stay on none)
 
 No library strings.

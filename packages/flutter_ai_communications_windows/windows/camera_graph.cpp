@@ -324,6 +324,10 @@ flutter::EncodableMap CameraGraph::Stats() const {
   return stats;
 }
 
+std::string CameraGraph::SetProcessor(const flutter::EncodableMap& args) {
+  return processor_.Apply(args);
+}
+
 void CameraGraph::SetMuted(bool muted) {
   muted_.store(muted);
   if (muted) {
@@ -604,36 +608,41 @@ void CameraGraph::CopySample(void* raw_sample) {
   }
   const LONG stride = locked_2d ? (pitch == 0 ? width_ * 4 : pitch)
                                 : width_ * 4;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const size_t bytes = static_cast<size_t>(width_) * height_ * 4;
-    if (front_.size() != bytes) {
-      front_.assign(bytes, 0);
-    }
-    bool live = false;
-    for (int y = 0; y < height_; y++) {
-      const int src_y = locked_2d ? y : (height_ - 1 - y);
-      const BYTE* row = src + static_cast<ptrdiff_t>(stride) * src_y;
-      uint8_t* dst = front_.data() + static_cast<size_t>(y) * width_ * 4;
-      for (int x = 0; x < width_; x++) {
-        const BYTE* px = row + x * 4;
-        dst[x * 4 + 0] = px[2];
-        dst[x * 4 + 1] = px[1];
-        dst[x * 4 + 2] = px[0];
-        dst[x * 4 + 3] = 255;
-        if (!live && (px[0] > 8 || px[1] > 8 || px[2] > 8)) {
-          live = true;
-        }
+  const size_t bytes = static_cast<size_t>(width_) * height_ * 4;
+  if (capture_rgba_.size() != bytes) {
+    capture_rgba_.assign(bytes, 0);
+  }
+  bool live = false;
+  for (int y = 0; y < height_; y++) {
+    const int src_y = locked_2d ? y : (height_ - 1 - y);
+    const BYTE* row = src + static_cast<ptrdiff_t>(stride) * src_y;
+    uint8_t* dst = capture_rgba_.data() + static_cast<size_t>(y) * width_ * 4;
+    for (int x = 0; x < width_; x++) {
+      const BYTE* px = row + x * 4;
+      dst[x * 4 + 0] = px[2];
+      dst[x * 4 + 1] = px[1];
+      dst[x * 4 + 2] = px[0];
+      dst[x * 4 + 3] = 255;
+      if (!live && (px[0] > 8 || px[1] > 8 || px[2] > 8)) {
+        live = true;
       }
-    }
-    if (live) {
-      live_frames_.fetch_add(1);
     }
   }
   if (locked_2d) {
     buffer2d->Unlock2D();
   } else {
     buffer->Unlock();
+  }
+  processor_.Process(capture_rgba_.data(), width_, height_);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    front_.swap(capture_rgba_);
+    if (front_.size() != bytes) {
+      front_.assign(bytes, 0);
+    }
+    if (live) {
+      live_frames_.fetch_add(1);
+    }
   }
 }
 

@@ -13,6 +13,8 @@ list(APPEND PLUGIN_SOURCES
   "screen_graph.h"
   "wgc_capture.cpp"
   "wgc_capture.h"
+  "video_processor.cpp"
+  "video_processor.h"
   "flutter_ai_communications_windows_plugin.cpp"
 )
 
@@ -29,9 +31,15 @@ target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 target_link_libraries(${PLUGIN_NAME} PRIVATE mf mfplat mfreadwrite mfuuid ole32
-  gdi32 user32 dwmapi d3d11 dxgi windowsapp version)
+  gdi32 user32 dwmapi d3d11 dxgi windowsapp version windowscodecs)
+
+set(SELFIE_MODEL "${CMAKE_CURRENT_SOURCE_DIR}/models/selfie_segmentation.onnx")
+add_custom_command(TARGET ${PLUGIN_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+  "${SELFIE_MODEL}"
+  "$<TARGET_FILE_DIR:${PLUGIN_NAME}>/selfie_segmentation.onnx")
 
 set(flutter_ai_communications_windows_bundled_libraries
-  ""
+  "${SELFIE_MODEL}"
   PARENT_SCOPE
 )

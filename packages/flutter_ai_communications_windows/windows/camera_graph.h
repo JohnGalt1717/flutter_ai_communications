@@ -12,6 +12,8 @@
 #include <thread>
 #include <vector>
 
+#include "video_processor.h"
+
 struct IMFSourceReader;
 struct IMFMediaSource;
 
@@ -35,6 +37,7 @@ class CameraGraph {
   void Select(const std::string& camera_id);
   void SetEnabled(bool enabled);
   void SetMuted(bool muted);
+  std::string SetProcessor(const flutter::EncodableMap& args);
   flutter::EncodableMap Stats() const;
 
  private:
@@ -67,6 +70,8 @@ class CameraGraph {
   int64_t texture_id_ = -1;
   std::mutex mutex_;
   std::vector<uint8_t> front_;
+  std::vector<uint8_t> capture_rgba_;
+  PersonBackgroundProcessor processor_;
   std::atomic<bool> running_{false};
   std::atomic<bool> muted_{false};
   std::atomic<bool> enabled_{true};
