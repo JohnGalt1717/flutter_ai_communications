@@ -39,7 +39,6 @@ internal class AndroidVideoProcessor {
         when (args["kind"] as? String ?: "none") {
             "none" -> {
                 mode = Mode.None
-                still?.recycle()
                 still = null
                 return "ready"
             }
@@ -68,7 +67,6 @@ internal class AndroidVideoProcessor {
                 if (bitmap == null) {
                     return "invalid"
                 }
-                still?.recycle()
                 still = bitmap
                 mode = Mode.Replace
                 return "ready"

@@ -836,12 +836,16 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           ctx.filter = 'none';
         case ReplaceVideoProcessor():
           ctx.filter = 'none';
-          final still = _stillImage;
-          if (still != null && still.complete && still.naturalWidth > 0) {
-            ctx.drawImage(still, 0, 0, width, height);
+          if (_lastMask == null) {
+            ctx.drawImage(video, 0, 0, width, height);
           } else {
-            ctx.fillStyle = '#1a1a28'.toJS;
-            ctx.fillRect(0, 0, width, height);
+            final still = _stillImage;
+            if (still != null && still.complete && still.naturalWidth > 0) {
+              ctx.drawImage(still, 0, 0, width, height);
+            } else {
+              ctx.fillStyle = '#1a1a28'.toJS;
+              ctx.fillRect(0, 0, width, height);
+            }
           }
         case NoneVideoProcessor():
           break;
