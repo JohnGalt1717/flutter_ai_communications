@@ -77,6 +77,7 @@ void main() {
     await waitForCameraStream(platform);
 
     if (cameras.length > 1) {
+      final originalId = lobby.selectedCameraId;
       final other = cameras.firstWhere(
         (camera) => camera.id != lobby.selectedCameraId,
         orElse: () => cameras.last,
@@ -84,6 +85,14 @@ void main() {
       await lobby.selectCamera(other.id);
       expect(lobby.selectedCameraId, other.id);
       expect(identical(lobby.capture, lobbyCapture), isTrue);
+      if (!await cameraStreamIsLive(platform)) {
+        nativeOrchestrationLog.info(
+          'NATIVE_CAMERA_SWITCH_REVERT from=${other.id} to=$originalId',
+        );
+        await lobby.selectCamera(originalId!);
+        expect(lobby.selectedCameraId, originalId);
+        await waitForCameraStream(platform);
+      }
     }
 
     final settings = lobby.settings;
@@ -143,6 +152,7 @@ void main() {
       'enableVideoLater': true,
       'captureIdentityHeld': true,
       'settingsCameraId': settings.cameraId,
+      'nativeFailuresSkipped': false,
     });
   });
 }
