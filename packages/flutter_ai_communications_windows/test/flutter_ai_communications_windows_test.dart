@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
@@ -407,6 +408,21 @@ void main() {
     expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
   });
 
+  test('endpoint catalog updates from deviceChanges, not a timer', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsWindows(backend: backend);
+    addTearDown(adapter.stopNative);
+    final seen = <List<Endpoint>>[];
+    final sub = adapter.endpointCatalog.listen(seen.add);
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final before = seen.length;
+    expect(before, greaterThan(0));
+    backend.deviceEvents.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.length, greaterThan(before));
+  });
+
   test(
     'startNative keeps catalog available without a prior subscriber',
     () async {
@@ -467,7 +483,9 @@ final class _FixedBluetoothSource implements BluetoothIdentitySource {
   Future<void> prepare() async {}
 }
 
-final class _BluetoothBackend implements WasapiBackend {
+final class _BluetoothBackend
+    with DeviceWatchSupport
+    implements WasapiBackend {
   final _RecordingBackend _inner = _RecordingBackend();
 
   @override
@@ -537,10 +555,16 @@ final class _BluetoothBackend implements WasapiBackend {
   void dispose() => _inner.dispose();
 }
 
-final class _RecordingBackend implements WasapiBackend {
+final class _RecordingBackend
+    with DeviceWatchSupport
+    implements WasapiBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var failBind = false;
   var probeCalls = 0;
+  final deviceEvents = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get deviceChanges => deviceEvents.stream;
 
   @override
   List<Endpoint> enumerate() => const [

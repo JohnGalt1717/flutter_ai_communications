@@ -197,3 +197,50 @@ final class EndpointPairer {
       )
       .firstOrNull;
 }
+
+/// Catalog grouped for an Endpoint preference editor.
+final class EndpointCatalogGroups {
+  /// Creates catalog groups.
+  const EndpointCatalogGroups({
+    required this.completePairs,
+    required this.unpairedRenders,
+    required this.unpairedCaptures,
+  });
+
+  /// Hardware Pairs that have both sides in the catalog.
+  final List<Pair> completePairs;
+
+  /// Render Endpoints with no capture mate.
+  final List<Endpoint> unpairedRenders;
+
+  /// Capture Endpoints with no render mate. Editor rows never list these.
+  final List<Endpoint> unpairedCaptures;
+
+  /// Groups [catalog] by hardware Pair completeness.
+  factory EndpointCatalogGroups.of(List<Endpoint> catalog) {
+    const pairer = EndpointPairer();
+    final seen = <String>{};
+    final complete = <Pair>[];
+    final unpairedRenders = <Endpoint>[];
+    final unpairedCaptures = <Endpoint>[];
+    for (final endpoint in catalog) {
+      if (seen.contains(endpoint.pairId)) {
+        continue;
+      }
+      seen.add(endpoint.pairId);
+      final pair = pairer.pairFor(endpoint, catalog);
+      if (pair != null && pair.capture != null && pair.render != null) {
+        complete.add(pair);
+      } else if (endpoint.isCapture) {
+        unpairedCaptures.add(endpoint);
+      } else {
+        unpairedRenders.add(endpoint);
+      }
+    }
+    return EndpointCatalogGroups(
+      completePairs: complete,
+      unpairedRenders: unpairedRenders,
+      unpairedCaptures: unpairedCaptures,
+    );
+  }
+}

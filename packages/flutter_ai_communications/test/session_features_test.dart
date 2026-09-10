@@ -14,7 +14,10 @@ void main() {
     platform = FakeCommunicationsPlatform();
     coverage = DefaultCoverageSource();
     FlutterAiCommunicationsPlatform.instance = platform;
-    manager = CommunicationsManager(platform: platform, coverageSource: coverage);
+    manager = CommunicationsManager(
+      platform: platform,
+      coverageSource: coverage,
+    );
   });
 
   tearDown(() async {
@@ -55,14 +58,14 @@ void main() {
       () async {
         final session = await ready();
         await session.select(captureId: 'airpods-in', renderId: 'speaker-out');
-        expect(session.pairing.renderOverride, isTrue);
+        expect(session.pairing.captureOverride, isTrue);
         platform.osRouteController.add(
           const OsRouteChange(captureId: 'airpods-in', renderId: 'airpods-out'),
         );
         await _microtask();
         expect(session.diagnostics.desired.renderId, 'speaker-out');
         expect(session.diagnostics.observed.renderId, 'airpods-out');
-        expect(session.pairing.renderOverride, isTrue);
+        expect(session.pairing.captureOverride, isTrue);
       },
     );
   });

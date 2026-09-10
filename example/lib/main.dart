@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
+import 'package:flutter_ai_communications_example/preference_editor.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
@@ -118,6 +119,8 @@ final class _SessionPageState extends State<SessionPage> {
   SessionDiagnostics? _diagnostics;
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
+  StreamSubscription<List<Endpoint>>? _catalogSub;
+  EndpointPreference _draft = const EndpointPreference();
 
   CommunicationsManager get _manager => widget.manager;
 
@@ -132,12 +135,18 @@ final class _SessionPageState extends State<SessionPage> {
         _pipeline.removeAt(0);
       }
     });
+    _catalogSub = _manager.endpointCatalog.listen((endpoints) {
+      if (mounted) {
+        setState(() => _endpoints = endpoints);
+      }
+    });
     _loadEndpoints();
   }
 
   @override
   void dispose() {
     unawaited(_logSub?.cancel());
+    unawaited(_catalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
     _webrtc?.detach();
     unawaited(_session?.stop());
@@ -164,6 +173,34 @@ final class _SessionPageState extends State<SessionPage> {
         _cameras = cameras;
         _screenSources = screens;
       });
+    }
+  }
+
+  Future<void> _applyPreference() async {
+    await _manager.bindPreference(_draft);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (_manager.session == null) {
+        _session = null;
+        _phase = _HarnessPhase.idle;
+        _status = 'preference-bound';
+      }
+    });
+  }
+
+  Future<void> _lockLive() async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+    await session.select(
+      captureId: session.selectedCaptureId,
+      renderId: session.selectedRenderId,
+    );
+    if (mounted) {
+      setState(() => _diagnostics = session.diagnostics);
     }
   }
 
@@ -681,6 +718,15 @@ final class _SessionPageState extends State<SessionPage> {
           ],
         ),
       ],
+      PreferenceEditor(
+        catalog: _endpoints,
+        draft: _draft,
+        onChanged: (preference) => setState(() => _draft = preference),
+        onApply: _applyPreference,
+        onReset: () => setState(() => _draft = const EndpointPreference()),
+        onLock: session == null ? null : _lockLive,
+      ),
+      const SizedBox(height: 16),
       Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 8),
       for (final endpoint in _endpoints)
@@ -919,6 +965,14 @@ final class _SessionPageState extends State<SessionPage> {
       Text(
         '${diagnostics.preferenceControlled}',
         key: const Key('preference-controlled'),
+      ),
+      Text(
+        '${diagnostics.desired.captureOverride}',
+        key: const Key('desired-capture-override'),
+      ),
+      Text(
+        '${diagnostics.desired.renderOverride}',
+        key: const Key('desired-render-override'),
       ),
       Text(
         '${diagnostics.captureFrameCount}',

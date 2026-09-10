@@ -168,7 +168,9 @@ void main() {
   });
 }
 
-final class _RecordingBackend implements AudioBackend {
+final class _RecordingBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var failBind = false;
 

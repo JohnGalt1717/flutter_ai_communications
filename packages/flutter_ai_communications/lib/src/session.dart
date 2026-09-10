@@ -154,7 +154,8 @@ final class Session {
   Timer? _convergenceTimer;
   DateTime? _convergenceStartedAt;
   var _convergenceAttempts = 0;
-  final Set<String> _unusablePairIds = <String>{};
+  final Set<UnusableCombination> _unusableCombinations =
+      <UnusableCombination>{};
   IsolationEvent _lastIsolation = const IsolationEvent(IsolationState.unknown);
   PairingSnapshot _desired;
   PairingSnapshot _applied;
@@ -838,6 +839,11 @@ final class Session {
   Future<void> resume() => _resume();
 
   /// Ephemeral Endpoint pick. Does not change [preference].
+  ///
+  /// A render pick auto-completes capture from that row's list (or the
+  /// hardware Pair, or a capture-only walk) and clears a prior capture
+  /// Explicit so the list can re-walk. A capture pick alone keeps the
+  /// current render.
   Future<void> select({String? captureId, String? renderId}) {
     return _enqueue(() async {
       if (_stopped) {
@@ -845,9 +851,13 @@ final class Session {
       }
       if (captureId != null) {
         _explicitCaptureId = captureId;
+        _explicitRenderId ??= _desired.renderId;
       }
       if (renderId != null) {
         _explicitRenderId = renderId;
+        if (captureId == null) {
+          _explicitCaptureId = null;
+        }
       }
       _preferenceControlled = false;
       await _applyResolution(
@@ -858,7 +868,7 @@ final class Session {
           requireRender: direction.hasPlayback,
           explicitCaptureId: _explicitCaptureId,
           explicitRenderId: _explicitRenderId,
-          unusablePairIds: _unusablePairIds,
+          unusableCombinations: _unusableCombinations,
         ),
         cause: 'explicit',
       );
@@ -1139,15 +1149,16 @@ final class Session {
   void _onCatalog(List<Endpoint> catalog) {
     _catalog = List<Endpoint>.of(catalog);
     if (!_preferenceControlled) {
-      final captureGone =
-          _explicitCaptureId != null && _byId(_explicitCaptureId) == null;
       final renderGone =
           _explicitRenderId != null && _byId(_explicitRenderId) == null;
-      if (captureGone) {
-        _explicitCaptureId = null;
-      }
+      final captureGone =
+          _explicitCaptureId != null && _byId(_explicitCaptureId) == null;
       if (renderGone) {
         _explicitRenderId = null;
+        _explicitCaptureId = null;
+        _preferenceControlled = true;
+      } else if (captureGone) {
+        _explicitCaptureId = null;
       }
       if (_explicitCaptureId == null && _explicitRenderId == null) {
         _preferenceControlled = true;
@@ -1163,7 +1174,7 @@ final class Session {
             requireRender: direction.hasPlayback,
             explicitCaptureId: _explicitCaptureId,
             explicitRenderId: _explicitRenderId,
-            unusablePairIds: _unusablePairIds,
+            unusableCombinations: _unusableCombinations,
           ),
           cause: _preferenceControlled ? 'preference' : 'catalog',
         );
@@ -1575,32 +1586,40 @@ final class Session {
   Future<void> _failConvergence() async {
     _convergenceTimer?.cancel();
     _convergenceTimer = null;
-    final pairId = _pairIdFor(_desired);
-    if (_preferenceControlled && pairId != null) {
-      _unusablePairIds.add(pairId);
+    final combination = UnusableCombination(
+      renderId: _desired.renderId,
+      captureId: _desired.captureId,
+    );
+    if (_desired.captureId != null || _desired.renderId != null) {
+      _unusableCombinations.add(combination);
       _log(PipelineLog.desired, {
         ..._routeFields(_desired, cause: 'unusable'),
-        'pairId': pairId,
+        'renderId': combination.renderId,
+        'captureId': combination.captureId,
       });
-      await _applyResolution(
-        _resolver.resolve(
-          catalog: _catalog,
-          preference: _endpoints,
-          requireCapture: direction.hasCapture,
-          requireRender: direction.hasPlayback,
-          explicitCaptureId: _explicitCaptureId,
-          explicitRenderId: _explicitRenderId,
-          unusablePairIds: _unusablePairIds,
-        ),
-        cause: 'preference',
+      final next = _resolver.resolve(
+        catalog: _catalog,
+        preference: _endpoints,
+        requireCapture: direction.hasCapture,
+        requireRender: direction.hasPlayback,
+        explicitCaptureId: _explicitCaptureId,
+        explicitRenderId: _explicitRenderId,
+        unusableCombinations: _unusableCombinations,
       );
-      return;
+      final captureOk = !direction.hasCapture || next.desired.captureId != null;
+      final renderOk = !direction.hasPlayback || next.desired.renderId != null;
+      if (!next.exhausted &&
+          captureOk &&
+          renderOk &&
+          next.desired != _desired) {
+        await _applyResolution(
+          next,
+          cause: _preferenceControlled ? 'preference' : 'explicit',
+        );
+        return;
+      }
     }
     _publishStatus(_computeStatus());
-  }
-
-  String? _pairIdFor(PairingSnapshot pair) {
-    return _byId(pair.captureId)?.pairId ?? _byId(pair.renderId)?.pairId;
   }
 
   Future<void> _stopNativeBounded() {

@@ -55,6 +55,13 @@ void main() {
     expect(const Key('desired-capture'), isNot(const Key('observed-capture')));
     expect(const Key('generation'), isNot(const Key('status')));
     expect(const Key('lobby'), isNot(const Key('meeting')));
+    expect(const Key('preference-editor'), isNot(enter));
+    expect(const Key('pref-apply'), isNot(const Key('pref-lock')));
+    expect(const Key('pref-reset'), isNot(enter));
+    expect(
+      const Key('desired-capture-override'),
+      isNot(const Key('preference-controlled')),
+    );
   });
 
   testWidgets(
@@ -270,75 +277,80 @@ void main() {
     await tester.pump(Duration.zero);
   });
 
-  testWidgets(
-    'mute and speaker-handset update Desired Applied Observed keys',
-    (tester) async {
-      tester.view.physicalSize = const Size(800, 4000);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(ExampleApp(manager: manager));
-      await tester.pump();
-      await tester.pump();
-      await tester.tap(find.byKey(const Key('lobby-enter')));
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
+  testWidgets('mute and speaker-handset update Desired Applied Observed keys', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
 
-      expect(manager.session?.isMuted, isFalse);
-      await tester.tap(find.byKey(const Key('mute')));
-      await tester.pump();
-      expect(manager.session?.isMuted, isTrue);
-      expect(find.text('Unmute'), findsOneWidget);
+    expect(manager.session?.isMuted, isFalse);
+    await tester.tap(find.byKey(const Key('mute')));
+    await tester.pump();
+    expect(manager.session?.isMuted, isTrue);
+    expect(find.text('Unmute'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('endpoint-speaker-in')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(manager.session?.selectedCaptureId, 'speaker-in');
-      expect(manager.session?.diagnostics.desired.captureId, 'speaker-in');
-      expect(manager.session?.diagnostics.applied.captureId, 'speaker-in');
-      expect(manager.session?.diagnostics.observed.captureId, 'speaker-in');
-      expect(manager.session?.diagnostics.preferenceControlled, isFalse);
-      expect(
-        tester.widget<ListTile>(find.byKey(const Key('endpoint-speaker-in'))).selected,
-        isTrue,
-      );
+    await tester.tap(find.byKey(const Key('endpoint-handset-out')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.selectedRenderId, 'handset-out');
+    expect(manager.session?.selectedCaptureId, 'handset-in');
+    expect(manager.session?.diagnostics.desired.renderId, 'handset-out');
+    expect(manager.session?.diagnostics.applied.renderId, 'handset-out');
+    expect(manager.session?.diagnostics.observed.renderId, 'handset-out');
+    expect(manager.session?.diagnostics.preferenceControlled, isFalse);
+    expect(
+      tester
+          .widget<ListTile>(find.byKey(const Key('endpoint-handset-out')))
+          .selected,
+      isTrue,
+    );
 
-      await tester.tap(find.byKey(const Key('endpoint-handset-out')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(manager.session?.selectedRenderId, 'handset-out');
-      expect(manager.session?.diagnostics.desired.renderId, 'handset-out');
-      expect(manager.session?.diagnostics.applied.renderId, 'handset-out');
-      expect(manager.session?.diagnostics.observed.renderId, 'handset-out');
-      expect(manager.session?.isMuted, isTrue);
-      expect(
-        tester.widget<ListTile>(find.byKey(const Key('endpoint-handset-out'))).selected,
-        isTrue,
-      );
+    await tester.tap(find.byKey(const Key('endpoint-speaker-in')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.selectedCaptureId, 'speaker-in');
+    expect(manager.session?.selectedRenderId, 'handset-out');
+    expect(manager.session?.diagnostics.desired.captureId, 'speaker-in');
+    expect(manager.session?.diagnostics.applied.captureId, 'speaker-in');
+    expect(manager.session?.diagnostics.observed.captureId, 'speaker-in');
+    expect(manager.session?.isMuted, isTrue);
+    expect(
+      tester
+          .widget<ListTile>(find.byKey(const Key('endpoint-speaker-in')))
+          .selected,
+      isTrue,
+    );
 
-      await tester.tap(find.byKey(const Key('lobby-join')));
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
-      expect(find.byKey(const Key('meeting')), findsOneWidget);
-      expect(manager.session?.isMuted, isTrue);
-      expect(manager.session?.diagnostics.desired.captureId, 'speaker-in');
-      expect(manager.session?.diagnostics.desired.renderId, 'handset-out');
+    await tester.tap(find.byKey(const Key('lobby-join')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const Key('meeting')), findsOneWidget);
+    expect(manager.session?.isMuted, isTrue);
+    expect(manager.session?.diagnostics.desired.captureId, 'speaker-in');
+    expect(manager.session?.diagnostics.desired.renderId, 'handset-out');
 
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const Key('meeting-bar')),
-          matching: find.byKey(const Key('mute')),
-        ),
-      );
-      await tester.pump();
-      expect(manager.session?.isMuted, isFalse);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('meeting-bar')),
+        matching: find.byKey(const Key('mute')),
+      ),
+    );
+    await tester.pump();
+    expect(manager.session?.isMuted, isFalse);
 
-      await manager.session?.stop();
-      await tester.pump(Duration.zero);
-    },
-  );
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
 
   testWidgets('Enter lobby maps microphone denial to host copy', (
     tester,

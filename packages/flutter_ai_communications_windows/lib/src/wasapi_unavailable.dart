@@ -6,7 +6,9 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'wasapi_backend.dart';
 
 /// Used when WASAPI cannot be loaded (tests on non-Windows hosts).
-final class UnavailableWasapiBackend implements WasapiBackend {
+final class UnavailableWasapiBackend
+    with DeviceWatchSupport
+    implements WasapiBackend {
   /// Creates an unavailable backend.
   const UnavailableWasapiBackend();
 

@@ -61,6 +61,11 @@ void main() {
         isNotNull,
         reason: 'AirPods must stay connected so the OS can try to force them',
       );
+      expect(
+        airpods?.render,
+        isNotNull,
+        reason: 'AirPods render Endpoint must be present',
+      );
 
       nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
       nativeOrchestrationLog.info(
@@ -75,9 +80,14 @@ void main() {
           soundFloor: 0,
           endpoints: EndpointPreference(
             entries: [
-              EndpointPreferenceEntry(id: brio.id),
-              EndpointPreferenceEntry(id: usbRender.id),
-              EndpointPreferenceEntry(id: airpods.capture!.id),
+              EndpointPreferenceEntry(
+                renderId: usbRender.id,
+                captures: [EndpointPreferenceCapture(id: brio.id)],
+              ),
+              EndpointPreferenceEntry(
+                renderId: airpods.render!.id,
+                captures: [EndpointPreferenceCapture(id: airpods.capture!.id)],
+              ),
             ],
           ),
         ),
@@ -123,6 +133,93 @@ void main() {
           'airpods': airpods.capture!.id,
         },
         'session': snapshot(session, caseName: 'brio-usb-over-airpods'),
+        'nativeFailuresSkipped': false,
+      });
+      await session.stop();
+      expect(manager.session, isNull);
+    },
+  );
+
+  testWidgets(
+    'native Orchestration: explicit USB render auto-completes Brio from the row',
+    (tester) async {
+      final platform = FlutterAiCommunicationsPlatform.instance;
+      expect(
+        platform.runtimeType.toString(),
+        isNot(contains('Loopback')),
+        reason: 'native suite must not wrap the registered adapter',
+      );
+
+      final manager = CommunicationsManager();
+      addTearDown(() async {
+        await manager.session?.stop();
+      });
+
+      var catalog = await manager.endpoints();
+      if (catalog.isEmpty) {
+        final primed = await requireReady(manager, purpose: 'desktop-catalog');
+        catalog = await manager.endpoints();
+        await primed.stop();
+      }
+
+      final brio = catalog
+          .where(
+            (endpoint) =>
+                endpoint.isCapture &&
+                endpoint.name.toLowerCase().contains('brio'),
+          )
+          .firstOrNull;
+      final usbRender = catalog
+          .where(
+            (endpoint) =>
+                !endpoint.isCapture &&
+                endpoint.name.toLowerCase().contains('usb'),
+          )
+          .firstOrNull;
+      final airpods = completePair(catalog, RouteClass.bluetooth);
+      expect(brio, isNotNull);
+      expect(usbRender, isNotNull);
+      expect(airpods?.capture, isNotNull);
+      expect(airpods?.render, isNotNull);
+
+      final session = await requireReady(
+        manager,
+        purpose: 'desktop-explicit-usb-completes-brio',
+        preference: SessionPreference(
+          soundFloor: 0,
+          endpoints: EndpointPreference(
+            entries: [
+              EndpointPreferenceEntry(
+                renderId: airpods!.render!.id,
+                captures: [EndpointPreferenceCapture(id: airpods.capture!.id)],
+              ),
+              EndpointPreferenceEntry(
+                renderId: usbRender!.id,
+                captures: [
+                  EndpointPreferenceCapture(id: brio!.id),
+                  EndpointPreferenceCapture(id: airpods.capture!.id),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      expect(session.diagnostics.desired.renderId, airpods.render!.id);
+      await session.select(renderId: usbRender.id);
+      expect(session.diagnostics.preferenceControlled, isFalse);
+      expect(session.diagnostics.desired.renderId, usbRender.id);
+      expect(session.diagnostics.desired.captureId, brio.id);
+      expect(session.preference.endpoints.entries, isNotEmpty);
+      await assertObserved(session);
+      await writeReceipt({
+        'commit': hostCommit(),
+        'platform': runningOnWeb ? 'web' : defaultTargetPlatform.name,
+        'os': hostOs(),
+        'osVersion': hostOsVersion(),
+        'hardware': hostHardware(),
+        'permission': 'granted',
+        'preference': {'explicitRender': usbRender.id, 'autoCapture': brio.id},
+        'session': snapshot(session, caseName: 'explicit-usb-completes-brio'),
         'nativeFailuresSkipped': false,
       });
       await session.stop();

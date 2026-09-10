@@ -35,6 +35,10 @@ final class PulseAudioBackend implements AudioBackend {
   var _captureGeneration = 0;
   String? _captureId;
   String? _renderId;
+  Isolate? _deviceWatchIsolate;
+  ReceivePort? _deviceWatchPort;
+  final StreamController<void> _deviceChanges =
+      StreamController<void>.broadcast();
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -132,9 +136,43 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   @override
+  Stream<void> get deviceChanges => _deviceChanges.stream;
+
+  @override
+  void startDeviceWatch() {
+    if (_deviceWatchIsolate != null) {
+      return;
+    }
+    final port = ReceivePort();
+    _deviceWatchPort = port;
+    port.listen((_) {
+      if (!_deviceChanges.isClosed) {
+        _deviceChanges.add(null);
+      }
+    });
+    Isolate.spawn(_deviceWatchMain, port.sendPort).then((isolate) {
+      if (_deviceWatchPort == null) {
+        isolate.kill(priority: Isolate.immediate);
+        return;
+      }
+      _deviceWatchIsolate = isolate;
+    });
+  }
+
+  @override
+  void stopDeviceWatch() {
+    _deviceWatchIsolate?.kill(priority: Isolate.immediate);
+    _deviceWatchIsolate = null;
+    _deviceWatchPort?.close();
+    _deviceWatchPort = null;
+  }
+
+  @override
   void dispose() {
+    stopDeviceWatch();
     stop();
     unawaited(_captureOut.close());
+    unawaited(_deviceChanges.close());
   }
 
   String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
@@ -437,5 +475,72 @@ void _captureMain(_CaptureStart start) {
     calloc.free(buffer);
     calloc.free(error);
     control.close();
+  }
+}
+
+const _pulseSubscribeMask = 0x0001 | 0x0002 | 0x0080 | 0x0200;
+
+void _deviceWatchMain(SendPort send) {
+  final async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
+  final loop = async.mainloopNew();
+  if (loop == nullptr) {
+    return;
+  }
+  final api = async.mainloopGetApi(loop);
+  final name = 'flutter_ai_communications_watch'.toNativeUtf8();
+  final context = async.contextNew(api, name.cast());
+  malloc.free(name);
+  if (context == nullptr) {
+    async.mainloopFree(loop);
+    return;
+  }
+  if (async.contextConnect(context, nullptr, 0, nullptr) < 0) {
+    async.contextUnref(context);
+    async.mainloopFree(loop);
+    return;
+  }
+  var ready = false;
+  for (var i = 0; i < 2000; i++) {
+    final state = async.contextGetState(context);
+    if (state == paContextReady) {
+      ready = true;
+      break;
+    }
+    if (state == paContextFailed || state == paContextTerminated) {
+      break;
+    }
+    async.mainloopIterate(loop, 1, nullptr);
+  }
+  if (!ready) {
+    async.contextDisconnect(context);
+    async.contextUnref(context);
+    async.mainloopFree(loop);
+    return;
+  }
+  final callable =
+      NativeCallable<
+        Void Function(Pointer<PaContext>, Uint32, Uint32, Pointer<Void>)
+      >.listener((context, type, index, userdata) {
+        send.send(null);
+      });
+  async.contextSetSubscribeCallback(context, callable.nativeFunction, nullptr);
+  final op = async.contextSubscribe(
+    context,
+    _pulseSubscribeMask,
+    nullptr,
+    nullptr,
+  );
+  if (op != nullptr) {
+    async.operationUnref(op);
+  }
+  try {
+    while (true) {
+      async.mainloopIterate(loop, 1, nullptr);
+    }
+  } finally {
+    callable.close();
+    async.contextDisconnect(context);
+    async.contextUnref(context);
+    async.mainloopFree(loop);
   }
 }

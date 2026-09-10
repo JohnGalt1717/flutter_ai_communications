@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
@@ -303,6 +304,21 @@ void main() {
     expect(seen.first.map((endpoint) => endpoint.id), contains('usb-in'));
   });
 
+  test('endpoint catalog updates from deviceChanges, not a timer', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    final seen = <List<Endpoint>>[];
+    final sub = adapter.endpointCatalog.listen(seen.add);
+    addTearDown(sub.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final before = seen.length;
+    expect(before, greaterThan(0));
+    backend.deviceEvents.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.length, greaterThan(before));
+  });
+
   test(
     'startNative keeps catalog available without a prior subscriber',
     () async {
@@ -323,9 +339,15 @@ void main() {
   );
 }
 
-final class _RecordingBackend implements AudioBackend {
+final class _RecordingBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var started = false;
+  final deviceEvents = StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get deviceChanges => deviceEvents.stream;
 
   @override
   List<Endpoint> enumerate() => const [
@@ -409,7 +431,9 @@ final class _RecordingBackend implements AudioBackend {
   void dispose() {}
 }
 
-final class _FlakyCatalogBackend implements AudioBackend {
+final class _FlakyCatalogBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   final _RecordingBackend _inner = _RecordingBackend();
   var enumerateCalls = 0;
 
@@ -478,7 +502,9 @@ final class _FixedBluetoothSource implements BluetoothIdentitySource {
   Future<void> prepare() async {}
 }
 
-final class _BluetoothBackend implements AudioBackend {
+final class _BluetoothBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   final _RecordingBackend _inner = _RecordingBackend();
 
   @override

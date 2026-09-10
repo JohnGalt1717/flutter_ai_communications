@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import FlutterMacOS
 
 /// One duplex AVAudioEngine for capture and playback.
@@ -26,6 +27,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
   private var captureTapInstalled = false
+  private var watchingDevices = false
   private let camera = MacCameraGraph()
   private let screen = MacScreenGraph()
 
@@ -164,6 +166,61 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   fileprivate func attachEvents(_ sink: FlutterEventSink?) {
     eventSink = sink
+    if sink != nil {
+      startDeviceWatch()
+    } else {
+      stopDeviceWatch()
+    }
+  }
+
+  fileprivate func emitCatalogFromWatch() {
+    emitCatalog()
+  }
+
+  private func startDeviceWatch() {
+    guard !watchingDevices else { return }
+    watchingDevices = true
+    let client = Unmanaged.passUnretained(self).toOpaque()
+    listen(kAudioHardwarePropertyDevices, client)
+    listen(kAudioHardwarePropertyDefaultInputDevice, client)
+    listen(kAudioHardwarePropertyDefaultOutputDevice, client)
+  }
+
+  private func stopDeviceWatch() {
+    guard watchingDevices else { return }
+    watchingDevices = false
+    let client = Unmanaged.passUnretained(self).toOpaque()
+    unlisten(kAudioHardwarePropertyDevices, client)
+    unlisten(kAudioHardwarePropertyDefaultInputDevice, client)
+    unlisten(kAudioHardwarePropertyDefaultOutputDevice, client)
+  }
+
+  private func listen(_ selector: AudioObjectPropertySelector, _ client: UnsafeMutableRawPointer) {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    AudioObjectAddPropertyListener(
+      AudioObjectID(kAudioObjectSystemObject),
+      &address,
+      macosAudioDeviceListener,
+      client
+    )
+  }
+
+  private func unlisten(_ selector: AudioObjectPropertySelector, _ client: UnsafeMutableRawPointer) {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    AudioObjectRemovePropertyListener(
+      AudioObjectID(kAudioObjectSystemObject),
+      &address,
+      macosAudioDeviceListener,
+      client
+    )
   }
 
   private func requestPermission(result: @escaping FlutterResult) {
@@ -511,6 +568,20 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       ]
     )
   }
+}
+
+private let macosAudioDeviceListener: AudioObjectPropertyListenerProc = {
+  _,
+  _,
+  _,
+  client in
+  guard let client else { return noErr }
+  let plugin = Unmanaged<FlutterAiCommunicationsPlugin>.fromOpaque(client)
+    .takeUnretainedValue()
+  DispatchQueue.main.async {
+    plugin.emitCatalogFromWatch()
+  }
+  return noErr
 }
 
 private final class CaptureHandler: NSObject, FlutterStreamHandler {

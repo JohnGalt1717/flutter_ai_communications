@@ -10,6 +10,7 @@ import 'package:win32/win32.dart';
 
 import 'route_class.dart';
 import 'wasapi_backend.dart';
+import 'wasapi_notifications.dart';
 
 /// Shared-mode WASAPI PCM16 LE conversion flags.
 const _autoConvertPcm = 0x80000000;
@@ -69,6 +70,9 @@ final class WasapiWindowsBackend implements WasapiBackend {
   String? _boundCaptureId;
   String? _boundRenderId;
   NativeFormatReport _nativeFormats = const NativeFormatReport();
+  final StreamController<void> _deviceChanges =
+      StreamController<void>.broadcast();
+  WasapiDeviceWatch? _deviceWatch;
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -269,12 +273,38 @@ final class WasapiWindowsBackend implements WasapiBackend {
   }
 
   @override
+  Stream<void> get deviceChanges => _deviceChanges.stream;
+
+  @override
+  void startDeviceWatch() {
+    final enumerator = _enumerator;
+    if (enumerator == null || _deviceWatch != null) {
+      return;
+    }
+    final watch = WasapiDeviceWatch(enumerator, () {
+      if (!_deviceChanges.isClosed) {
+        _deviceChanges.add(null);
+      }
+    });
+    watch.start();
+    _deviceWatch = watch;
+  }
+
+  @override
+  void stopDeviceWatch() {
+    _deviceWatch?.stop();
+    _deviceWatch = null;
+  }
+
+  @override
   void dispose() {
+    stopDeviceWatch();
     stop();
     stopLoopback();
     _lifetime.releaseAll();
     unawaited(_captureOut.close());
     unawaited(_loopbackOut.close());
+    unawaited(_deviceChanges.close());
     if (_comInitialized) {
       CoUninitialize();
       _comInitialized = false;
@@ -589,10 +619,7 @@ final class WasapiWindowsBackend implements WasapiBackend {
       }
     }
     try {
-      final fallback = enumerator.getDefaultAudioEndpoint(
-        flow,
-        role,
-      );
+      final fallback = enumerator.getDefaultAudioEndpoint(flow, role);
       if (fallback == null) {
         return (device: null, id: null);
       }

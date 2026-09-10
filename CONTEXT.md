@@ -101,7 +101,7 @@ A capture Endpoint, render Endpoint, Camera Endpoint, Screen source, or sound fl
 _Avoid_: preference (that is host-owned)
 
 **Endpoint preference**:
-The host-persisted ordered list of enabled Endpoints that the Communications manager continuously resolves from most to least preferred. A host list fills capture and render independently, so a desktop webcam and a USB render Endpoint may outrank AirPods. An empty list uses platform-default complete Pairs. Persistence and editing belong to the host; live resolution and promotion belong to the Communications manager.
+The host-persisted ordered list of render Endpoints, each with an ordered list of capture Endpoints. Disabled rows and disabled capture slots stay in place and are skipped. The Communications manager walks render rows from most to least preferred; a row whose render Endpoint is missing or that has no listed capture present is skipped. For the first eligible row it walks that row's capture list until one is present. The same capture Endpoint may appear on many rows. A capture-only Session walks those capture lists in the same row order and does not require the render Endpoint. A playback-only Session walks render rows and ignores capture lists. An empty list uses platform-default complete Pairs (one row per hardware Pair, capture list the hardware mate). Persistence and editing belong to the host; live resolution and promotion belong to the Communications manager.
 _Avoid_: device order, default device
 
 **Camera preference**:
@@ -109,8 +109,8 @@ The host-persisted ordered list of enabled Camera Endpoints that the Communicati
 _Avoid_: device order, default camera, AV preference
 
 **Explicit selection**:
-An Endpoint, Camera Endpoint, or Screen source selected for the current Session that temporarily suspends preference resolution for that side while it remains available. It expires when the device disappears or the Session ends.
-_Avoid_: sticky preference, saved selection
+A capture Endpoint, render Endpoint, Camera Endpoint, or Screen source selected for the current Session and not written to preference. Selecting a render Endpoint suspends cross-row Endpoint preference promotion while that render remains available. If that render has a preference row, capture is resolved from that row's list only and is missing until a listed capture is available. If it has no row, capture is resolved from its hardware Pair; if none, by walking capture lists as a capture-only Session does. Selecting a capture Endpoint alone keeps the current render. The user may select any capture Endpoint. A disappearing capture does not expire an Explicit render; capture is resolved again for that render. A host may apply Explicit selection to both current ids without a new pick. The Explicit selection expires when the render Endpoint disappears or the Session ends.
+_Avoid_: sticky preference, saved selection, lock
 
 **Desired Pair**:
 The Pair selected by an Explicit selection or Endpoint preference and treated as authoritative by the Communications manager.
