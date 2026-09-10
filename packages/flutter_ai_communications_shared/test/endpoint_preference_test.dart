@@ -510,6 +510,21 @@ void main() {
     },
   );
 
+  test('bound playback-only list does not guess an unlisted render', () {
+    final preference = EndpointPreference(
+      entries: [
+        row('usb-out', ['brio-in']),
+      ],
+    );
+    final resolved = resolver.resolve(
+      catalog: catalog,
+      preference: preference,
+      requireCapture: false,
+    );
+    expect(resolved.exhausted, isTrue);
+    expect(resolved.desired.renderId, isNull);
+  });
+
   test('playback-only walks render rows and ignores capture lists', () {
     final preference = EndpointPreference(
       entries: [

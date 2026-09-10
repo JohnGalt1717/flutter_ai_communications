@@ -159,7 +159,7 @@ void main() {
     );
     expect(find.byKey(const Key('preference-editor')), findsOneWidget);
     expect(find.byKey(const Key('pref-apply')), findsOneWidget);
-    expect(find.byKey(const Key('pref-lock')), findsOneWidget);
+    expect(find.byKey(const Key('pref-use-current')), findsOneWidget);
     expect(find.byKey(const Key('pref-reset')), findsOneWidget);
   });
 }

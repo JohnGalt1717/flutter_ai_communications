@@ -14,7 +14,7 @@ final class PreferenceEditor extends StatelessWidget {
     required this.onChanged,
     required this.onApply,
     required this.onReset,
-    this.onLock,
+    this.onUseCurrent,
   });
 
   /// Live Endpoint catalog.
@@ -32,8 +32,8 @@ final class PreferenceEditor extends StatelessWidget {
   /// Clear the draft back to empty (platform default).
   final VoidCallback onReset;
 
-  /// Snapshot the live Desired Pair as Explicit selection.
-  final VoidCallback? onLock;
+  /// Apply Explicit selection to the live Desired Pair.
+  final VoidCallback? onUseCurrent;
 
   @override
   Widget build(BuildContext context) {
@@ -61,8 +61,8 @@ final class PreferenceEditor extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Output rows, then input chips. Apply binds the list. Lock freezes '
-          'the live combination for this Session.',
+          'Output rows, then input chips. Apply binds the list. Use current '
+          'applies Explicit selection to the live combination.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
@@ -82,9 +82,9 @@ final class PreferenceEditor extends StatelessWidget {
               child: const Text('Reset'),
             ),
             OutlinedButton(
-              key: const Key('pref-lock'),
-              onPressed: onLock,
-              child: const Text('Lock live'),
+              key: const Key('pref-use-current'),
+              onPressed: onUseCurrent,
+              child: const Text('Use current'),
             ),
           ],
         ),
@@ -137,12 +137,16 @@ final class PreferenceEditor extends StatelessWidget {
                 ),
                 IconButton(
                   key: Key('pref-row-up-${render.id}'),
-                  onPressed: index == 0 ? null : () => _move(render.id, -1),
+                  onPressed: entry == null || index == 0
+                      ? null
+                      : () => _move(render.id, -1),
                   icon: const Icon(Icons.arrow_upward),
                 ),
                 IconButton(
                   key: Key('pref-row-down-${render.id}'),
-                  onPressed: last ? null : () => _move(render.id, 1),
+                  onPressed: entry == null || last
+                      ? null
+                      : () => _move(render.id, 1),
                   icon: const Icon(Icons.arrow_downward),
                 ),
               ],

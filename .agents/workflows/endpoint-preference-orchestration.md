@@ -92,7 +92,7 @@ Keys on `example/lib/main.dart` and `preference_editor.dart`:
 | `pref-row-up-<renderId>` / `pref-row-down-<renderId>` | Reorder draft |
 | `pref-apply` | `bindPreference` (ends a live Session) |
 | `pref-reset` | Empty draft (platform default) |
-| `pref-lock` | Explicit both current ids |
+| `pref-use-current` | Explicit both current ids |
 | `pref-bound-count` | Draft row count |
 | `endpoint-<id>` | Live Explicit pick (output-first, then capture override) |
 | `preference-controlled` | `true` / `false` |
@@ -121,7 +121,7 @@ After compose + Enter lobby:
 
 ### Lock
 
-On the fallback mic (Brio unplugged): tap `pref-lock`. Plug Brio back.
+On the fallback mic (Brio unplugged): tap `pref-use-current`. Plug Brio back.
 `desired-capture` stays the locked mic. `desired-capture-override` is `true`
 once Brio is first on the list again.
 

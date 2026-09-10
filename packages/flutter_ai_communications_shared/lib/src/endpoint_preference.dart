@@ -116,7 +116,6 @@ final class EndpointPreference {
             seen.contains(endpoint.pairId)) {
           continue;
         }
-        seen.add(endpoint.pairId);
         final capture = catalog
             .where((item) => item.pairId == endpoint.pairId && item.isCapture)
             .firstOrNull;
@@ -126,6 +125,7 @@ final class EndpointPreference {
         if (capture == null || render == null) {
           continue;
         }
+        seen.add(endpoint.pairId);
         entries.add(
           EndpointPreferenceEntry(
             renderId: render.id,
@@ -233,6 +233,7 @@ final class PreferenceResolver {
       requireCapture: requireCapture,
       requireRender: requireRender,
       unusableCombinations: unusableCombinations,
+      catalogFallback: preference.isEmpty,
     );
   }
 
@@ -242,6 +243,7 @@ final class PreferenceResolver {
     required bool requireCapture,
     required bool requireRender,
     required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
     List<String>? unresolved,
   }) {
     final skipped = unresolved ?? <String>[];
@@ -269,6 +271,15 @@ final class PreferenceResolver {
       if (requireCapture && captureId == null) {
         continue;
       }
+      if (!requireCapture &&
+          render != null &&
+          _isUnusable(
+            unusableCombinations,
+            renderId: render.id,
+            captureId: null,
+          )) {
+        continue;
+      }
       if (requireRender && render == null) {
         continue;
       }
@@ -281,8 +292,14 @@ final class PreferenceResolver {
         unresolvedIds: skipped,
       );
     }
-    if (!requireCapture) {
-      final render = catalog.where((item) => !item.isCapture).firstOrNull;
+    if (catalogFallback && !requireCapture) {
+      final render = catalog.where((item) => !item.isCapture).where((item) {
+        return !_isUnusable(
+          unusableCombinations,
+          renderId: item.id,
+          captureId: null,
+        );
+      }).firstOrNull;
       if (render != null) {
         return PreferenceResolution(
           desired: PairingSnapshot(renderId: render.id),
@@ -291,8 +308,14 @@ final class PreferenceResolver {
         );
       }
     }
-    if (!requireRender) {
-      final capture = catalog.where((item) => item.isCapture).firstOrNull;
+    if (catalogFallback && !requireRender) {
+      final capture = catalog.where((item) => item.isCapture).where((item) {
+        return !_isUnusable(
+          unusableCombinations,
+          renderId: null,
+          captureId: item.id,
+        );
+      }).firstOrNull;
       if (capture != null) {
         return PreferenceResolution(
           desired: PairingSnapshot(captureId: capture.id),
@@ -328,13 +351,13 @@ final class PreferenceResolver {
     }
     if (explicitCaptureId != null &&
         explicitRenderId == null &&
-        capture == null) {
+        (capture == null || !capture.isCapture)) {
       return null;
     }
 
-    var captureId = capture?.id;
+    var captureId = (capture != null && capture.isCapture) ? capture.id : null;
     final renderId = render?.id;
-    if (render != null && capture == null) {
+    if (render != null && captureId == null) {
       captureId = _autoCapture(
         catalog: catalog,
         entries: entries,
@@ -443,7 +466,13 @@ final class PreferenceResolver {
         return capture.id;
       }
     }
-    return catalog.where((item) => item.isCapture).firstOrNull?.id;
+    return catalog.where((item) => item.isCapture).where((item) {
+      return !_isUnusable(
+        unusableCombinations,
+        renderId: renderId,
+        captureId: item.id,
+      );
+    }).firstOrNull?.id;
   }
 
   String? _firstListedCapture({

@@ -56,7 +56,7 @@ void main() {
     expect(const Key('generation'), isNot(const Key('status')));
     expect(const Key('lobby'), isNot(const Key('meeting')));
     expect(const Key('preference-editor'), isNot(enter));
-    expect(const Key('pref-apply'), isNot(const Key('pref-lock')));
+    expect(const Key('pref-apply'), isNot(const Key('pref-use-current')));
     expect(const Key('pref-reset'), isNot(enter));
     expect(
       const Key('desired-capture-override'),

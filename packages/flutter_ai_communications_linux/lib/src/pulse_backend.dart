@@ -37,6 +37,7 @@ final class PulseAudioBackend implements AudioBackend {
   String? _renderId;
   Isolate? _deviceWatchIsolate;
   ReceivePort? _deviceWatchPort;
+  var _deviceWatchGeneration = 0;
   final StreamController<void> _deviceChanges =
       StreamController<void>.broadcast();
 
@@ -143,15 +144,23 @@ final class PulseAudioBackend implements AudioBackend {
     if (_deviceWatchIsolate != null) {
       return;
     }
+    final generation = ++_deviceWatchGeneration;
     final port = ReceivePort();
     _deviceWatchPort = port;
-    port.listen((_) {
+    port.listen((message) {
+      if (generation != _deviceWatchGeneration) {
+        return;
+      }
+      if (message == 'failed') {
+        stopDeviceWatch();
+        return;
+      }
       if (!_deviceChanges.isClosed) {
         _deviceChanges.add(null);
       }
     });
     Isolate.spawn(_deviceWatchMain, port.sendPort).then((isolate) {
-      if (_deviceWatchPort == null) {
+      if (generation != _deviceWatchGeneration) {
         isolate.kill(priority: Isolate.immediate);
         return;
       }
@@ -161,6 +170,7 @@ final class PulseAudioBackend implements AudioBackend {
 
   @override
   void stopDeviceWatch() {
+    _deviceWatchGeneration++;
     _deviceWatchIsolate?.kill(priority: Isolate.immediate);
     _deviceWatchIsolate = null;
     _deviceWatchPort?.close();
@@ -484,6 +494,7 @@ void _deviceWatchMain(SendPort send) {
   final async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
   final loop = async.mainloopNew();
   if (loop == nullptr) {
+    send.send('failed');
     return;
   }
   final api = async.mainloopGetApi(loop);
@@ -492,11 +503,13 @@ void _deviceWatchMain(SendPort send) {
   malloc.free(name);
   if (context == nullptr) {
     async.mainloopFree(loop);
+    send.send('failed');
     return;
   }
   if (async.contextConnect(context, nullptr, 0, nullptr) < 0) {
     async.contextUnref(context);
     async.mainloopFree(loop);
+    send.send('failed');
     return;
   }
   var ready = false;
@@ -515,6 +528,7 @@ void _deviceWatchMain(SendPort send) {
     async.contextDisconnect(context);
     async.contextUnref(context);
     async.mainloopFree(loop);
+    send.send('failed');
     return;
   }
   final callable =

@@ -724,7 +724,7 @@ final class _SessionPageState extends State<SessionPage> {
         onChanged: (preference) => setState(() => _draft = preference),
         onApply: _applyPreference,
         onReset: () => setState(() => _draft = const EndpointPreference()),
-        onLock: session == null ? null : _lockLive,
+        onUseCurrent: session == null ? null : _lockLive,
       ),
       const SizedBox(height: 16),
       Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),

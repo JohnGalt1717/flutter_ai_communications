@@ -1608,10 +1608,8 @@ final class Session {
       );
       final captureOk = !direction.hasCapture || next.desired.captureId != null;
       final renderOk = !direction.hasPlayback || next.desired.renderId != null;
-      if (!next.exhausted &&
-          captureOk &&
-          renderOk &&
-          next.desired != _desired) {
+      if (next.exhausted ||
+          (captureOk && renderOk && next.desired != _desired)) {
         await _applyResolution(
           next,
           cause: _preferenceControlled ? 'preference' : 'explicit',
