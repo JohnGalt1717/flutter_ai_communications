@@ -97,6 +97,35 @@ void main() {
     expect(second.cameras.entries.single.id, 'back');
   });
 
+  test('preferEndpoint re-enables a disabled row', () {
+    final store = HostPreferenceStore();
+    store.saveEndpoints(
+      const EndpointPreference(
+        entries: [
+          EndpointPreferenceEntry(
+            renderId: 'speaker-out',
+            enabled: false,
+            captures: [EndpointPreferenceCapture(id: 'speaker-in')],
+          ),
+        ],
+      ),
+    );
+    store.preferEndpoint(catalog[0], catalog);
+    expect(store.endpoints.entries.single.enabled, isTrue);
+  });
+
+  test('persist callback is invoked for camera writes', () async {
+    final writes = <String, String>{};
+    final store = HostPreferenceStore(
+      persist: (key, value) async {
+        writes[key] = value;
+      },
+    );
+    store.preferCamera('back');
+    await Future<void>.delayed(Duration.zero);
+    expect(writes[HostPreferenceStore.camerasKey], contains('back'));
+  });
+
   test('corrupt stored JSON is an empty preference, not a crash', () {
     final store = HostPreferenceStore(
       storage: {

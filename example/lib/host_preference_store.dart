@@ -87,7 +87,7 @@ final class HostPreferenceStore {
         entries: [
           EndpointPreferenceEntry(
             renderId: render.id,
-            enabled: existing?.enabled ?? true,
+            enabled: true,
             captures: captures,
           ),
           for (final entry in endpoints.entries)

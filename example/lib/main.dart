@@ -254,19 +254,13 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _applyPreference() async {
-    await _manager.cameraPreview?.stop();
     _store.saveEndpoints(_draft);
+    await _stop();
     await _manager.bindPreference(_store.endpoints);
     if (!mounted) {
       return;
     }
-    setState(() {
-      if (_manager.session == null) {
-        _session = null;
-        _phase = _HarnessPhase.idle;
-        _status = 'preference-bound';
-      }
-    });
+    setState(() => _status = 'preference-bound');
   }
 
   Future<void> _useCurrent() async {
@@ -752,10 +746,13 @@ final class _SessionPageState extends State<SessionPage> {
                     ? null
                     : () async {
                         _manager.bindCameraPreference(_store.cameras);
+                        final cameras = await _manager.cameras();
                         await _manager.startCameraPreview(
-                          cameraId: _store.cameras.resolve(_cameras)?.id,
+                          cameraId: _store.cameras.resolve(cameras)?.id,
                         );
-                        setState(() {});
+                        if (mounted) {
+                          setState(() {});
+                        }
                       },
                 child: const Text('Camera preview'),
               ),
