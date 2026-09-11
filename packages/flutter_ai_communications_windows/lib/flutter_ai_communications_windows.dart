@@ -302,6 +302,14 @@ final class FlutterAiCommunicationsWindows
   Future<void> pollCameraNative() => _camera.pollStats();
 
   @override
+  Future<void> attachProductionVideoPathNative({required String token}) =>
+      _camera.attachProductionPath(token);
+
+  @override
+  Future<void> detachProductionVideoPathNative({required String token}) =>
+      _camera.detachProductionPath(token);
+
+  @override
   Future<List<ScreenSource>> enumerateScreenSources() => _screen.enumerate();
 
   @override
