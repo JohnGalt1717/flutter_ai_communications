@@ -1,29 +1,26 @@
 # Video host tickets
 
-Local tracker for
-`.agents/plans/2026-08-25-communications-video-host-integration.md`.
-
-First host surface is `example/`.
+Local tracker for host integration in `example/`.
 
 Numbered in dependency order. Work the frontier: any ticket whose blockers
-are done. Do not create GitHub issues for these until a human asks.
+are done. Remaining hardware work is tracked in GitHub issues #26 and #44.
 
 Library tickets stay in `.scratch/video-v1-issues/`.
 
-Status as of 2026-09-08, HEAD `5642764`. First host surface is `example/`.
-Library 04 and 12 are on `main`. **Open:** host ticket 03 (preference
-persistence), 08 inbound RTCVideoView, 09 Linux camera receipt, 10 docs.
+Status as of 2026-09-11. First host surface is `example/`.
+Library 04 and 12 are on `main`. Host 03 (#65 / PR #67) and 08 (#66 / PR
+#75) shipped. **Open:** #26, #44.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |
 | 00 | Domain lock and first host surface | — | done |
 | 01 | Package wiring in example | 00 | done |
 | 02 | Audio manager and catalogs in example | 01 and library 01–02 | done |
-| 03 | Host preference persistence | 02 | not started (`example/` does not persist Endpoint or Camera preference) |
+| 03 | Host preference persistence | 02 | done (#65 / PR #67) |
 | 04 | Unbranded Preview Texture primitive | 02 and library 03 | done (`self-view` Texture in example) |
 | 05 | Example lobby subsection | 03, 04 | done (lobby shipped; persistence ticket 03 still open) |
 | 06 | Join and enable-video-later | 05 and library 02 | done |
 | 07 | In-session AV controls | 06 | done |
-| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | partial — Join attaches `WebrtcVideoSink`; example loopback meeting chrome ships; RTCVideoView inbound remaining |
+| 08 | Host Transport and flutter_webrtc sink | 07 and library 04, 12 | done (#66 / PR #75) |
 | 09 | Orchestration path and receipts | 07 and one native library graph | in progress (keys exist; Linux camera receipt remaining) |
 | 10 | Docs pass | 09 | in progress (plan status updated 2026-09-01) |
