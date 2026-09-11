@@ -174,7 +174,7 @@ final class PulseAudioBackend implements AudioBackend {
       }
     });
     Isolate.spawn(_deviceWatchMain, port.sendPort).then((isolate) {
-      if (generation != _deviceWatchGeneration) {
+      if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
         isolate.kill(priority: Isolate.immediate);
         return;
       }
@@ -608,6 +608,11 @@ Future<void> _deviceWatchMain(SendPort send) async {
       return;
     }
     while (running) {
+      final state = async.contextGetState(context);
+      if (state == paContextFailed || state == paContextTerminated) {
+        send.send('failed');
+        return;
+      }
       async.mainloopIterate(loop, 0, nullptr);
       // Yield so the control port can deliver stop.
       await Future<void>.delayed(const Duration(milliseconds: 20));

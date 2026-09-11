@@ -4,6 +4,9 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
+const _eFail = -2147467259;
+const _eNoInterface = -2147467262;
+
 /// [IMMNotificationClient] that forwards endpoint add/remove/state/default
 /// changes. Property-value churn is ignored.
 ///
@@ -54,7 +57,7 @@ final class WasapiDeviceWatch {
             Pointer<GUID>,
             Pointer<Pointer<NativeType>>,
           )
-        >.isolateLocal(_query, exceptionalReturn: 0);
+        >.isolateLocal(_query, exceptionalReturn: _eNoInterface);
     _addRef = NativeCallable<Uint32 Function(VTablePointer)>.isolateLocal(
       _add,
       exceptionalReturn: 0,
@@ -66,23 +69,23 @@ final class WasapiDeviceWatch {
     _onState =
         NativeCallable<
           Int32 Function(VTablePointer, Pointer<Utf16>, Uint32)
-        >.isolateLocal(_changed, exceptionalReturn: 0);
+        >.isolateLocal(_changed, exceptionalReturn: _eFail);
     _onAdded =
         NativeCallable<
           Int32 Function(VTablePointer, Pointer<Utf16>)
-        >.isolateLocal(_changedId, exceptionalReturn: 0);
+        >.isolateLocal(_changedId, exceptionalReturn: _eFail);
     _onRemoved =
         NativeCallable<
           Int32 Function(VTablePointer, Pointer<Utf16>)
-        >.isolateLocal(_changedId, exceptionalReturn: 0);
+        >.isolateLocal(_changedId, exceptionalReturn: _eFail);
     _onDefault =
         NativeCallable<
           Int32 Function(VTablePointer, Int32, Int32, Pointer<Utf16>)
-        >.isolateLocal(_changedDefault, exceptionalReturn: 0);
+        >.isolateLocal(_changedDefault, exceptionalReturn: _eFail);
     _onProperty =
         NativeCallable<
           Int32 Function(VTablePointer, Pointer<Utf16>, PROPERTYKEY)
-        >.isolateLocal(_ignoreProperty, exceptionalReturn: 0);
+        >.isolateLocal(_ignoreProperty, exceptionalReturn: _eFail);
 
     vtbl.ref
       ..base$.QueryInterface = _queryInterface!.nativeFunction
@@ -162,7 +165,7 @@ final class WasapiDeviceWatch {
       return 0;
     }
     out.value = nullptr;
-    return -2147467262;
+    return _eNoInterface;
   }
 
   int _add(VTablePointer _) {
