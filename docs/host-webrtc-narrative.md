@@ -43,10 +43,15 @@ Loopback proof: host adds the Send track to a loopback PeerConnection and
 renders the inbound track on `RTCVideoView`. That is host code. Identity of
 that loopback is not native Production-path proof.
 
-The example's loopback meeting subsection does not construct a PeerConnection.
-It lays out local Session Video surfaces (camera self-view, screen send) as
-the in-call stage. `RTCVideoView` inbound waits on a native Production-path
-bind (`attachProductionVideoPathNative`).
+The example meeting constructs a host-owned loopback PeerConnection pair
+(`FlutterWebRtcLoopback`). It `addTrack`s each Send track the sink yields
+and renders inbound video with `RTCVideoView`. Local self-view stays
+`Session.videoSurface`. Widget tests inject `FakeHostWebRtcLoopback` so they
+do not create a native PeerConnection. Mapping a Send track to a
+flutter_webrtc `MediaStreamTrack` is host `mapSendTrack`; native frames stay
+on `attachProductionVideoPathNative`. Until that mapper supplies a track,
+the inbound tile falls back to the Send track Video surface (processed
+Production frames) so the stage is not empty.
 
 ## Detach
 
