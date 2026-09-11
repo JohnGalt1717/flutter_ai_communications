@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
+import 'package:flutter_ai_communications_example/host_preference_store.dart';
 import 'package:flutter_ai_communications_example/preference_editor.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
@@ -13,8 +14,9 @@ import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
 import 'package:flutter_ai_communications_example/meeting/loopback_meeting.dart';
 import 'package:flutter_skill/flutter_skill.dart';
 import 'package:logging/logging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+void main() async {
   // FlutterSkillBinding is not a WidgetsBinding; initialize ServicesBinding
   // before any platform EventChannel listen (loopback wrap).
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +32,32 @@ void main() {
   };
   _installAgentBindings();
   LoopbackCommunicationsPlatform.wrapRegistered();
-  runApp(ExampleApp(manager: CommunicationsManager()));
+  runApp(
+    ExampleApp(
+      manager: CommunicationsManager(),
+      preferenceStore: await _loadPreferenceStore(),
+    ),
+  );
+}
+
+Future<HostPreferenceStore> _loadPreferenceStore() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    return HostPreferenceStore(
+      storage: {
+        for (final key in [
+          HostPreferenceStore.endpointsKey,
+          HostPreferenceStore.camerasKey,
+        ])
+          if (prefs.getString(key) case final value?) key: value,
+      },
+      persist: (key, value) async {
+        await prefs.setString(key, value);
+      },
+    );
+  } on Object {
+    return HostPreferenceStore();
+  }
 }
 
 /// Registers flutter-skill UI automation in debug `flutter run` only.
@@ -55,10 +82,13 @@ enum _HarnessPhase { idle, lobby, meeting }
 /// manager; `main()` constructs one for the process lifetime.
 final class ExampleApp extends StatefulWidget {
   /// Creates the example app.
-  const ExampleApp({super.key, this.manager});
+  const ExampleApp({super.key, this.manager, this.preferenceStore});
 
   /// Optional injected Communications manager (tests / agent harness).
   final CommunicationsManager? manager;
+
+  /// Optional injected host preference store (tests).
+  final HostPreferenceStore? preferenceStore;
 
   @override
   State<ExampleApp> createState() => _ExampleAppState();
@@ -67,6 +97,8 @@ final class ExampleApp extends StatefulWidget {
 final class _ExampleAppState extends State<ExampleApp> {
   late final CommunicationsManager _manager =
       widget.manager ?? CommunicationsManager();
+  late final HostPreferenceStore _store =
+      widget.preferenceStore ?? HostPreferenceStore();
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +111,7 @@ final class _ExampleAppState extends State<ExampleApp> {
         ),
         useMaterial3: true,
       ),
-      home: SessionPage(manager: _manager),
+      home: SessionPage(manager: _manager, preferenceStore: _store),
     );
   }
 }
@@ -87,16 +119,21 @@ final class _ExampleAppState extends State<ExampleApp> {
 /// Live Session controls and capture visualizer.
 final class SessionPage extends StatefulWidget {
   /// Creates the Session page.
-  const SessionPage({super.key, required this.manager});
+  const SessionPage({super.key, required this.manager, this.preferenceStore});
 
   /// Communications manager driving the Session.
   final CommunicationsManager manager;
+
+  /// Host-persisted Endpoint preference and Camera preference.
+  final HostPreferenceStore? preferenceStore;
 
   @override
   State<SessionPage> createState() => _SessionPageState();
 }
 
 final class _SessionPageState extends State<SessionPage> {
+  late final HostPreferenceStore _store =
+      widget.preferenceStore ?? HostPreferenceStore();
   var _phase = _HarnessPhase.idle;
   Session? _session;
   EchoTransport? _echo;
@@ -142,7 +179,35 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() => _endpoints = endpoints);
       }
     });
+    _draft = _store.endpoints;
+    _bindStoredPreference();
     _loadEndpoints();
+  }
+
+  void _bindStoredPreference() {
+    _manager.bindCameraPreference(_store.cameras);
+    unawaited(_manager.bindPreference(_store.endpoints));
+  }
+
+  bool _idlePreferredEndpoint(Endpoint endpoint) {
+    String? preferredCapture;
+    String? preferredRender;
+    for (final entry in _store.endpoints.entries) {
+      if (preferredRender == null &&
+          _endpoints.any((item) => item.id == entry.renderId)) {
+        preferredRender = entry.renderId;
+      }
+      for (final slot in entry.captures) {
+        if (preferredCapture == null &&
+            _endpoints.any((item) => item.id == slot.id)) {
+          preferredCapture = slot.id;
+        }
+      }
+      if (preferredCapture != null && preferredRender != null) {
+        break;
+      }
+    }
+    return endpoint.id == preferredCapture || endpoint.id == preferredRender;
   }
 
   @override
@@ -182,7 +247,8 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _applyPreference() async {
-    await _manager.bindPreference(_draft);
+    _store.saveEndpoints(_draft);
+    await _manager.bindPreference(_store.endpoints);
     if (!mounted) {
       return;
     }
@@ -659,12 +725,27 @@ final class _SessionPageState extends State<SessionPage> {
               FilledButton.tonal(
                 key: const Key('camera-off'),
                 onPressed: () async {
-                  await session.setCameraEnabled(!session.isCameraEnabled);
+                  final enable = !session.isCameraEnabled;
+                  if (enable) {
+                    await _manager.cameraPreview?.stop();
+                  }
+                  await session.setCameraEnabled(enable);
                   setState(() {});
                 },
                 child: Text(
                   session.isCameraEnabled ? 'Camera off' : 'Camera on',
                 ),
+              ),
+              FilledButton.tonal(
+                key: const Key('camera-preview'),
+                onPressed: session.isCameraEnabled
+                    ? null
+                    : () async {
+                        _manager.bindCameraPreference(_store.cameras);
+                        await _manager.startCameraPreview();
+                        setState(() {});
+                      },
+                child: const Text('Camera preview'),
               ),
             ],
           ),
@@ -678,13 +759,20 @@ final class _SessionPageState extends State<SessionPage> {
           key: Key('camera-${camera.id}'),
           title: Text(camera.name),
           subtitle: Text(camera.facing.name),
-          selected: camera.id == session?.selectedCameraId,
-          onTap: session == null
-              ? null
-              : () async {
-                  await session.selectCamera(camera.id);
-                  setState(() {});
-                },
+          selected:
+              camera.id ==
+              (session?.selectedCameraId ??
+                  _store.cameras.entries.firstOrNull?.id),
+          onTap: () async {
+            if (session == null) {
+              _store.preferCamera(camera.id);
+              _manager.bindCameraPreference(_store.cameras);
+              setState(() {});
+              return;
+            }
+            await session.selectCamera(camera.id);
+            setState(() {});
+          },
         ),
       if (session != null) ...[
         const SizedBox(height: 16),
@@ -728,7 +816,12 @@ final class _SessionPageState extends State<SessionPage> {
         draft: _draft,
         onChanged: (preference) => setState(() => _draft = preference),
         onApply: _applyPreference,
-        onReset: () => setState(() => _draft = const EndpointPreference()),
+        onReset: () {
+          _draft = const EndpointPreference();
+          _store.saveEndpoints(_draft);
+          unawaited(_manager.bindPreference(_draft));
+          setState(() {});
+        },
         onUseCurrent: session == null ? null : _useCurrent,
       ),
       const SizedBox(height: 16),
@@ -743,24 +836,32 @@ final class _SessionPageState extends State<SessionPage> {
           ),
           selected:
               endpoint.id == session?.selectedCaptureId ||
-              endpoint.id == session?.selectedRenderId,
-          onTap: session == null
-              ? null
-              : () async {
-                  try {
-                    await session.select(
-                      captureId: endpoint.isCapture ? endpoint.id : null,
-                      renderId: endpoint.isCapture ? null : endpoint.id,
-                    );
-                  } on Object {
-                    // Platform select can fail; keep the live diagnostics.
-                  }
-                  if (mounted) {
-                    setState(() {
-                      _diagnostics = session.diagnostics;
-                    });
-                  }
-                },
+              endpoint.id == session?.selectedRenderId ||
+              (session == null && _idlePreferredEndpoint(endpoint)),
+          onTap: () async {
+            if (session == null) {
+              _store.preferEndpoint(endpoint, _endpoints);
+              _draft = _store.endpoints;
+              await _manager.bindPreference(_store.endpoints);
+              if (mounted) {
+                setState(() {});
+              }
+              return;
+            }
+            try {
+              await session.select(
+                captureId: endpoint.isCapture ? endpoint.id : null,
+                renderId: endpoint.isCapture ? null : endpoint.id,
+              );
+            } on Object {
+              // Platform select can fail; keep the live diagnostics.
+            }
+            if (mounted) {
+              setState(() {
+                _diagnostics = session.diagnostics;
+              });
+            }
+          },
         ),
       const SizedBox(height: 24),
       Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
