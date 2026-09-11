@@ -193,7 +193,7 @@ class AndroidCameraGraph(
                                 if (!videoMuted) {
                                     captureSession.setRepeatingRequest(
                                         request.build(),
-                                        statsCallback,
+                                        noneModeStatsCallback(),
                                         cameraHandler,
                                     )
                                 }
@@ -294,7 +294,11 @@ class AndroidCameraGraph(
                 set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             }
         try {
-            captureSession.setRepeatingRequest(request.build(), statsCallback, cameraHandler)
+            captureSession.setRepeatingRequest(
+                request.build(),
+                noneModeStatsCallback(),
+                cameraHandler,
+            )
         } catch (_: Exception) {
         }
     }
@@ -320,6 +324,14 @@ class AndroidCameraGraph(
             "frameCount" to frameCount.get(),
             "liveFrames" to liveFrames.get(),
         )
+    }
+
+    private fun noneModeStatsCallback(): android.hardware.camera2.CameraCaptureSession.CaptureCallback? {
+        return if (processor.mode is AndroidVideoProcessor.Mode.None) {
+            statsCallback
+        } else {
+            null
+        }
     }
 
     private fun onProcessedImage(imageReader: ImageReader) {

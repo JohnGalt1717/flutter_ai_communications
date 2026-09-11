@@ -185,7 +185,9 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   }
 
   func stats() -> [String: Any] {
-    ["frameCount": frameCount, "liveFrames": liveFrames]
+    queue.sync {
+      ["frameCount": frameCount, "liveFrames": liveFrames]
+    }
   }
 
   func stop() {
