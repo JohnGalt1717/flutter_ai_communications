@@ -576,10 +576,17 @@ Future<void> _deviceWatchMain(SendPort send) async {
         send.send(null);
       });
   async.contextSetSubscribeCallback(context, callable.nativeFunction, nullptr);
+  var subscribeOk = false;
+  final success =
+      NativeCallable<
+        Void Function(Pointer<PaContext>, Int32, Pointer<Void>)
+      >.listener((context, ok, userdata) {
+        subscribeOk = ok != 0;
+      });
   final op = async.contextSubscribe(
     context,
     _pulseSubscribeMask,
-    nullptr,
+    success.nativeFunction.cast(),
     nullptr,
   );
   try {
@@ -587,13 +594,26 @@ Future<void> _deviceWatchMain(SendPort send) async {
       send.send('failed');
       return;
     }
+    var finished = false;
+    for (var i = 0; i < 2000; i++) {
+      if (async.operationGetState(op) == paOperationDone) {
+        finished = true;
+        break;
+      }
+      async.mainloopIterate(loop, 1, nullptr);
+    }
     async.operationUnref(op);
+    if (!finished || !subscribeOk) {
+      send.send('failed');
+      return;
+    }
     while (running) {
       async.mainloopIterate(loop, 0, nullptr);
       // Yield so the control port can deliver stop.
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   } finally {
+    success.close();
     callable.close();
     async.contextDisconnect(context);
     async.contextUnref(context);

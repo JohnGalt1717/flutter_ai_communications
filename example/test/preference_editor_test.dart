@@ -88,6 +88,50 @@ void main() {
     );
   });
 
+  testWidgets('empty draft can reorder platform-default Pairs', (tester) async {
+    const twoPairs = [
+      ...catalog,
+      Endpoint(
+        id: 'plantronics-in',
+        name: 'Plantronics',
+        routeClass: RouteClass.bluetooth,
+        isCapture: true,
+        pairId: 'plantronics',
+      ),
+      Endpoint(
+        id: 'plantronics-out',
+        name: 'Plantronics',
+        routeClass: RouteClass.bluetooth,
+        isCapture: false,
+        pairId: 'plantronics',
+      ),
+    ];
+    var draft = const EndpointPreference();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            return Scaffold(
+              body: PreferenceEditor(
+                catalog: twoPairs,
+                draft: draft,
+                onChanged: (next) => setState(() => draft = next),
+                onApply: () {},
+                onReset: () {},
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('pref-row-down-airpods-out')));
+    await tester.pump();
+    expect(draft.entries.map((entry) => entry.renderId).toList(), [
+      'plantronics-out',
+      'airpods-out',
+    ]);
+  });
+
   testWidgets('selecting a capture chip on USB speakers creates a row', (
     tester,
   ) async {

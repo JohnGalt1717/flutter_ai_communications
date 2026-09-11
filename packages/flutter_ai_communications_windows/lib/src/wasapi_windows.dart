@@ -311,10 +311,14 @@ final class WasapiWindowsBackend implements WasapiBackend {
     stopDeviceWatch();
     stop();
     stopLoopback();
-    _lifetime.releaseAll();
     unawaited(_captureOut.close());
     unawaited(_loopbackOut.close());
     unawaited(_deviceChanges.close());
+    if (_deviceWatch?.isRegistered ?? false) {
+      // Enumerator still owns the client; freeing COM would UAF the callback.
+      return;
+    }
+    _lifetime.releaseAll();
     if (_comInitialized) {
       CoUninitialize();
       _comInitialized = false;

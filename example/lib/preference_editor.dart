@@ -108,9 +108,6 @@ final class PreferenceEditor extends StatelessWidget {
     required List<Endpoint> captures,
     required bool complete,
   }) {
-    final draftIndex = draft.entries.indexWhere(
-      (item) => item.renderId == render.id,
-    );
     final effective = _effectiveEntries();
     final effectiveIndex = effective.indexWhere(
       (item) => item.renderId == render.id,
@@ -138,7 +135,7 @@ final class PreferenceEditor extends StatelessWidget {
                 ),
                 IconButton(
                   key: Key('pref-row-up-${render.id}'),
-                  onPressed: draftIndex <= 0
+                  onPressed: effectiveIndex <= 0
                       ? null
                       : () => _move(render.id, -1),
                   icon: const Icon(Icons.arrow_upward),
@@ -146,7 +143,8 @@ final class PreferenceEditor extends StatelessWidget {
                 IconButton(
                   key: Key('pref-row-down-${render.id}'),
                   onPressed:
-                      draftIndex < 0 || draftIndex == draft.entries.length - 1
+                      effectiveIndex < 0 ||
+                          effectiveIndex == effective.length - 1
                       ? null
                       : () => _move(render.id, 1),
                   icon: const Icon(Icons.arrow_downward),
@@ -245,7 +243,7 @@ final class PreferenceEditor extends StatelessWidget {
   }
 
   void _move(String renderId, int delta) {
-    final entries = [...draft.entries];
+    final entries = _editableEntries();
     final index = entries.indexWhere((item) => item.renderId == renderId);
     final next = index + delta;
     if (index < 0 || next < 0 || next >= entries.length) {
