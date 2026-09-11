@@ -37,6 +37,7 @@ final class PulseAudioBackend implements AudioBackend {
   String? _renderId;
   Isolate? _deviceWatchIsolate;
   ReceivePort? _deviceWatchPort;
+  SendPort? _deviceWatchControl;
   var _deviceWatchGeneration = 0;
   final StreamController<void> _deviceChanges =
       StreamController<void>.broadcast();
@@ -151,12 +152,18 @@ final class PulseAudioBackend implements AudioBackend {
       if (generation != _deviceWatchGeneration) {
         return;
       }
+      if (message is SendPort) {
+        _deviceWatchControl = message;
+        return;
+      }
       if (message == 'failed') {
         _deviceWatchIsolate = null;
+        _deviceWatchControl = null;
         _deviceWatchPort?.close();
         _deviceWatchPort = null;
         Future<void>.delayed(const Duration(seconds: 2), () {
-          if (_deviceChanges.isClosed) {
+          if (generation != _deviceWatchGeneration ||
+              _deviceChanges.isClosed) {
             return;
           }
           startDeviceWatch();
@@ -179,10 +186,17 @@ final class PulseAudioBackend implements AudioBackend {
   @override
   void stopDeviceWatch() {
     _deviceWatchGeneration++;
-    _deviceWatchIsolate?.kill(priority: Isolate.immediate);
+    _deviceWatchControl?.send('stop');
+    _deviceWatchControl = null;
+    final isolate = _deviceWatchIsolate;
     _deviceWatchIsolate = null;
     _deviceWatchPort?.close();
     _deviceWatchPort = null;
+    if (isolate != null) {
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        isolate.kill(priority: Isolate.immediate);
+      });
+    }
   }
 
   @override
@@ -499,6 +513,12 @@ void _captureMain(_CaptureStart start) {
 const _pulseSubscribeMask = 0x0001 | 0x0002 | 0x0080 | 0x0200;
 
 void _deviceWatchMain(SendPort send) {
+  final control = ReceivePort();
+  send.send(control.sendPort);
+  var running = true;
+  control.listen((_) {
+    running = false;
+  });
   final async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
   final loop = async.mainloopNew();
   if (loop == nullptr) {
@@ -556,13 +576,15 @@ void _deviceWatchMain(SendPort send) {
     async.operationUnref(op);
   }
   try {
-    while (true) {
-      async.mainloopIterate(loop, 1, nullptr);
+    while (running) {
+      async.mainloopIterate(loop, 0, nullptr);
+      sleep(const Duration(milliseconds: 20));
     }
   } finally {
     callable.close();
     async.contextDisconnect(context);
     async.contextUnref(context);
     async.mainloopFree(loop);
+    control.close();
   }
 }

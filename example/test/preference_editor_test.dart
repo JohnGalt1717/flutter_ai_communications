@@ -89,12 +89,20 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('pref-capture-usb-out-brio-in')));
     await tester.pump();
-    expect(draft.entries, hasLength(1));
-    expect(draft.entries.single.renderId, 'usb-out');
-    expect(draft.entries.single.captures.single.id, 'brio-in');
     expect(
-      tester.widget<Text>(find.byKey(const Key('pref-bound-count'))).data,
-      '1',
+      draft.entries.any((entry) => entry.renderId == 'usb-out'),
+      isTrue,
+    );
+    expect(
+      draft.entries
+          .firstWhere((entry) => entry.renderId == 'usb-out')
+          .captures
+          .any((slot) => slot.id == 'brio-in'),
+      isTrue,
+    );
+    expect(
+      draft.entries.any((entry) => entry.renderId == 'airpods-out'),
+      isTrue,
     );
   });
 

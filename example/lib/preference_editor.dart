@@ -171,7 +171,7 @@ final class PreferenceEditor extends StatelessWidget {
   }
 
   void _setEnabled(Endpoint render, bool enabled, bool complete) {
-    final entries = [...draft.entries];
+    final entries = _editableEntries();
     final index = entries.indexWhere((item) => item.renderId == render.id);
     if (index < 0) {
       if (!enabled) {
@@ -200,8 +200,15 @@ final class PreferenceEditor extends StatelessWidget {
     onChanged(EndpointPreference(entries: entries));
   }
 
+  List<EndpointPreferenceEntry> _editableEntries() {
+    if (draft.entries.isNotEmpty) {
+      return [...draft.entries];
+    }
+    return [...EndpointPreference.platformDefault(catalog).entries];
+  }
+
   void _toggleCapture(String renderId, String captureId) {
-    final entries = [...draft.entries];
+    final entries = _editableEntries();
     final index = entries.indexWhere((item) => item.renderId == renderId);
     if (index < 0) {
       entries.add(
