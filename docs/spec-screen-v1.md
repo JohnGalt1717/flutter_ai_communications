@@ -63,10 +63,9 @@ packages.
 ## Implementation Decisions
 
 - Glossary: `CONTEXT.md`. ADRs 0013, 0018–0019, 0022–0027.
-- Public API sketch and native backends: `.agents/plans/screen-capture-and-send.md`.
 - Host picker narrative: `docs/host-screen-share-narrative.md`.
-- Markdown tickets: `.scratch/screen-v1-issues/`. No GitHub issues unless a
-  human asks.
+- Markdown tickets: `.scratch/screen-v1-issues/`. Remaining six-platform
+  receipts are tracked in GitHub issue #44.
 - All-displays is a library stitch (ADR-0022). Losing one display rebuilds;
   losing all ends screen send, not the Session.
 - Screen previews must not use a capture API that brands every window as

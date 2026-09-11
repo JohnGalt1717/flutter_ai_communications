@@ -4,11 +4,11 @@ Local tracker for `docs/spec-screen-v1.md`. Numbered in dependency order.
 Work the frontier: any ticket whose blockers are done. Apple native graphs
 are tracked as GitHub issue #43.
 
-Plan: `.agents/plans/screen-capture-and-send.md`.
 Host narrative: `docs/host-screen-share-narrative.md`.
 Camera tickets stay in `.scratch/video-v1-issues/`.
+Remaining six-platform receipts are tracked in GitHub issue #44.
 
-Status as of 2026-09-08. HEAD `5642764`. Graphs shipped. Receipts on #44.
+Status as of 2026-09-11. Graphs shipped. Remaining receipts tracked in #44.
 
 | # | Title | Blocked by | Status |
 | --- | --- | --- | --- |

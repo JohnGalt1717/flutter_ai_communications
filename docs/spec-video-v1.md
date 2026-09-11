@@ -18,8 +18,9 @@ chat, and tile layout. Inbound audio enters Session playback. Each inbound
 video stream is a Video surface.
 
 Camera Endpoints and Screen sources are catalogs separate from audio Endpoints.
-v1 Video processor is none (pass-through). Blur and replace are
-GitHub issue #63 (iOS 18+, macOS 15+, Android, web, Windows).
+v1 Video processor is none (pass-through). Blur and replace shipped
+(GitHub issue #63) on iOS 18+, macOS 15+, Android, web, Windows, and
+Linux.
 
 The first host is `example/`. It ships a Zoom/Teams-class lobby subsection
 (device picks, permission via `start()`, mute, Join). Orchestration drives
@@ -58,10 +59,11 @@ in the federated packages.
   higher resolution if any, else the next lower; fps closest to the request.
 - Mute-video is in-session black frames. Camera-off stops outbound video.
   Lobby has Camera-off / camera on, not Mute-video.
-- v1 processor is none. Blur and replace are GitHub issue #63: iOS 18+,
-  macOS 15+ (current and previous), Android ML Kit, web MediaPipe selfie
-  segmentation, Windows WinML MediaPipe selfie segmentation. Linux and a
-  web or Windows model miss fall back to none plus `processorUnavailable`.
+- v1 processor is none. Blur and replace shipped (GitHub issue #63): iOS
+  18+, macOS 15+ (current and previous), Android ML Kit, web MediaPipe
+  selfie segmentation, Windows WinML MediaPipe selfie segmentation
+  (inbox IR 9), Linux. A web or Windows model miss falls back to none
+  plus `processorUnavailable`.
 - Hosts attach Video sinks on Session (`attachVideoSink` / `detachVideoSink`).
   Mute-video and Camera-off notify differently. Detach does not end the
   Session or replace the Capture stream. Native consumers bind with
@@ -71,11 +73,11 @@ in the federated packages.
   plugin: `WebrtcVideoSink` yields Send tracks. The host owns PeerConnection
   and signaling. Local self-view stays Video surface.
 - Screen send native graphs: `docs/spec-screen-v1.md`.
-- Linux camera graph is V4L2 → Texture (in tree, PR #34 / `e6b37b4`);
-  physical receipts are later. Windows Media Foundation graph is proven on
-  LifeCam Studio.
+- Linux camera graph is V4L2 → Texture (in tree). Windows Media Foundation
+  graph is proven on LifeCam Studio (WinML IR 9).
 - Markdown tickets in `.scratch/video-v1-issues/` and
-  `.scratch/video-host-issues/`. No GitHub issues unless a human asks.
+  `.scratch/video-host-issues/`. Remaining hardware receipts are tracked
+  in GitHub issues #26 and #44.
 
 ## Testing Decisions
 
