@@ -114,7 +114,7 @@ Default when omitted: PCM16 LE mono 24 kHz on both edges.
 | Library | Host |
 | --- | --- |
 | Session lifecycle | Transport (SignalR / WebRTC / …) |
-| Endpoint catalog + Pair | Device-order preference persistence |
+| Endpoint catalog + Pair | Endpoint preference persistence |
 | Comms channel, AEC/NS/AGC | Isolation dialog copy |
 | Sound floor, barge-in | Offline policy / navigation |
 | Mute / pause / coverage events | ISpect (or other) log sink |

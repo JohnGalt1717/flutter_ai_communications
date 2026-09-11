@@ -16,4 +16,5 @@
 * Exclusive native Orchestration suite passed on physical iOS, physical Android, macOS, Windows, and Linux (WSLg). Chrome exclusive also passed.
 * macOS production duplex uses one native AVAudioEngine. Isolation is unavailable, so the Session raises the Sound floor.
 * Isolation refuse / missing / unavailable raises the adaptive Sound floor after the host prompt.
-* Host Endpoint preference fills capture and render independently so a webcam plus USB render can outrank AirPods.
+* Host Endpoint preference is ordered render rows, each with an ordered capture list. A webcam mic plus USB render is one row; AirPods is a later row.
+* Windows, Linux, and macOS Endpoint catalogs follow OS device notifications instead of a two-second poll.

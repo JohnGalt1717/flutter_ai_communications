@@ -4,6 +4,8 @@ Execute native Session proof on physical iOS and Android. Loopback identity is a
 
 Interactive MCP (debug session → VM service URI → tap harness keys / `get_logs`) is the `device-agent-lens` skill. This file is the receipt job. Do not mix them.
 
+Endpoint preference (render rows + capture lists, USB+Brio, unplug fallback, lock): [endpoint-preference-orchestration.md](endpoint-preference-orchestration.md).
+
 ## Load first
 
 `tdd`, then `flutter-add-integration-test`. Read `CONTEXT.md` and issue #26.

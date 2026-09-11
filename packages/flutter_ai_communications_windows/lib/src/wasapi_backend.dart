@@ -3,6 +3,18 @@ import 'dart:typed_data';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+/// Default no-op device watch for test and unavailable backends.
+mixin DeviceWatchSupport {
+  /// OS audio endpoint changes.
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
+}
+
 /// Native WASAPI graph used by the Windows adapter.
 abstract class WasapiBackend {
   /// Snapshot of capture and render Endpoints.
@@ -57,4 +69,14 @@ abstract class WasapiBackend {
 
   /// Releases COM objects.
   void dispose();
+
+  /// OS audio endpoint add/remove/state/default changes. Empty until
+  /// [startDeviceWatch].
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
 }

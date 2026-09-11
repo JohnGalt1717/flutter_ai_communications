@@ -231,7 +231,9 @@ final class _RecordingScreenConsent implements WindowsScreenConsent {
   }
 }
 
-final class _LoopbackWasapi implements WasapiBackend {
+final class _LoopbackWasapi
+    with DeviceWatchSupport
+    implements WasapiBackend {
   var starts = 0;
   var stops = 0;
 

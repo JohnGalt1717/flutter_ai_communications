@@ -1,20 +1,20 @@
 import 'endpoint.dart';
 import 'pairing.dart';
 
-/// One ordered Endpoint preference slot.
-final class EndpointPreferenceEntry {
-  /// Creates a preference entry.
-  const EndpointPreferenceEntry({required this.id, this.enabled = true});
+/// One capture slot on an Endpoint preference row.
+final class EndpointPreferenceCapture {
+  /// Creates a capture slot.
+  const EndpointPreferenceCapture({required this.id, this.enabled = true});
 
-  /// Stable Endpoint id. May remain in the list while unavailable.
+  /// Stable capture Endpoint id. May remain while unavailable.
   final String id;
 
-  /// Disabled Endpoints are skipped by automatic resolution.
+  /// Disabled slots are skipped by automatic resolution.
   final bool enabled;
 
   @override
   bool operator ==(Object other) =>
-      other is EndpointPreferenceEntry &&
+      other is EndpointPreferenceCapture &&
       other.id == id &&
       other.enabled == enabled;
 
@@ -22,22 +22,84 @@ final class EndpointPreferenceEntry {
   int get hashCode => Object.hash(id, enabled);
 }
 
-/// Host-persisted ordered enabled Endpoint preference.
+/// One ordered render row with an ordered capture list.
+final class EndpointPreferenceEntry {
+  /// Creates a preference row. Persist only when [captures] is not empty.
+  const EndpointPreferenceEntry({
+    required this.renderId,
+    this.captures = const [],
+    this.enabled = true,
+  });
+
+  /// Stable render Endpoint id. May remain in the list while unavailable.
+  final String renderId;
+
+  /// Most-preferred capture first. The same capture id may appear on many rows.
+  final List<EndpointPreferenceCapture> captures;
+
+  /// Disabled rows are skipped by automatic resolution.
+  final bool enabled;
+
+  @override
+  bool operator ==(Object other) =>
+      other is EndpointPreferenceEntry &&
+      other.renderId == renderId &&
+      other.enabled == enabled &&
+      _sameCaptures(other.captures);
+
+  bool _sameCaptures(List<EndpointPreferenceCapture> other) {
+    if (other.length != captures.length) {
+      return false;
+    }
+    for (var i = 0; i < captures.length; i++) {
+      if (captures[i] != other[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(renderId, enabled, Object.hashAll(captures));
+}
+
+/// A Desired Pair combination that failed Route convergence this Session.
+final class UnusableCombination {
+  /// Creates an unusable combination.
+  const UnusableCombination({this.renderId, this.captureId});
+
+  /// Render Endpoint id, if the Desired Pair had one.
+  final String? renderId;
+
+  /// Capture Endpoint id, if the Desired Pair had one.
+  final String? captureId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnusableCombination &&
+      other.renderId == renderId &&
+      other.captureId == captureId;
+
+  @override
+  int get hashCode => Object.hash(renderId, captureId);
+}
+
+/// Host-persisted ordered render Endpoints, each with an ordered capture list.
 ///
-/// Persistence belongs to the host. The Audio manager continuously resolves
-/// this list from most to least preferred.
+/// Persistence belongs to the host. The Communications manager continuously
+/// resolves this list from most to least preferred.
 final class EndpointPreference {
   /// Creates an Endpoint preference. Empty [entries] means platform default.
   const EndpointPreference({this.entries = const []});
 
-  /// Most-preferred first. Unavailable ids stay in place and are never guessed.
+  /// Most-preferred render row first. Unavailable ids stay and are never guessed.
   final List<EndpointPreferenceEntry> entries;
 
   /// Whether the host supplied any ordered entries.
   bool get isEmpty => entries.isEmpty;
 
-  /// Deterministic new-user order: Bluetooth/headset, wired, car, speakerphone,
-  /// handset.
+  /// Deterministic new-user order: complete hardware Pairs by Bluetooth,
+  /// wired, car, speakerphone, handset. Capture list is the hardware mate.
   static EndpointPreference platformDefault(List<Endpoint> catalog) {
     const order = [
       RouteClass.bluetooth,
@@ -54,11 +116,22 @@ final class EndpointPreference {
             seen.contains(endpoint.pairId)) {
           continue;
         }
-        seen.add(endpoint.pairId);
         final capture = catalog
             .where((item) => item.pairId == endpoint.pairId && item.isCapture)
             .firstOrNull;
-        entries.add(EndpointPreferenceEntry(id: (capture ?? endpoint).id));
+        final render = catalog
+            .where((item) => item.pairId == endpoint.pairId && !item.isCapture)
+            .firstOrNull;
+        if (capture == null || render == null) {
+          continue;
+        }
+        seen.add(endpoint.pairId);
+        entries.add(
+          EndpointPreferenceEntry(
+            renderId: render.id,
+            captures: [EndpointPreferenceCapture(id: capture.id)],
+          ),
+        );
       }
     }
     return EndpointPreference(entries: entries);
@@ -126,10 +199,10 @@ final class PreferenceResolver {
 
   /// Resolves the Desired Pair.
   ///
-  /// An empty host list uses platform default complete Pairs. A host-supplied
-  /// list fills capture and render independently, so a desktop webcam and a
-  /// USB render Endpoint can outrank AirPods. Explicit selection may be
-  /// split and never falls back while available.
+  /// An empty host list uses platform-default complete Pairs. A host list
+  /// walks render rows, then each row's capture list. Explicit render stays
+  /// while that render is available; capture is completed from that row,
+  /// else the hardware Pair, else a capture-only walk of the lists.
   PreferenceResolution resolve({
     required List<Endpoint> catalog,
     EndpointPreference preference = const EndpointPreference(),
@@ -137,199 +210,346 @@ final class PreferenceResolver {
     bool requireRender = true,
     String? explicitCaptureId,
     String? explicitRenderId,
-    Set<String> unusablePairIds = const {},
+    Set<UnusableCombination> unusableCombinations = const {},
   }) {
+    final entries = preference.isEmpty
+        ? EndpointPreference.platformDefault(catalog).entries
+        : preference.entries;
     final explicit = _explicit(
       catalog,
+      entries: entries,
       requireCapture: requireCapture,
       requireRender: requireRender,
       explicitCaptureId: explicitCaptureId,
       explicitRenderId: explicitRenderId,
+      unusableCombinations: unusableCombinations,
+      catalogFallback: preference.isEmpty,
     );
     if (explicit != null) {
       return explicit;
     }
-
-    if (preference.isEmpty) {
-      return _walkCompletePairs(
-        catalog: catalog,
-        entries: EndpointPreference.platformDefault(catalog).entries,
-        requireCapture: requireCapture,
-        requireRender: requireRender,
-        unusablePairIds: unusablePairIds,
-      );
-    }
-    return _fillEdges(
+    return _walkRows(
       catalog: catalog,
-      entries: preference.entries,
+      entries: entries,
       requireCapture: requireCapture,
       requireRender: requireRender,
-      unusablePairIds: unusablePairIds,
+      unusableCombinations: unusableCombinations,
+      catalogFallback: preference.isEmpty,
     );
   }
 
-  PreferenceResolution _walkCompletePairs({
+  PreferenceResolution _walkRows({
     required List<Endpoint> catalog,
     required List<EndpointPreferenceEntry> entries,
     required bool requireCapture,
     required bool requireRender,
-    required Set<String> unusablePairIds,
+    required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
+    List<String>? unresolved,
   }) {
-    final unresolved = <String>[];
+    final skipped = unresolved ?? <String>[];
     for (final entry in entries) {
-      final endpoint = _byId(catalog, entry.id);
-      if (endpoint == null) {
-        unresolved.add(entry.id);
-        continue;
-      }
       if (!entry.enabled) {
         continue;
       }
-      final pair = _pairer.pairFor(endpoint, catalog);
-      if (pair == null || unusablePairIds.contains(pair.id)) {
+      final render = _byId(catalog, entry.renderId);
+      if (render == null) {
+        skipped.add(entry.renderId);
+        if (requireRender) {
+          continue;
+        }
+      } else if (render.isCapture) {
+        skipped.add(entry.renderId);
         continue;
       }
-      if (requireCapture && pair.capture == null) {
+      final captureId = _firstListedCapture(
+        catalog: catalog,
+        entry: entry,
+        renderId: render?.id ?? entry.renderId,
+        unusableCombinations: unusableCombinations,
+        unresolved: skipped,
+      );
+      if (requireCapture && captureId == null) {
         continue;
       }
-      if (requireRender && pair.render == null) {
+      if (!requireCapture &&
+          render != null &&
+          _isUnusable(
+            unusableCombinations,
+            renderId: render.id,
+            captureId: null,
+          )) {
+        continue;
+      }
+      if (requireRender && render == null) {
         continue;
       }
       return PreferenceResolution(
         desired: PairingSnapshot(
-          captureId: requireCapture ? pair.capture?.id : null,
-          renderId: requireRender ? pair.render?.id : null,
+          captureId: requireCapture ? captureId : null,
+          renderId: requireRender ? render?.id : null,
         ),
         preferenceControlled: true,
-        unresolvedIds: unresolved,
+        unresolvedIds: skipped,
       );
     }
-    return PreferenceResolution(
-      desired: const PairingSnapshot(),
-      preferenceControlled: true,
-      unresolvedIds: unresolved,
-      exhausted: true,
-    );
-  }
-
-  PreferenceResolution _fillEdges({
-    required List<Endpoint> catalog,
-    required List<EndpointPreferenceEntry> entries,
-    required bool requireCapture,
-    required bool requireRender,
-    required Set<String> unusablePairIds,
-  }) {
-    final unresolved = <String>[];
-    String? captureId;
-    String? renderId;
-    String? capturePairId;
-    String? renderPairId;
-    for (final entry in entries) {
-      final endpoint = _byId(catalog, entry.id);
-      if (endpoint == null) {
-        unresolved.add(entry.id);
-        continue;
-      }
-      if (!entry.enabled) {
-        continue;
-      }
-      final pair = _pairer.pairFor(endpoint, catalog);
-      if (pair != null && unusablePairIds.contains(pair.id)) {
-        continue;
-      }
-      if (endpoint.isCapture && captureId == null) {
-        captureId = endpoint.id;
-        capturePairId = endpoint.pairId;
-      } else if (!endpoint.isCapture && renderId == null) {
-        renderId = endpoint.id;
-        renderPairId = endpoint.pairId;
-      }
-      if (requireCapture && captureId == null && pair?.capture != null) {
-        captureId = pair!.capture!.id;
-        capturePairId = pair.capture!.pairId;
-      }
-      if (requireRender && renderId == null && pair?.render != null) {
-        renderId = pair!.render!.id;
-        renderPairId = pair.render!.pairId;
-      }
-      final captureReady = !requireCapture || captureId != null;
-      final renderReady = !requireRender || renderId != null;
-      if (captureReady && renderReady) {
-        final split =
-            captureId != null &&
-            renderId != null &&
-            capturePairId != renderPairId;
+    if (catalogFallback && requireRender && !requireCapture) {
+      final render = catalog.where((item) => !item.isCapture).where((item) {
+        return !_isUnusable(
+          unusableCombinations,
+          renderId: item.id,
+          captureId: null,
+        );
+      }).firstOrNull;
+      if (render != null) {
         return PreferenceResolution(
-          desired: PairingSnapshot(
-            captureId: captureId,
-            renderId: renderId,
-            captureOverride: split,
-            renderOverride: split,
-          ),
+          desired: PairingSnapshot(renderId: render.id),
           preferenceControlled: true,
-          unresolvedIds: unresolved,
+          unresolvedIds: skipped,
+        );
+      }
+    }
+    if (catalogFallback && requireCapture && !requireRender) {
+      final capture = catalog.where((item) => item.isCapture).where((item) {
+        return !_isUnusable(
+          unusableCombinations,
+          renderId: null,
+          captureId: item.id,
+        );
+      }).firstOrNull;
+      if (capture != null) {
+        return PreferenceResolution(
+          desired: PairingSnapshot(captureId: capture.id),
+          preferenceControlled: true,
+          unresolvedIds: skipped,
         );
       }
     }
     return PreferenceResolution(
       desired: const PairingSnapshot(),
       preferenceControlled: true,
-      unresolvedIds: unresolved,
+      unresolvedIds: skipped,
       exhausted: true,
     );
   }
 
   PreferenceResolution? _explicit(
     List<Endpoint> catalog, {
+    required List<EndpointPreferenceEntry> entries,
     required bool requireCapture,
     required bool requireRender,
     required String? explicitCaptureId,
     required String? explicitRenderId,
+    required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
   }) {
     if (explicitCaptureId == null && explicitRenderId == null) {
       return null;
     }
     final capture = _byId(catalog, explicitCaptureId);
     final render = _byId(catalog, explicitRenderId);
-    if (explicitCaptureId != null && capture == null) {
+    if (explicitRenderId != null && (render == null || render.isCapture)) {
       return null;
     }
-    if (explicitRenderId != null && render == null) {
+    if (explicitCaptureId != null &&
+        explicitRenderId == null &&
+        (capture == null || !capture.isCapture)) {
       return null;
     }
 
-    var captureId = capture?.id;
-    var renderId = render?.id;
-    var captureOverride = false;
-    var renderOverride = false;
-    if (capture != null && render == null) {
-      if (requireRender) {
-        renderId = _pairer.pairFor(capture, catalog)?.render?.id;
-      }
-    } else if (render != null && capture == null) {
-      if (requireCapture) {
-        captureId = _pairer.pairFor(render, catalog)?.capture?.id;
-      }
-    } else if (capture != null && render != null) {
-      final mates = capture.pairId == render.pairId;
-      captureOverride = !mates;
-      renderOverride = !mates;
+    var captureId = (capture != null && capture.isCapture) ? capture.id : null;
+    final renderId = render?.id;
+    if (render != null && captureId == null) {
+      captureId = _autoCapture(
+        catalog: catalog,
+        entries: entries,
+        render: render,
+        unusableCombinations: unusableCombinations,
+        catalogFallback: catalogFallback,
+      );
     }
-    if (requireCapture && captureId == null) {
+    if (requireCapture && captureId == null && render == null) {
       return null;
     }
     if (requireRender && renderId == null) {
+      if (explicitRenderId != null) {
+        return null;
+      }
+      if (requireCapture && captureId != null) {
+        return PreferenceResolution(
+          desired: PairingSnapshot(captureId: captureId),
+          preferenceControlled: false,
+        );
+      }
       return null;
     }
+
+    final auto = render == null
+        ? null
+        : _autoCapture(
+            catalog: catalog,
+            entries: entries,
+            render: render,
+            unusableCombinations: unusableCombinations,
+            catalogFallback: catalogFallback,
+          );
+    final captureOverride =
+        requireCapture &&
+        explicitCaptureId != null &&
+        captureId != null &&
+        (auto == null || captureId != auto);
     return PreferenceResolution(
       desired: PairingSnapshot(
-        captureId: captureId,
-        renderId: renderId,
+        captureId: requireCapture ? captureId : null,
+        renderId: requireRender ? renderId : null,
         captureOverride: captureOverride,
-        renderOverride: renderOverride,
       ),
       preferenceControlled: false,
     );
+  }
+
+  String? _autoCapture({
+    required List<Endpoint> catalog,
+    required List<EndpointPreferenceEntry> entries,
+    required Endpoint render,
+    required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
+  }) {
+    final row = _rowFor(entries, render.id);
+    if (row != null) {
+      final listed = _firstListedCapture(
+        catalog: catalog,
+        entry: row,
+        renderId: render.id,
+        unusableCombinations: unusableCombinations,
+      );
+      if (listed != null) {
+        return listed;
+      }
+    }
+    final mate = _pairer.pairFor(render, catalog)?.capture;
+    if (mate != null &&
+        !_isUnusable(
+          unusableCombinations,
+          renderId: render.id,
+          captureId: mate.id,
+        )) {
+      return mate.id;
+    }
+    if (row != null) {
+      return null;
+    }
+    return _firstCaptureAcrossRows(
+      catalog: catalog,
+      entries: entries,
+      renderId: render.id,
+      unusableCombinations: unusableCombinations,
+      catalogFallback: catalogFallback,
+    );
+  }
+
+  String? _firstCaptureAcrossRows({
+    required List<Endpoint> catalog,
+    required List<EndpointPreferenceEntry> entries,
+    required String? renderId,
+    required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
+  }) {
+    final seen = <String>{};
+    for (final entry in entries) {
+      if (!entry.enabled) {
+        continue;
+      }
+      for (final slot in entry.captures) {
+        if (!slot.enabled || seen.contains(slot.id)) {
+          continue;
+        }
+        seen.add(slot.id);
+        final capture = _byId(catalog, slot.id);
+        if (capture == null || !capture.isCapture) {
+          continue;
+        }
+        if (_isUnusable(
+          unusableCombinations,
+          renderId: renderId,
+          captureId: capture.id,
+        )) {
+          continue;
+        }
+        return capture.id;
+      }
+    }
+    if (!catalogFallback) {
+      return null;
+    }
+    return catalog
+        .where((item) => item.isCapture)
+        .where((item) {
+          return !_isUnusable(
+            unusableCombinations,
+            renderId: renderId,
+            captureId: item.id,
+          );
+        })
+        .firstOrNull
+        ?.id;
+  }
+
+  String? _firstListedCapture({
+    required List<Endpoint> catalog,
+    required EndpointPreferenceEntry entry,
+    required String? renderId,
+    required Set<UnusableCombination> unusableCombinations,
+    List<String>? unresolved,
+  }) {
+    for (final slot in entry.captures) {
+      if (!slot.enabled) {
+        continue;
+      }
+      final capture = _byId(catalog, slot.id);
+      if (capture == null) {
+        unresolved?.add(slot.id);
+        continue;
+      }
+      if (!capture.isCapture) {
+        continue;
+      }
+      if (_isUnusable(
+        unusableCombinations,
+        renderId: renderId,
+        captureId: capture.id,
+      )) {
+        continue;
+      }
+      return capture.id;
+    }
+    return null;
+  }
+
+  EndpointPreferenceEntry? _rowFor(
+    List<EndpointPreferenceEntry> entries,
+    String renderId,
+  ) {
+    for (final entry in entries) {
+      if (entry.renderId == renderId) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  bool _isUnusable(
+    Set<UnusableCombination> unusableCombinations, {
+    required String? renderId,
+    required String? captureId,
+  }) {
+    return unusableCombinations.contains(
+          UnusableCombination(renderId: renderId, captureId: captureId),
+        ) ||
+        (renderId != null &&
+            unusableCombinations.contains(
+              UnusableCombination(renderId: null, captureId: captureId),
+            ));
   }
 
   Endpoint? _byId(List<Endpoint> catalog, String? id) {

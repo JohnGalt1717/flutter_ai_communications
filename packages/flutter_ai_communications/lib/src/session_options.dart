@@ -37,8 +37,8 @@ final class SessionPreference {
   /// the adaptive Sound floor. Hosts own every prompt string.
   final bool noiseCancelling;
 
-  /// Ordered enabled Endpoint preference. Empty means platform default or the
-  /// preference bound on the Audio manager.
+  /// Ordered render rows with capture lists. Empty means platform default or
+  /// the preference bound on the Communications manager.
   final EndpointPreference endpoints;
 }
 

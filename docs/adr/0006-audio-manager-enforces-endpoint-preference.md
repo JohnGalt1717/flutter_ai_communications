@@ -1,3 +1,5 @@
 # The Communications manager enforces Endpoint preference and Camera preference
 
+Status: superseded by ADR-0029
+
 The host owns persistence and UI for an ordered, enabled Endpoint preference and a separate Camera preference, but the Communications manager continuously resolves and applies them. The two lists are independent; there is no audio/video Pair. A host-supplied audio list fills capture and render independently. An empty camera list uses facing and other metadata when present, then the first catalog entry. An Explicit selection overrides that order only for one Session while the device remains available; disappearance expires the override, and every new Session returns to preference.

@@ -412,6 +412,52 @@ final class PulseAsync {
             Void Function(Pointer<PaOperation>),
             void Function(Pointer<PaOperation>)
           >('pa_operation_unref'),
+      contextSetSubscribeCallback = lib
+          .lookupFunction<
+            Void Function(
+              Pointer<PaContext>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Uint32,
+                    Uint32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            ),
+            void Function(
+              Pointer<PaContext>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Uint32,
+                    Uint32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            )
+          >('pa_context_set_subscribe_callback'),
+      contextSubscribe = lib
+          .lookupFunction<
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              Uint32,
+              Pointer<Void>,
+              Pointer<Void>,
+            ),
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              int,
+              Pointer<Void>,
+              Pointer<Void>,
+            )
+          >('pa_context_subscribe'),
       _proplistGets = lib
           .lookupFunction<
             Pointer<Char> Function(Pointer<PaProplist>, Pointer<Char>),
@@ -486,6 +532,27 @@ final class PulseAsync {
 
   /// Releases an operation.
   final void Function(Pointer<PaOperation>) operationUnref;
+
+  /// Sets the sink/source subscribe callback.
+  final void Function(
+    Pointer<PaContext>,
+    Pointer<
+      NativeFunction<
+        Void Function(Pointer<PaContext>, Uint32, Uint32, Pointer<Void>)
+      >
+    >,
+    Pointer<Void>,
+  )
+  contextSetSubscribeCallback;
+
+  /// Subscribes to Pulse catalog events.
+  final Pointer<PaOperation> Function(
+    Pointer<PaContext>,
+    int,
+    Pointer<Void>,
+    Pointer<Void>,
+  )
+  contextSubscribe;
 
   final Pointer<Char> Function(Pointer<PaProplist>, Pointer<Char>)
   _proplistGets;

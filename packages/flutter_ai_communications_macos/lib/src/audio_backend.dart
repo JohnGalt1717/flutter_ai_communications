@@ -3,6 +3,18 @@ import 'dart:typed_data';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+/// Default no-op device watch for test and unavailable backends.
+mixin DeviceWatchSupport {
+  /// Core Audio device-list changes.
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
+}
+
 /// Native graph used by the macOS adapter.
 ///
 /// Capture and playback must share one duplex engine so VoiceProcessingIO
@@ -50,4 +62,13 @@ abstract class AudioBackend {
 
   /// Releases native resources.
   void dispose();
+
+  /// Core Audio device-list changes. Empty until [startDeviceWatch].
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
 }

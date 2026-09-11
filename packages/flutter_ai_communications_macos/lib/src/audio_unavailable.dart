@@ -6,7 +6,9 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'audio_backend.dart';
 
 /// Used when Core Audio cannot be loaded.
-final class UnavailableAudioBackend implements AudioBackend {
+final class UnavailableAudioBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   /// Creates an unavailable backend.
   const UnavailableAudioBackend();
 

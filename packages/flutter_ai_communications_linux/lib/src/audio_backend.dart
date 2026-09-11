@@ -3,6 +3,18 @@ import 'dart:typed_data';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+/// Default no-op device watch for test and unavailable backends.
+mixin DeviceWatchSupport {
+  /// Pulse sink/source/card changes.
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
+}
+
 /// Pulse / PipeWire graph used by the Linux adapter.
 abstract class AudioBackend {
   /// Snapshot of capture and render Endpoints.
@@ -42,4 +54,13 @@ abstract class AudioBackend {
 
   /// Releases native resources.
   void dispose();
+
+  /// Pulse sink/source/card changes. Empty until [startDeviceWatch].
+  Stream<void> get deviceChanges => const Stream.empty();
+
+  /// Starts listening for [deviceChanges].
+  void startDeviceWatch() {}
+
+  /// Stops listening for [deviceChanges].
+  void stopDeviceWatch() {}
 }

@@ -51,14 +51,23 @@ void main() {
         preference: const SessionPreference(
           endpoints: EndpointPreference(
             entries: [
-              EndpointPreferenceEntry(id: 'handset-in'),
-              EndpointPreferenceEntry(id: 'speaker-in'),
+              EndpointPreferenceEntry(
+                renderId: 'handset-out',
+                captures: [EndpointPreferenceCapture(id: 'handset-in')],
+              ),
+              EndpointPreferenceEntry(
+                renderId: 'speaker-out',
+                captures: [EndpointPreferenceCapture(id: 'speaker-in')],
+              ),
             ],
           ),
         ),
       );
       expect(session.diagnostics.desired.captureId, 'handset-in');
-      expect(session.preference.endpoints.entries.first.id, 'handset-in');
+      expect(
+        session.preference.endpoints.entries.first.renderId,
+        'handset-out',
+      );
     });
 
     test(
@@ -85,8 +94,14 @@ void main() {
           preference: const SessionPreference(
             endpoints: EndpointPreference(
               entries: [
-                EndpointPreferenceEntry(id: 'usb-in'),
-                EndpointPreferenceEntry(id: 'airpods-in'),
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [EndpointPreferenceCapture(id: 'usb-in')],
+                ),
+                EndpointPreferenceEntry(
+                  renderId: 'airpods-out',
+                  captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+                ),
               ],
             ),
           ),
@@ -132,9 +147,14 @@ void main() {
           preference: const SessionPreference(
             endpoints: EndpointPreference(
               entries: [
-                EndpointPreferenceEntry(id: 'brio-in'),
-                EndpointPreferenceEntry(id: 'usb-out'),
-                EndpointPreferenceEntry(id: 'airpods-in'),
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [EndpointPreferenceCapture(id: 'brio-in')],
+                ),
+                EndpointPreferenceEntry(
+                  renderId: 'airpods-out',
+                  captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+                ),
               ],
             ),
           ),
@@ -144,6 +164,53 @@ void main() {
         expect(session.diagnostics.desired.renderId, 'usb-out');
         expect(platform.selectedCaptureId, 'brio-in');
         expect(platform.selectedRenderId, 'usb-out');
+      },
+    );
+
+    test(
+      'capture list falls back on the live Session when Brio disappears',
+      () async {
+        platform.catalog = [
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb audio',
+          ),
+          ...FakeCommunicationsPlatform.defaultCatalog,
+        ];
+        final session = await ready(
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [
+                    EndpointPreferenceCapture(id: 'brio-in'),
+                    EndpointPreferenceCapture(id: 'airpods-in'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        platform.publishCatalog(
+          platform.catalog.where((e) => e.id != 'brio-in').toList(),
+        );
+        await _microtask();
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        expect(session.diagnostics.desired.captureId, 'airpods-in');
+        expect(session.diagnostics.preferenceControlled, isTrue);
       },
     );
 
@@ -158,7 +225,7 @@ void main() {
 
     test('disappeared explicit selection returns to preference', () async {
       final session = await ready();
-      await session.select(captureId: 'handset-in');
+      await session.select(renderId: 'handset-out');
       platform.publishCatalog(
         platform.catalog
             .where((e) => e.routeClass != RouteClass.handset)
@@ -182,7 +249,7 @@ void main() {
         await _microtask();
         expect(session.diagnostics.desired.captureId, 'airpods-in');
 
-        await session.select(captureId: 'handset-in');
+        await session.select(renderId: 'handset-out');
         platform.publishCatalog(
           FakeCommunicationsPlatform.defaultCatalog
               .where((e) => e.routeClass != RouteClass.handset)
@@ -207,6 +274,309 @@ void main() {
       },
     );
 
+    test('select render auto-completes capture from that row list', () async {
+      platform.catalog = [
+        const Endpoint(
+          id: 'brio-in',
+          name: 'Logitech BRIO',
+          routeClass: RouteClass.wired,
+          isCapture: true,
+          pairId: 'logitech brio',
+        ),
+        const Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          pairId: 'usb audio',
+        ),
+        ...FakeCommunicationsPlatform.defaultCatalog,
+      ];
+      final session = await ready(
+        preference: const SessionPreference(
+          endpoints: EndpointPreference(
+            entries: [
+              EndpointPreferenceEntry(
+                renderId: 'airpods-out',
+                captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+              ),
+              EndpointPreferenceEntry(
+                renderId: 'usb-out',
+                captures: [
+                  EndpointPreferenceCapture(id: 'brio-in'),
+                  EndpointPreferenceCapture(id: 'airpods-in'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      expect(session.diagnostics.desired.renderId, 'airpods-out');
+      await session.select(renderId: 'usb-out');
+      expect(session.diagnostics.preferenceControlled, isFalse);
+      expect(session.diagnostics.desired.renderId, 'usb-out');
+      expect(session.diagnostics.desired.captureId, 'brio-in');
+      expect(session.diagnostics.desired.captureOverride, isFalse);
+    });
+
+    test(
+      'explicit render stays and re-walks capture when Brio disappears and returns',
+      () async {
+        platform.catalog = [
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb audio',
+          ),
+          ...FakeCommunicationsPlatform.defaultCatalog,
+        ];
+        final session = await ready(
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(
+                  renderId: 'airpods-out',
+                  captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+                ),
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [
+                    EndpointPreferenceCapture(id: 'brio-in'),
+                    EndpointPreferenceCapture(id: 'airpods-in'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+        await session.select(renderId: 'usb-out');
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        platform.publishCatalog(
+          platform.catalog.where((e) => e.id != 'brio-in').toList(),
+        );
+        await _microtask();
+        expect(session.diagnostics.preferenceControlled, isFalse);
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        expect(session.diagnostics.desired.captureId, 'airpods-in');
+        platform.publishCatalog([
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          ...platform.catalog,
+        ]);
+        await _microtask();
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+      },
+    );
+
+    test('lock snapshots capture so a returning Brio does not steal', () async {
+      platform.catalog = [
+        const Endpoint(
+          id: 'brio-in',
+          name: 'Logitech BRIO',
+          routeClass: RouteClass.wired,
+          isCapture: true,
+          pairId: 'logitech brio',
+        ),
+        const Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          pairId: 'usb audio',
+        ),
+        ...FakeCommunicationsPlatform.defaultCatalog,
+      ];
+      final session = await ready(
+        preference: const SessionPreference(
+          endpoints: EndpointPreference(
+            entries: [
+              EndpointPreferenceEntry(
+                renderId: 'usb-out',
+                captures: [
+                  EndpointPreferenceCapture(id: 'brio-in'),
+                  EndpointPreferenceCapture(id: 'airpods-in'),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+      await session.select(renderId: 'usb-out');
+      platform.publishCatalog(
+        platform.catalog.where((e) => e.id != 'brio-in').toList(),
+      );
+      await _microtask();
+      expect(session.diagnostics.desired.captureId, 'airpods-in');
+      await session.select(captureId: 'airpods-in', renderId: 'usb-out');
+      platform.publishCatalog([
+        const Endpoint(
+          id: 'brio-in',
+          name: 'Logitech BRIO',
+          routeClass: RouteClass.wired,
+          isCapture: true,
+          pairId: 'logitech brio',
+        ),
+        ...platform.catalog,
+      ]);
+      await _microtask();
+      expect(session.diagnostics.desired.captureId, 'airpods-in');
+      expect(session.diagnostics.desired.renderId, 'usb-out');
+      expect(session.diagnostics.desired.captureOverride, isTrue);
+    });
+
+    test('select capture keeps the current render', () async {
+      final session = await ready();
+      expect(session.diagnostics.desired.renderId, 'airpods-out');
+      await session.select(captureId: 'handset-in');
+      expect(session.diagnostics.desired.captureId, 'handset-in');
+      expect(session.diagnostics.desired.renderId, 'airpods-out');
+      expect(session.diagnostics.desired.captureOverride, isTrue);
+    });
+
+    test('select render clears a prior capture override', () async {
+      final session = await ready();
+      await session.select(captureId: 'handset-in', renderId: 'airpods-out');
+      expect(session.diagnostics.desired.captureId, 'handset-in');
+      await session.select(renderId: 'speaker-out');
+      expect(session.diagnostics.desired.renderId, 'speaker-out');
+      expect(session.diagnostics.desired.captureId, 'speaker-in');
+      expect(session.diagnostics.desired.captureOverride, isFalse);
+    });
+
+    test(
+      'listed captures gone skips the render row on the preference walk',
+      () async {
+        platform.catalog = [
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb audio',
+          ),
+          ...FakeCommunicationsPlatform.defaultCatalog,
+        ];
+        final session = await ready(
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [EndpointPreferenceCapture(id: 'brio-in')],
+                ),
+                EndpointPreferenceEntry(
+                  renderId: 'airpods-out',
+                  captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+                ),
+              ],
+            ),
+          ),
+        );
+        expect(session.diagnostics.desired.renderId, 'usb-out');
+        platform.publishCatalog(
+          platform.catalog.where((e) => e.id != 'brio-in').toList(),
+        );
+        await _microtask();
+        expect(session.diagnostics.preferenceControlled, isTrue);
+        expect(session.diagnostics.desired.renderId, 'airpods-out');
+        expect(session.diagnostics.desired.captureId, 'airpods-in');
+      },
+    );
+
+    test(
+      'capture-only uses a listed capture when the render is unplugged',
+      () async {
+        platform.catalog = [
+          const Endpoint(
+            id: 'brio-in',
+            name: 'Logitech BRIO',
+            routeClass: RouteClass.wired,
+            isCapture: true,
+            pairId: 'logitech brio',
+          ),
+          const Endpoint(
+            id: 'usb-out',
+            name: 'USB Audio',
+            routeClass: RouteClass.wired,
+            isCapture: false,
+            pairId: 'usb audio',
+          ),
+          ...FakeCommunicationsPlatform.defaultCatalog,
+        ];
+        final session = await ready(
+          direction: SessionDirection.captureOnly,
+          preference: const SessionPreference(
+            endpoints: EndpointPreference(
+              entries: [
+                EndpointPreferenceEntry(
+                  renderId: 'usb-out',
+                  captures: [EndpointPreferenceCapture(id: 'brio-in')],
+                ),
+              ],
+            ),
+          ),
+        );
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        expect(session.diagnostics.desired.renderId, isNull);
+        platform.publishCatalog(
+          platform.catalog.where((e) => e.id != 'usb-out').toList(),
+        );
+        await _microtask();
+        expect(session.diagnostics.desired.captureId, 'brio-in');
+        expect(session.diagnostics.desired.renderId, isNull);
+      },
+    );
+
+    test('playback-only ignores capture lists', () async {
+      platform.catalog = [
+        const Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          pairId: 'usb audio',
+        ),
+        ...FakeCommunicationsPlatform.defaultCatalog,
+      ];
+      final session = await ready(
+        direction: SessionDirection.playbackOnly,
+        preference: const SessionPreference(
+          endpoints: EndpointPreference(
+            entries: [
+              EndpointPreferenceEntry(
+                renderId: 'usb-out',
+                captures: [EndpointPreferenceCapture(id: 'airpods-in')],
+              ),
+            ],
+          ),
+        ),
+      );
+      expect(session.diagnostics.desired.renderId, 'usb-out');
+      expect(session.diagnostics.desired.captureId, isNull);
+    });
+
     test(
       'unavailable retained ids are not guessed from display name',
       () async {
@@ -214,8 +584,14 @@ void main() {
           preference: const SessionPreference(
             endpoints: EndpointPreference(
               entries: [
-                EndpointPreferenceEntry(id: 'ghost-airpods'),
-                EndpointPreferenceEntry(id: 'speaker-in'),
+                EndpointPreferenceEntry(
+                  renderId: 'ghost-airpods',
+                  captures: [EndpointPreferenceCapture(id: 'ghost-airpods-in')],
+                ),
+                EndpointPreferenceEntry(
+                  renderId: 'speaker-out',
+                  captures: [EndpointPreferenceCapture(id: 'speaker-in')],
+                ),
               ],
             ),
           ),
@@ -230,7 +606,12 @@ void main() {
         await ready();
         await manager.bindPreference(
           const EndpointPreference(
-            entries: [EndpointPreferenceEntry(id: 'handset-in')],
+            entries: [
+              EndpointPreferenceEntry(
+                renderId: 'handset-out',
+                captures: [EndpointPreferenceCapture(id: 'handset-in')],
+              ),
+            ],
           ),
         );
         expect(manager.session, isNull);
@@ -284,11 +665,14 @@ void main() {
       expect(platform.permissionRequests, 0);
     });
 
-    test('playback-only is playbackReady after the graph is Observed', () async {
-      final session = await ready(direction: SessionDirection.playbackOnly);
-      expect(session.status.code, SessionStatusCode.playbackReady);
-      expect(session.diagnostics.nativePlaybackFormat, isNotNull);
-    });
+    test(
+      'playback-only is playbackReady after the graph is Observed',
+      () async {
+        final session = await ready(direction: SessionDirection.playbackOnly);
+        expect(session.status.code, SessionStatusCode.playbackReady);
+        expect(session.diagnostics.nativePlaybackFormat, isNotNull);
+      },
+    );
 
     test('capture-only is captureLive after frames arrive', () async {
       final session = await ready(direction: SessionDirection.captureOnly);

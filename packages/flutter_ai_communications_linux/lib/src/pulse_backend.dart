@@ -35,6 +35,12 @@ final class PulseAudioBackend implements AudioBackend {
   var _captureGeneration = 0;
   String? _captureId;
   String? _renderId;
+  Isolate? _deviceWatchIsolate;
+  ReceivePort? _deviceWatchPort;
+  SendPort? _deviceWatchControl;
+  var _deviceWatchGeneration = 0;
+  final StreamController<void> _deviceChanges =
+      StreamController<void>.broadcast();
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
@@ -132,9 +138,84 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   @override
+  Stream<void> get deviceChanges => _deviceChanges.stream;
+
+  @override
+  void startDeviceWatch() {
+    if (_deviceWatchIsolate != null) {
+      return;
+    }
+    final generation = ++_deviceWatchGeneration;
+    final port = ReceivePort();
+    _deviceWatchPort = port;
+    void retry() {
+      _deviceWatchIsolate = null;
+      _deviceWatchControl = null;
+      _deviceWatchPort?.close();
+      _deviceWatchPort = null;
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (generation != _deviceWatchGeneration || _deviceChanges.isClosed) {
+          return;
+        }
+        startDeviceWatch();
+      });
+    }
+
+    port.listen((message) {
+      if (generation != _deviceWatchGeneration) {
+        return;
+      }
+      if (message is SendPort) {
+        _deviceWatchControl = message;
+        return;
+      }
+      if (message == 'failed') {
+        retry();
+        return;
+      }
+      if (!_deviceChanges.isClosed) {
+        _deviceChanges.add(null);
+      }
+    });
+    Isolate.spawn(_deviceWatchMain, port.sendPort).then(
+      (isolate) {
+        if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
+          isolate.kill(priority: Isolate.immediate);
+          return;
+        }
+        _deviceWatchIsolate = isolate;
+      },
+      onError: (_) {
+        if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
+          return;
+        }
+        retry();
+      },
+    );
+  }
+
+  @override
+  void stopDeviceWatch() {
+    _deviceWatchGeneration++;
+    _deviceWatchControl?.send('stop');
+    _deviceWatchControl = null;
+    final isolate = _deviceWatchIsolate;
+    _deviceWatchIsolate = null;
+    _deviceWatchPort?.close();
+    _deviceWatchPort = null;
+    if (isolate != null) {
+      Future<void>.delayed(const Duration(milliseconds: 200), () {
+        isolate.kill(priority: Isolate.immediate);
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    stopDeviceWatch();
     stop();
     unawaited(_captureOut.close());
+    unawaited(_deviceChanges.close());
   }
 
   String? _presentId(String? id) => id == null || id.isEmpty ? null : id;
@@ -436,6 +517,124 @@ void _captureMain(_CaptureStart start) {
     simple.freeStream(stream);
     calloc.free(buffer);
     calloc.free(error);
+    control.close();
+  }
+}
+
+const _pulseSubscribeMask = 0x0001 | 0x0002 | 0x0080 | 0x0200;
+
+Future<void> _deviceWatchMain(SendPort send) async {
+  final control = ReceivePort();
+  send.send(control.sendPort);
+  var running = true;
+  control.listen((_) {
+    running = false;
+  });
+  late final PulseAsync async;
+  try {
+    async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
+  } on Object {
+    control.close();
+    send.send('failed');
+    return;
+  }
+  final loop = async.mainloopNew();
+  if (loop == nullptr) {
+    control.close();
+    send.send('failed');
+    return;
+  }
+  final api = async.mainloopGetApi(loop);
+  final name = 'flutter_ai_communications_watch'.toNativeUtf8();
+  final context = async.contextNew(api, name.cast());
+  malloc.free(name);
+  if (context == nullptr) {
+    async.mainloopFree(loop);
+    control.close();
+    send.send('failed');
+    return;
+  }
+  if (async.contextConnect(context, nullptr, 0, nullptr) < 0) {
+    async.contextUnref(context);
+    async.mainloopFree(loop);
+    control.close();
+    send.send('failed');
+    return;
+  }
+  var ready = false;
+  for (var i = 0; i < 2000; i++) {
+    final state = async.contextGetState(context);
+    if (state == paContextReady) {
+      ready = true;
+      break;
+    }
+    if (state == paContextFailed || state == paContextTerminated) {
+      break;
+    }
+    async.mainloopIterate(loop, 1, nullptr);
+  }
+  if (!ready) {
+    async.contextDisconnect(context);
+    async.contextUnref(context);
+    async.mainloopFree(loop);
+    control.close();
+    send.send('failed');
+    return;
+  }
+  final callable =
+      NativeCallable<
+        Void Function(Pointer<PaContext>, Uint32, Uint32, Pointer<Void>)
+      >.listener((context, type, index, userdata) {
+        send.send(null);
+      });
+  async.contextSetSubscribeCallback(context, callable.nativeFunction, nullptr);
+  var subscribeOk = false;
+  final success =
+      NativeCallable<
+        Void Function(Pointer<PaContext>, Int32, Pointer<Void>)
+      >.listener((context, ok, userdata) {
+        subscribeOk = ok != 0;
+      });
+  final op = async.contextSubscribe(
+    context,
+    _pulseSubscribeMask,
+    success.nativeFunction.cast(),
+    nullptr,
+  );
+  try {
+    if (op == nullptr) {
+      send.send('failed');
+      return;
+    }
+    var finished = false;
+    for (var i = 0; i < 2000; i++) {
+      if (async.operationGetState(op) == paOperationDone) {
+        finished = true;
+        break;
+      }
+      async.mainloopIterate(loop, 1, nullptr);
+    }
+    async.operationUnref(op);
+    if (!finished || !subscribeOk) {
+      send.send('failed');
+      return;
+    }
+    while (running) {
+      final state = async.contextGetState(context);
+      if (state == paContextFailed || state == paContextTerminated) {
+        send.send('failed');
+        return;
+      }
+      async.mainloopIterate(loop, 0, nullptr);
+      // Yield so the control port can deliver stop.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  } finally {
+    success.close();
+    callable.close();
+    async.contextDisconnect(context);
+    async.contextUnref(context);
+    async.mainloopFree(loop);
     control.close();
   }
 }

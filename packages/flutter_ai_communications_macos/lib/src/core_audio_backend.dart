@@ -19,7 +19,9 @@ const _silenceBytes = 480;
 const _bufferCount = 3;
 
 /// Catalog and Observed UID lookup. Duplex capture/playback is native.
-final class CoreAudioBackend implements AudioBackend {
+final class CoreAudioBackend
+    with DeviceWatchSupport
+    implements AudioBackend {
   /// Opens Core Audio in-process.
   CoreAudioBackend() : _audio = CoreAudio();
 

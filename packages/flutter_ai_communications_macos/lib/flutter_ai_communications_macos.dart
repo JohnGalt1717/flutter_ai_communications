@@ -54,7 +54,7 @@ final class FlutterAiCommunicationsMacos
     IsolationState.unavailable,
   );
   PairingSnapshot _observed = const PairingSnapshot();
-  Timer? _catalogPoll;
+  StreamSubscription<void>? _deviceWatch;
   Timer? _observedPoll;
   var _running = false;
   var _generation = 0;
@@ -141,10 +141,10 @@ final class FlutterAiCommunicationsMacos
       _catalog.add(backend.enumerate());
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
-      _catalogPoll?.cancel();
-      _catalogPoll = Timer.periodic(const Duration(seconds: 2), (_) {
+      _deviceWatch ??= backend.deviceChanges.listen((_) {
         _catalog.add(backend.enumerate());
       });
+      backend.startDeviceWatch();
       _observedPoll?.cancel();
       _observedPoll = Timer.periodic(const Duration(milliseconds: 250), (_) {
         _emitObserved();
@@ -159,8 +159,9 @@ final class FlutterAiCommunicationsMacos
     if (channel != null) {
       return channel.stopNative();
     }
-    _catalogPoll?.cancel();
-    _catalogPoll = null;
+    _deviceWatch?.cancel();
+    _deviceWatch = null;
+    _backend?.stopDeviceWatch();
     _observedPoll?.cancel();
     _observedPoll = null;
     _running = false;

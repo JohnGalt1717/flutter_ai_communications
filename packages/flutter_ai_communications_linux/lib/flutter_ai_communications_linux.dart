@@ -52,7 +52,7 @@ final class FlutterAiCommunicationsLinux
   );
   PairingSnapshot _observed = const PairingSnapshot();
   NativeFormatReport _lastNativeFormats = const NativeFormatReport();
-  Timer? _catalogWatch;
+  StreamSubscription<void>? _catalogWatch;
   var _catalogListeners = 0;
   var _running = false;
   var _generation = 0;
@@ -173,7 +173,11 @@ final class FlutterAiCommunicationsLinux
   }
 
   void _ensureCatalogWatch() {
-    _catalogWatch ??= Timer.periodic(const Duration(seconds: 2), (_) {
+    if (_catalogWatch != null) {
+      return;
+    }
+    _backend.startDeviceWatch();
+    _catalogWatch = _backend.deviceChanges.listen((_) {
       _publishCatalog();
     });
   }
@@ -184,6 +188,7 @@ final class FlutterAiCommunicationsLinux
     }
     _catalogWatch?.cancel();
     _catalogWatch = null;
+    _backend.stopDeviceWatch();
   }
 
   Future<void> _prepareBluetoothCatalog() async {
