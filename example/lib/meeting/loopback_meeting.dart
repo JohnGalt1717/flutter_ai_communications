@@ -82,6 +82,8 @@ final class LoopbackMeetingStage extends StatelessWidget {
           key: const Key('screen-loopback'),
           surface: session.screenSurface,
           viewTypePrefix: 'fac-screen',
+          pixelWidth: session.screenNativeFormat?.width,
+          pixelHeight: session.screenNativeFormat?.height,
           placeholder: _placeholder(
             session.screenUnavailableReason ?? 'Not sharing',
           ),
@@ -95,6 +97,8 @@ final class LoopbackMeetingStage extends StatelessWidget {
           key: const Key('loopback-tile'),
           surface: session.videoSurface,
           viewTypePrefix: 'fac-camera',
+          pixelWidth: session.nativeVideoFormat?.width,
+          pixelHeight: session.nativeVideoFormat?.height,
         ),
       );
     }
@@ -131,6 +135,8 @@ final class LoopbackMeetingStage extends StatelessWidget {
               VideoSurfaceView(
                 surface: session.videoSurface,
                 viewTypePrefix: 'fac-camera',
+                pixelWidth: session.nativeVideoFormat?.width,
+                pixelHeight: session.nativeVideoFormat?.height,
               )
             else
               _placeholder(

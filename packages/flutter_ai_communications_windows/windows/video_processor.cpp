@@ -241,6 +241,129 @@ void CoverStill(const uint8_t* src, int src_w, int src_h, uint8_t* dst,
   }
 }
 
+void DilateGray(uint8_t* img, int w, int h, int radius,
+                std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h, 0);
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      uint8_t m = 0;
+      for (int dy = -radius; dy <= radius; dy++) {
+        const int yy = ClampIndex(y + dy, h - 1);
+        for (int dx = -radius; dx <= radius; dx++) {
+          const int xx = ClampIndex(x + dx, w - 1);
+          const uint8_t v = img[static_cast<size_t>(yy) * w + xx];
+          if (v > m) {
+            m = v;
+          }
+        }
+      }
+      (*tmp)[static_cast<size_t>(y) * w + x] = m;
+    }
+  }
+  std::memcpy(img, tmp->data(), tmp->size());
+}
+
+void BoxBlurGray(uint8_t* img, int w, int h, int radius,
+                 std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h, 0);
+  const int window = radius * 2 + 1;
+  for (int y = 0; y < h; y++) {
+    int sum = 0;
+    for (int x = -radius; x <= radius; x++) {
+      sum += img[static_cast<size_t>(y) * w + ClampIndex(x, w - 1)];
+    }
+    for (int x = 0; x < w; x++) {
+      (*tmp)[static_cast<size_t>(y) * w + x] =
+          static_cast<uint8_t>(sum / window);
+      const int leave = ClampIndex(x - radius, w - 1);
+      const int enter = ClampIndex(x + radius + 1, w - 1);
+      sum += img[static_cast<size_t>(y) * w + enter] -
+             img[static_cast<size_t>(y) * w + leave];
+    }
+  }
+  for (int x = 0; x < w; x++) {
+    int sum = 0;
+    for (int y = -radius; y <= radius; y++) {
+      sum += (*tmp)[static_cast<size_t>(ClampIndex(y, h - 1)) * w + x];
+    }
+    for (int y = 0; y < h; y++) {
+      img[static_cast<size_t>(y) * w + x] =
+          static_cast<uint8_t>(sum / window);
+      const int leave = ClampIndex(y - radius, h - 1);
+      const int enter = ClampIndex(y + radius + 1, h - 1);
+      sum += (*tmp)[static_cast<size_t>(enter) * w + x] -
+             (*tmp)[static_cast<size_t>(leave) * w + x];
+    }
+  }
+}
+
+void BoxBlurRgba(uint8_t* img, int w, int h, int radius,
+                 std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h * 4, 0);
+  const int window = radius * 2 + 1;
+  for (int y = 0; y < h; y++) {
+    int sum[3] = {0, 0, 0};
+    for (int x = -radius; x <= radius; x++) {
+      const uint8_t* px =
+          img + (static_cast<size_t>(y) * w + ClampIndex(x, w - 1)) * 4;
+      sum[0] += px[0];
+      sum[1] += px[1];
+      sum[2] += px[2];
+    }
+    for (int x = 0; x < w; x++) {
+      uint8_t* out = tmp->data() + (static_cast<size_t>(y) * w + x) * 4;
+      out[0] = static_cast<uint8_t>(sum[0] / window);
+      out[1] = static_cast<uint8_t>(sum[1] / window);
+      out[2] = static_cast<uint8_t>(sum[2] / window);
+      out[3] = 255;
+      const uint8_t* leave =
+          img + (static_cast<size_t>(y) * w + ClampIndex(x - radius, w - 1)) * 4;
+      const uint8_t* enter = img + (static_cast<size_t>(y) * w +
+                                    ClampIndex(x + radius + 1, w - 1)) *
+                                       4;
+      sum[0] += enter[0] - leave[0];
+      sum[1] += enter[1] - leave[1];
+      sum[2] += enter[2] - leave[2];
+    }
+  }
+  for (int x = 0; x < w; x++) {
+    int sum[3] = {0, 0, 0};
+    for (int y = -radius; y <= radius; y++) {
+      const uint8_t* px =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y, h - 1)) * w + x) * 4;
+      sum[0] += px[0];
+      sum[1] += px[1];
+      sum[2] += px[2];
+    }
+    for (int y = 0; y < h; y++) {
+      uint8_t* out = img + (static_cast<size_t>(y) * w + x) * 4;
+      out[0] = static_cast<uint8_t>(sum[0] / window);
+      out[1] = static_cast<uint8_t>(sum[1] / window);
+      out[2] = static_cast<uint8_t>(sum[2] / window);
+      out[3] = 255;
+      const uint8_t* leave =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y - radius, h - 1)) * w + x) * 4;
+      const uint8_t* enter =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y + radius + 1, h - 1)) * w + x) * 4;
+      sum[0] += enter[0] - leave[0];
+      sum[1] += enter[1] - leave[1];
+      sum[2] += enter[2] - leave[2];
+    }
+  }
+}
+
 void ScaleMask(const uint8_t* src, int src_w, int src_h, uint8_t* dst, int dst_w,
                int dst_h) {
   if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
@@ -364,7 +487,9 @@ struct PersonBackgroundProcessor::Impl {
   bool load_failed_ = false;
   std::vector<float> input_;
   std::vector<uint8_t> mask256_;
+  std::vector<uint8_t> mask256_prev_;
   std::vector<uint8_t> mask_;
+  std::vector<uint8_t> mask_tmp_;
   std::vector<uint8_t> background_;
   std::vector<uint8_t> scratch_;
 
@@ -482,8 +607,25 @@ struct PersonBackgroundProcessor::Impl {
     } catch (...) {
       return false;
     }
+    if (mask256_prev_.size() == mask256_.size()) {
+      for (size_t i = 0; i < mask256_.size(); i++) {
+        mask256_[i] = static_cast<uint8_t>(
+            mask256_prev_[i] * 0.65f + mask256_[i] * 0.35f + 0.5f);
+      }
+    }
+    mask256_prev_ = mask256_;
+    for (uint8_t& v : mask256_) {
+      const float a = v / 255.f;
+      const float t = Clamp01((a - 0.28f) / 0.42f);
+      const float s = t * t * (3.f - 2.f * t);
+      v = static_cast<uint8_t>(s * 255.f + 0.5f);
+    }
+    DilateGray(mask256_.data(), kModel, kModel, 3, &mask_tmp_);
+    DilateGray(mask256_.data(), kModel, kModel, 2, &mask_tmp_);
     mask_.assign(static_cast<size_t>(width) * height, 0);
     ScaleMask(mask256_.data(), kModel, kModel, mask_.data(), width, height);
+    const int feather = (std::max)(6, width / 80);
+    BoxBlurGray(mask_.data(), width, height, feather, &mask_tmp_);
     return true;
   }
 
@@ -495,13 +637,18 @@ struct PersonBackgroundProcessor::Impl {
       return;
     }
     const float t = intensity / 100.f;
-    const float factor = std::pow(1.f - t, 1.5f) * 0.88f + 0.12f;
+    const float factor = 0.16f - t * 0.10f;
     const int small_w =
-        (std::max)(8, static_cast<int>(width * factor));
+        (std::max)(12, static_cast<int>(width * factor + 0.5f));
     const int small_h =
-        (std::max)(8, static_cast<int>(height * factor));
+        (std::max)(12, static_cast<int>(height * factor + 0.5f));
     scratch_.assign(static_cast<size_t>(small_w) * small_h * 4, 0);
     ScaleRgba(rgba, width, height, scratch_.data(), small_w, small_h);
+    const int passes = t >= 0.75f ? 3 : 2;
+    const int radius = t >= 0.75f ? 3 : 2;
+    for (int i = 0; i < passes; i++) {
+      BoxBlurRgba(scratch_.data(), small_w, small_h, radius, &background_);
+    }
     ScaleRgba(scratch_.data(), small_w, small_h, background_.data(), width,
               height);
   }
@@ -512,7 +659,12 @@ struct PersonBackgroundProcessor::Impl {
       return;
     }
     for (size_t i = 0; i < pixels; i++) {
-      const float a = mask_[i] / 255.f;
+      float a = mask_[i] / 255.f;
+      if (a > 0.88f) {
+        a = 1.f;
+      } else if (a < 0.08f) {
+        a = 0.f;
+      }
       uint8_t* px = rgba + i * 4;
       const uint8_t* bg = background_.data() + i * 4;
       px[0] = static_cast<uint8_t>(bg[0] * (1.f - a) + px[0] * a + 0.5f);

@@ -632,7 +632,7 @@ void CameraGraph::CopySample(void* raw_sample) {
   }
   bool live = false;
   for (int y = 0; y < height_; y++) {
-    const int src_y = locked_2d ? y : (height_ - 1 - y);
+    const int src_y = height_ - 1 - y;
     const BYTE* row = src + static_cast<ptrdiff_t>(stride) * src_y;
     uint8_t* dst = capture_rgba_.data() + static_cast<size_t>(y) * width_ * 4;
     for (int x = 0; x < width_; x++) {
