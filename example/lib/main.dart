@@ -394,7 +394,11 @@ final class _SessionPageState extends State<SessionPage> {
       final webrtc = WebrtcVideoSink();
       _webrtc = webrtc;
       webrtc.attach(session);
-      unawaited(_webRtcLoopback.applySendTrack(webrtc.localVideo));
+      _webRtcLoopback.inboundChanged = () {
+        if (mounted) {
+          setState(() {});
+        }
+      };
       _webrtcSub = webrtc.localVideos.listen((track) {
         unawaited(_webRtcLoopback.applySendTrack(track));
         if (mounted) {
@@ -443,11 +447,12 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _stop() async {
+    final sub = _webrtcSub;
+    _webrtcSub = null;
+    unawaited(sub?.cancel());
+    _webrtc?.detach();
     await _webRtcLoopback.dispose();
     await _echo?.dispose();
-    await _webrtcSub?.cancel();
-    _webrtcSub = null;
-    _webrtc?.detach();
     await _manager.cameraPreview?.stop();
     await _session?.stop();
     if (mounted) {

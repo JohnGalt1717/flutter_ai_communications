@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -7,28 +9,62 @@ import 'video_surface_view.dart';
 
 /// Host-owned loopback PeerConnection pair using flutter_webrtc.
 ///
-/// Session has no PeerConnection type. The host addTracks each Send track
-/// when a [MediaStreamTrack] mapper exists; inbound [RTCVideoView] shows the
-/// remote loopback. Until a mapped track is available, inbound falls back to
-/// the Send track Video surface (processed Production frames).
+/// Session has no PeerConnection type. [mapSendTrack] turns a Send track into
+/// a flutter_webrtc [MediaStreamTrack] for `addTrack`. Until that mapper
+/// supplies a track, inbound falls back to the Send track Video surface.
 final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
+  /// Optional host mapper from Send track to a MediaStreamTrack.
+  FlutterWebRtcLoopback({this.mapSendTrack});
+
+  /// Host `mapSendTrack`. Null until native Production-path bind exists.
+  final Future<MediaStreamTrack?> Function(WebrtcSendTrack track)? mapSendTrack;
+
   RTCPeerConnection? _sender;
   RTCPeerConnection? _receiver;
   final RTCVideoRenderer _renderer = RTCVideoRenderer();
   var _rendererReady = false;
   var _hasRemote = false;
+  var _disposed = false;
   WebrtcSendTrack? _track;
   RTCRtpSender? _rtpSender;
+  Future<void> _queue = Future<void>.value();
+  VoidCallback? _inboundChanged;
+
+  @override
+  set inboundChanged(VoidCallback? callback) {
+    _inboundChanged = callback;
+  }
+
+  Future<void> _run(Future<void> Function() op) {
+    _queue = _queue.then((_) async {
+      if (_disposed) {
+        return;
+      }
+      await op();
+    });
+    return _queue;
+  }
 
   Future<void> _ensurePeerConnections() async {
-    if (_sender != null) {
+    if (_sender != null || _disposed) {
       return;
     }
     await _renderer.initialize();
+    if (_disposed) {
+      await _renderer.dispose();
+      return;
+    }
     _rendererReady = true;
     const config = {'sdpSemantics': 'unified-plan'};
     _sender = await createPeerConnection(config);
     _receiver = await createPeerConnection(config);
+    if (_disposed) {
+      await _sender?.close();
+      await _receiver?.close();
+      _sender = null;
+      _receiver = null;
+      return;
+    }
     _sender!.onIceCandidate = (candidate) {
       final receiver = _receiver;
       if (receiver != null && candidate.candidate != null) {
@@ -42,18 +78,20 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
       }
     };
     _receiver!.onTrack = (event) {
-      if (event.streams.isEmpty) {
-        return;
+      if (event.streams.isNotEmpty) {
+        _renderer.srcObject = event.streams.first;
       }
-      _renderer.srcObject = event.streams.first;
-      _hasRemote = true;
+      if (event.track != null || event.streams.isNotEmpty) {
+        _hasRemote = true;
+        _inboundChanged?.call();
+      }
     };
   }
 
   Future<void> _negotiate() async {
     final sender = _sender;
     final receiver = _receiver;
-    if (sender == null || receiver == null) {
+    if (sender == null || receiver == null || _disposed) {
       return;
     }
     final offer = await sender.createOffer();
@@ -91,7 +129,11 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
   }
 
   @override
-  Future<void> applySendTrack(WebrtcSendTrack? track) async {
+  Future<void> applySendTrack(WebrtcSendTrack? track) {
+    return _run(() => _applySendTrack(track));
+  }
+
+  Future<void> _applySendTrack(WebrtcSendTrack? track) async {
     _track = track;
     if (track == null) {
       await _rtpSender?.replaceTrack(null);
@@ -99,7 +141,22 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
     }
     try {
       await _ensurePeerConnections();
-      if (_rtpSender == null) {
+      if (_disposed) {
+        return;
+      }
+      final mapped = await mapSendTrack?.call(track);
+      if (mapped != null) {
+        final sender = _sender;
+        if (sender == null) {
+          return;
+        }
+        if (_rtpSender == null) {
+          _rtpSender = await sender.addTrack(mapped);
+          await _negotiate();
+        } else {
+          await _rtpSender!.replaceTrack(mapped);
+        }
+      } else if (_rtpSender == null) {
         await _negotiate();
       }
     } on Object {
@@ -109,19 +166,22 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
   }
 
   @override
-  Future<void> dispose() async {
-    await _rtpSender?.replaceTrack(null);
-    _rtpSender = null;
-    _track = null;
-    _hasRemote = false;
-    _renderer.srcObject = null;
-    await _sender?.close();
-    await _receiver?.close();
-    _sender = null;
-    _receiver = null;
-    if (_rendererReady) {
-      await _renderer.dispose();
-      _rendererReady = false;
-    }
+  Future<void> dispose() {
+    _disposed = true;
+    return _run(() async {
+      await _rtpSender?.replaceTrack(null);
+      _rtpSender = null;
+      _track = null;
+      _hasRemote = false;
+      _renderer.srcObject = null;
+      await _sender?.close();
+      await _receiver?.close();
+      _sender = null;
+      _receiver = null;
+      if (_rendererReady) {
+        await _renderer.dispose();
+        _rendererReady = false;
+      }
+    });
   }
 }

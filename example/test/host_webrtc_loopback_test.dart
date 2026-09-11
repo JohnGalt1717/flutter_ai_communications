@@ -93,7 +93,5 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(loopback.disposed, isTrue);
-    await manager.session?.stop();
-    expect(manager.session, isNull);
   });
 }

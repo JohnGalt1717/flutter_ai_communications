@@ -15,6 +15,9 @@ abstract interface class HostWebRtcLoopback {
   /// Adds, replaces, or removes the Send track on the host PeerConnection.
   Future<void> applySendTrack(WebrtcSendTrack? track);
 
+  /// Called when inbound video becomes ready (remote track).
+  set inboundChanged(VoidCallback? callback);
+
   /// Tears down PeerConnections. Does not stop the Session.
   Future<void> dispose();
 }
@@ -35,6 +38,9 @@ final class FakeHostWebRtcLoopback implements HostWebRtcLoopback {
 
   /// Whether [dispose] ran.
   var disposed = false;
+
+  @override
+  set inboundChanged(VoidCallback? callback) {}
 
   @override
   Widget inboundView({Key? key}) {
@@ -60,6 +66,9 @@ final class FakeHostWebRtcLoopback implements HostWebRtcLoopback {
 
   @override
   Future<void> applySendTrack(WebrtcSendTrack? track) async {
+    if (disposed) {
+      return;
+    }
     final previous = lastTrack;
     if (previous != null && (track == null || track.id != previous.id)) {
       removedTrackIds.add(previous.id);
