@@ -1534,17 +1534,16 @@ final class Session {
     _convergenceTimer?.cancel();
     final elapsed = DateTime.now().difference(_convergenceStartedAt!);
     final remaining = convergenceDeadline - elapsed;
-    if (remaining <= Duration.zero ||
-        _convergenceAttempts >= maxConvergenceAttempts) {
+    final remainingMs = remaining.inMilliseconds;
+    if (remainingMs < 1 || _convergenceAttempts >= maxConvergenceAttempts) {
       unawaited(_enqueue(_failConvergence));
       return;
     }
     final delay = Duration(
       milliseconds:
-          (remaining.inMilliseconds /
-                  (maxConvergenceAttempts - _convergenceAttempts))
+          (remainingMs / (maxConvergenceAttempts - _convergenceAttempts))
               .ceil()
-              .clamp(1, remaining.inMilliseconds),
+              .clamp(1, remainingMs),
     );
     _convergenceTimer = Timer(delay, () {
       unawaited(_enqueue(_convergeObserved));
