@@ -66,11 +66,14 @@ void main() {
         isNotNull,
         reason: 'AirPods render Endpoint must be present',
       );
+      final capture = brio!;
+      final speakers = usbRender!;
+      final pair = airpods!;
 
       nativeOrchestrationLog.info('NATIVE_CATALOG ${catalogSummary(catalog)}');
       nativeOrchestrationLog.info(
-        'DESKTOP_PREFERENCE capture=${brio!.id} render=${usbRender!.id} '
-        'airpodsBelow=${airpods!.capture!.id}',
+        'DESKTOP_PREFERENCE capture=${capture.id} render=${speakers.id} '
+        'airpodsBelow=${pair.capture!.id}',
       );
 
       final session = await requireReady(
@@ -81,12 +84,12 @@ void main() {
           endpoints: EndpointPreference(
             entries: [
               EndpointPreferenceEntry(
-                renderId: usbRender.id,
-                captures: [EndpointPreferenceCapture(id: brio.id)],
+                renderId: speakers.id,
+                captures: [EndpointPreferenceCapture(id: capture.id)],
               ),
               EndpointPreferenceEntry(
-                renderId: airpods.render!.id,
-                captures: [EndpointPreferenceCapture(id: airpods.capture!.id)],
+                renderId: pair.render!.id,
+                captures: [EndpointPreferenceCapture(id: pair.capture!.id)],
               ),
             ],
           ),
@@ -98,17 +101,14 @@ void main() {
         isTrue,
         reason: 'this is host Endpoint preference, not Explicit selection',
       );
-      expect(session.diagnostics.desired.captureId, brio.id);
-      expect(session.diagnostics.desired.renderId, usbRender.id);
-      expect(session.diagnostics.desired.captureId, isNot(airpods.capture!.id));
-      expect(session.diagnostics.desired.renderId, isNot(airpods.render?.id));
+      expect(session.diagnostics.desired.captureId, capture.id);
+      expect(session.diagnostics.desired.renderId, speakers.id);
+      expect(session.diagnostics.desired.captureId, isNot(pair.capture!.id));
+      expect(session.diagnostics.desired.renderId, isNot(pair.render?.id));
       await assertObserved(session);
-      expect(session.diagnostics.observed.captureId, brio.id);
-      expect(session.diagnostics.observed.renderId, usbRender.id);
-      expect(
-        session.diagnostics.observed.captureId,
-        isNot(airpods.capture!.id),
-      );
+      expect(session.diagnostics.observed.captureId, capture.id);
+      expect(session.diagnostics.observed.renderId, speakers.id);
+      expect(session.diagnostics.observed.captureId, isNot(pair.capture!.id));
 
       await writeReceipt({
         'commit': hostCommit(),
@@ -128,9 +128,9 @@ void main() {
             },
         ],
         'preference': {
-          'capture': brio.id,
-          'render': usbRender.id,
-          'airpods': airpods.capture!.id,
+          'capture': capture.id,
+          'render': speakers.id,
+          'airpods': pair.capture!.id,
         },
         'session': snapshot(session, caseName: 'brio-usb-over-airpods'),
         'nativeFailuresSkipped': false,
@@ -181,6 +181,9 @@ void main() {
       expect(usbRender, isNotNull);
       expect(airpods?.capture, isNotNull);
       expect(airpods?.render, isNotNull);
+      final capture = brio!;
+      final speakers = usbRender!;
+      final pair = airpods!;
 
       final session = await requireReady(
         manager,
@@ -190,25 +193,25 @@ void main() {
           endpoints: EndpointPreference(
             entries: [
               EndpointPreferenceEntry(
-                renderId: airpods!.render!.id,
-                captures: [EndpointPreferenceCapture(id: airpods.capture!.id)],
+                renderId: pair.render!.id,
+                captures: [EndpointPreferenceCapture(id: pair.capture!.id)],
               ),
               EndpointPreferenceEntry(
-                renderId: usbRender!.id,
+                renderId: speakers.id,
                 captures: [
-                  EndpointPreferenceCapture(id: brio!.id),
-                  EndpointPreferenceCapture(id: airpods.capture!.id),
+                  EndpointPreferenceCapture(id: capture.id),
+                  EndpointPreferenceCapture(id: pair.capture!.id),
                 ],
               ),
             ],
           ),
         ),
       );
-      expect(session.diagnostics.desired.renderId, airpods.render!.id);
-      await session.select(renderId: usbRender.id);
+      expect(session.diagnostics.desired.renderId, pair.render!.id);
+      await session.select(renderId: speakers.id);
       expect(session.diagnostics.preferenceControlled, isFalse);
-      expect(session.diagnostics.desired.renderId, usbRender.id);
-      expect(session.diagnostics.desired.captureId, brio.id);
+      expect(session.diagnostics.desired.renderId, speakers.id);
+      expect(session.diagnostics.desired.captureId, capture.id);
       expect(session.preference.endpoints.entries, isNotEmpty);
       await assertObserved(session);
       await writeReceipt({
@@ -218,7 +221,10 @@ void main() {
         'osVersion': hostOsVersion(),
         'hardware': hostHardware(),
         'permission': 'granted',
-        'preference': {'explicitRender': usbRender.id, 'autoCapture': brio.id},
+        'preference': {
+          'explicitRender': speakers.id,
+          'autoCapture': capture.id,
+        },
         'session': snapshot(session, caseName: 'explicit-usb-completes-brio'),
         'nativeFailuresSkipped': false,
       });

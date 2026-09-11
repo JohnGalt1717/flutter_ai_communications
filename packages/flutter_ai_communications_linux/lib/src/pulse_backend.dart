@@ -148,6 +148,19 @@ final class PulseAudioBackend implements AudioBackend {
     final generation = ++_deviceWatchGeneration;
     final port = ReceivePort();
     _deviceWatchPort = port;
+    void retry() {
+      _deviceWatchIsolate = null;
+      _deviceWatchControl = null;
+      _deviceWatchPort?.close();
+      _deviceWatchPort = null;
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (generation != _deviceWatchGeneration || _deviceChanges.isClosed) {
+          return;
+        }
+        startDeviceWatch();
+      });
+    }
+
     port.listen((message) {
       if (generation != _deviceWatchGeneration) {
         return;
@@ -157,29 +170,28 @@ final class PulseAudioBackend implements AudioBackend {
         return;
       }
       if (message == 'failed') {
-        _deviceWatchIsolate = null;
-        _deviceWatchControl = null;
-        _deviceWatchPort?.close();
-        _deviceWatchPort = null;
-        Future<void>.delayed(const Duration(seconds: 2), () {
-          if (generation != _deviceWatchGeneration || _deviceChanges.isClosed) {
-            return;
-          }
-          startDeviceWatch();
-        });
+        retry();
         return;
       }
       if (!_deviceChanges.isClosed) {
         _deviceChanges.add(null);
       }
     });
-    Isolate.spawn(_deviceWatchMain, port.sendPort).then((isolate) {
-      if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
-        isolate.kill(priority: Isolate.immediate);
-        return;
-      }
-      _deviceWatchIsolate = isolate;
-    });
+    Isolate.spawn(_deviceWatchMain, port.sendPort).then(
+      (isolate) {
+        if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
+          isolate.kill(priority: Isolate.immediate);
+          return;
+        }
+        _deviceWatchIsolate = isolate;
+      },
+      onError: (_) {
+        if (generation != _deviceWatchGeneration || _deviceWatchPort != port) {
+          return;
+        }
+        retry();
+      },
+    );
   }
 
   @override

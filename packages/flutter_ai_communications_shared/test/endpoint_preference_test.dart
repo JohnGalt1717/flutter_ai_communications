@@ -487,6 +487,35 @@ void main() {
     expect(resolved.preferenceControlled, isFalse);
   });
 
+  test(
+    'explicit render with missing listed captures uses the hardware mate',
+    () {
+      final preference = EndpointPreference(
+        entries: [
+          row('airpods-out', ['gone-in']),
+        ],
+      );
+      final resolved = resolver.resolve(
+        catalog: catalog,
+        preference: preference,
+        explicitRenderId: 'airpods-out',
+      );
+      expect(resolved.desired.renderId, 'airpods-out');
+      expect(resolved.desired.captureId, 'airpods-in');
+    },
+  );
+
+  test('playback-only does not flag a capture override', () {
+    final resolved = resolver.resolve(
+      catalog: catalog,
+      requireCapture: false,
+      explicitCaptureId: 'airpods-in',
+      explicitRenderId: 'speaker-out',
+    );
+    expect(resolved.desired.captureId, isNull);
+    expect(resolved.desired.captureOverride, isFalse);
+  });
+
   test('explicit both matching auto is not a capture override', () {
     final resolved = resolver.resolve(
       catalog: catalog,

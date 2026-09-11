@@ -394,10 +394,10 @@ final class PreferenceResolver {
             catalogFallback: catalogFallback,
           );
     final captureOverride =
+        requireCapture &&
         explicitCaptureId != null &&
         captureId != null &&
-        auto != null &&
-        captureId != auto;
+        (auto == null || captureId != auto);
     return PreferenceResolution(
       desired: PairingSnapshot(
         captureId: requireCapture ? captureId : null,
@@ -417,12 +417,15 @@ final class PreferenceResolver {
   }) {
     final row = _rowFor(entries, render.id);
     if (row != null) {
-      return _firstListedCapture(
+      final listed = _firstListedCapture(
         catalog: catalog,
         entry: row,
         renderId: render.id,
         unusableCombinations: unusableCombinations,
       );
+      if (listed != null) {
+        return listed;
+      }
     }
     final mate = _pairer.pairFor(render, catalog)?.capture;
     if (mate != null &&
@@ -432,6 +435,9 @@ final class PreferenceResolver {
           captureId: mate.id,
         )) {
       return mate.id;
+    }
+    if (row != null) {
+      return null;
     }
     return _firstCaptureAcrossRows(
       catalog: catalog,
@@ -476,13 +482,17 @@ final class PreferenceResolver {
     if (!catalogFallback) {
       return null;
     }
-    return catalog.where((item) => item.isCapture).where((item) {
-      return !_isUnusable(
-        unusableCombinations,
-        renderId: renderId,
-        captureId: item.id,
-      );
-    }).firstOrNull?.id;
+    return catalog
+        .where((item) => item.isCapture)
+        .where((item) {
+          return !_isUnusable(
+            unusableCombinations,
+            renderId: renderId,
+            captureId: item.id,
+          );
+        })
+        .firstOrNull
+        ?.id;
   }
 
   String? _firstListedCapture({
