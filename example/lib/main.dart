@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
@@ -14,6 +16,7 @@ import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
 import 'package:flutter_ai_communications_example/meeting/loopback_meeting.dart';
+import 'package:flutter_ai_communications_example/meeting/video_surface_view.dart';
 import 'package:flutter_skill/flutter_skill.dart';
 import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -182,6 +185,7 @@ final class _SessionPageState extends State<SessionPage> {
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
   StreamSubscription<List<Endpoint>>? _catalogSub;
+  Uint8List? _replaceStill;
   var _catalogEpoch = 0;
   EndpointPreference _draft = const EndpointPreference();
 
@@ -207,6 +211,17 @@ final class _SessionPageState extends State<SessionPage> {
     _draft = _store.endpoints;
     _bindStoredPreference();
     _loadEndpoints();
+    unawaited(_loadReplaceStill());
+  }
+
+  Future<void> _loadReplaceStill() async {
+    final data = await rootBundle.load('assets/replace_still.jpg');
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _replaceStill = data.buffer.asUint8List();
+    });
   }
 
   void _bindStoredPreference() {
@@ -857,8 +872,13 @@ final class _SessionPageState extends State<SessionPage> {
               key: const Key('processor-replace'),
               label: const Text('Replace'),
               selected: processor is ReplaceVideoProcessor,
-              onSelected: (_) =>
-                  _setProcessor(ReplaceVideoProcessor(bytes: _replaceStillPng)),
+              onSelected: (_) {
+                final still = _replaceStill;
+                if (still == null) {
+                  return;
+                }
+                _setProcessor(ReplaceVideoProcessor(bytes: still));
+              },
             ),
           ],
         ),
@@ -1038,25 +1058,17 @@ final class _SessionPageState extends State<SessionPage> {
         ),
       );
     }
-    return _videoSurface(surface);
+    return _videoSurface(surface, session?.nativeVideoFormat);
   }
 
-  Widget _videoSurface(VideoSurface surface) {
-    if (surface.kind == VideoSurfaceKind.htmlElement) {
-      // Flutter web platform views overlay the glass pane if they are unmounted
-      // or given percentage sizing. Keep a tight pixel box and clip it.
-      return SizedBox(
-        width: 320,
-        height: 220,
-        child: ClipRect(
-          child: HtmlElementView(
-            key: const Key('self-view'),
-            viewType: 'fac-camera-${surface.handle}',
-          ),
-        ),
-      );
-    }
-    return Texture(key: const Key('self-view'), textureId: surface.handle);
+  Widget _videoSurface(VideoSurface surface, [VideoFormat? format]) {
+    return VideoSurfaceView(
+      key: const Key('self-view'),
+      surface: surface,
+      viewTypePrefix: 'fac-camera',
+      pixelWidth: format?.width,
+      pixelHeight: format?.height,
+    );
   }
 
   Widget? _screenPreviewThumb(Session? session, ScreenSource source) {
@@ -1193,79 +1205,6 @@ final class _SessionPageState extends State<SessionPage> {
     ];
   }
 }
-
-/// 1×1 red PNG used as the example still for replace.
-const _replaceStillPng = <int>[
-  0x89,
-  0x50,
-  0x4E,
-  0x47,
-  0x0D,
-  0x0A,
-  0x1A,
-  0x0A,
-  0x00,
-  0x00,
-  0x00,
-  0x0D,
-  0x49,
-  0x48,
-  0x44,
-  0x52,
-  0x00,
-  0x00,
-  0x00,
-  0x01,
-  0x00,
-  0x00,
-  0x00,
-  0x01,
-  0x08,
-  0x02,
-  0x00,
-  0x00,
-  0x00,
-  0x90,
-  0x77,
-  0x53,
-  0xDE,
-  0x00,
-  0x00,
-  0x00,
-  0x0C,
-  0x49,
-  0x44,
-  0x41,
-  0x54,
-  0x08,
-  0xD7,
-  0x63,
-  0xF8,
-  0xCF,
-  0xC0,
-  0x00,
-  0x00,
-  0x03,
-  0x01,
-  0x01,
-  0x00,
-  0x18,
-  0xDD,
-  0x8D,
-  0xB0,
-  0x00,
-  0x00,
-  0x00,
-  0x00,
-  0x49,
-  0x45,
-  0x4E,
-  0x44,
-  0xAE,
-  0x42,
-  0x60,
-  0x82,
-];
 
 double _rms(Uint8List bytes) {
   if (bytes.length < 2) {

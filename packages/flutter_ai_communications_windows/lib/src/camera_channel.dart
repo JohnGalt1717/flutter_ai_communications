@@ -75,28 +75,7 @@ final class MethodChannelCameraBackend implements CameraBackend {
         'muted': muted,
       });
       if (value is Map) {
-        final status = value['status'] as String? ?? 'started';
-        if (status != 'started') {
-          _lastSurface = null;
-          _lastFormat = null;
-          return status == 'failed'
-              ? NativeGraphStart.failed
-              : NativeGraphStart.unavailable;
-        }
-        final handle =
-            _readInt(value['textureId']) ?? _readInt(value['handle']);
-        _lastSurface = handle == null ? null : VideoSurface(handle: handle);
-        final width = _readInt(value['width']);
-        final height = _readInt(value['height']);
-        final frameRate = _readInt(value['frameRate']);
-        _lastFormat = width != null && height != null
-            ? VideoFormat(
-                width: width,
-                height: height,
-                frameRate: frameRate ?? 30,
-              )
-            : videoFormat ?? VideoFormat.defaultFormat;
-        return NativeGraphStart.started;
+        return _applyGraphMap(value, fallbackFormat: videoFormat);
       }
       _lastSurface = null;
       _lastFormat = null;
@@ -122,9 +101,12 @@ final class MethodChannelCameraBackend implements CameraBackend {
   @override
   Future<void> select(String cameraId) async {
     try {
-      await _methods.invokeMethod<void>('selectCameraNative', {
+      final value = await _methods.invokeMethod<Object?>('selectCameraNative', {
         'cameraId': cameraId,
       });
+      if (value is Map) {
+        _applyGraphMap(value);
+      }
     } on MissingPluginException {
       return;
     }
@@ -235,6 +217,29 @@ final class MethodChannelCameraBackend implements CameraBackend {
             ],
           ),
     ];
+  }
+
+  NativeGraphStart _applyGraphMap(
+    Map<dynamic, dynamic> value, {
+    VideoFormat? fallbackFormat,
+  }) {
+    final status = value['status'] as String? ?? 'started';
+    if (status != 'started') {
+      _lastSurface = null;
+      _lastFormat = null;
+      return status == 'failed'
+          ? NativeGraphStart.failed
+          : NativeGraphStart.unavailable;
+    }
+    final handle = _readInt(value['textureId']) ?? _readInt(value['handle']);
+    _lastSurface = handle == null ? null : VideoSurface(handle: handle);
+    final width = _readInt(value['width']);
+    final height = _readInt(value['height']);
+    final frameRate = _readInt(value['frameRate']);
+    _lastFormat = width != null && height != null
+        ? VideoFormat(width: width, height: height, frameRate: frameRate ?? 30)
+        : fallbackFormat ?? VideoFormat.defaultFormat;
+    return NativeGraphStart.started;
   }
 
   int? _readInt(Object? value) => switch (value) {

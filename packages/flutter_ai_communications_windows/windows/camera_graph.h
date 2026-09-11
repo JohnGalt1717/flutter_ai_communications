@@ -35,7 +35,7 @@ class CameraGraph {
                               bool enabled,
                               bool muted);
   void Stop();
-  void Select(const std::string& camera_id);
+  flutter::EncodableMap Select(const std::string& camera_id);
   void SetEnabled(bool enabled);
   void SetMuted(bool muted);
   std::string SetProcessor(const flutter::EncodableMap& args);
