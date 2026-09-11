@@ -492,6 +492,9 @@ struct PersonBackgroundProcessor::Impl {
   std::vector<uint8_t> mask_tmp_;
   std::vector<uint8_t> background_;
   std::vector<uint8_t> scratch_;
+  std::vector<uint8_t> blur_tmp_;
+  int last_w_ = 0;
+  int last_h_ = 0;
 
   bool EnsureSession() {
     std::lock_guard<std::mutex> lock(session_mutex_);
@@ -607,6 +610,11 @@ struct PersonBackgroundProcessor::Impl {
     } catch (...) {
       return false;
     }
+    if (width != last_w_ || height != last_h_) {
+      mask256_prev_.clear();
+      last_w_ = width;
+      last_h_ = height;
+    }
     if (mask256_prev_.size() == mask256_.size()) {
       for (size_t i = 0; i < mask256_.size(); i++) {
         mask256_[i] = static_cast<uint8_t>(
@@ -647,7 +655,7 @@ struct PersonBackgroundProcessor::Impl {
     const int passes = t >= 0.75f ? 3 : 2;
     const int radius = t >= 0.75f ? 3 : 2;
     for (int i = 0; i < passes; i++) {
-      BoxBlurRgba(scratch_.data(), small_w, small_h, radius, &background_);
+      BoxBlurRgba(scratch_.data(), small_w, small_h, radius, &blur_tmp_);
     }
     ScaleRgba(scratch_.data(), small_w, small_h, background_.data(), width,
               height);
@@ -689,6 +697,7 @@ std::string PersonBackgroundProcessor::Apply(
     impl_->still_rgba_.clear();
     impl_->still_w_ = 0;
     impl_->still_h_ = 0;
+    impl_->mask256_prev_.clear();
     return "ready";
   }
   if (kind == "blur") {
@@ -702,6 +711,7 @@ std::string PersonBackgroundProcessor::Apply(
     std::lock_guard<std::mutex> lock(impl_->mutex_);
     impl_->kind_ = Impl::Kind::Blur;
     impl_->intensity_ = intensity;
+    impl_->mask256_prev_.clear();
     return "ready";
   }
   if (kind == "replace") {
@@ -728,6 +738,7 @@ std::string PersonBackgroundProcessor::Apply(
     impl_->still_rgba_ = std::move(still);
     impl_->still_w_ = still_w;
     impl_->still_h_ = still_h;
+    impl_->mask256_prev_.clear();
     return "ready";
   }
   return "unavailable";

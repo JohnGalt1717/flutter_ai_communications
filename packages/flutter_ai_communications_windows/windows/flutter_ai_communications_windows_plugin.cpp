@@ -109,8 +109,8 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
       return;
     }
     if (method == "selectCameraNative") {
-      camera_.Select(ReadString(map, "cameraId"));
-      result->Success();
+      result->Success(
+          flutter::EncodableValue(camera_.Select(ReadString(map, "cameraId"))));
       return;
     }
     if (method == "setCameraEnabledNative") {

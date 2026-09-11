@@ -295,9 +295,9 @@ void CameraGraph::Stop() {
   StopCapture();
 }
 
-void CameraGraph::Select(const std::string& camera_id) {
-  Start(camera_id, request_width_, request_height_, request_frame_rate_,
-        enabled_.load(), muted_.load());
+flutter::EncodableMap CameraGraph::Select(const std::string& camera_id) {
+  return Start(camera_id, request_width_, request_height_, request_frame_rate_,
+               enabled_.load(), muted_.load());
 }
 
 void CameraGraph::SetEnabled(bool enabled) {

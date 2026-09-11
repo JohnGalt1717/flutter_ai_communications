@@ -470,6 +470,7 @@ final class Session {
     }
     _cameraId = cameraId;
     await _platform.selectCameraNative(cameraId);
+    _nativeVideoFormat = _platform.lastNativeVideoFormat;
     _notifyVideoSinks();
   }
 
