@@ -46,4 +46,10 @@ abstract class CameraBackend {
 
   /// Refreshes [frameCount] and [liveFrames] from native.
   Future<void> pollStats();
+
+  /// Native Transport-plugin consumer of the Production video path.
+  Future<void> attachProductionPath(String token) async {}
+
+  /// Tears down [attachProductionPath]. Idempotent for unknown tokens.
+  Future<void> detachProductionPath(String token) async {}
 }

@@ -32,9 +32,9 @@ Linux/WSLg (PR #33). Those are not camera receipts.
 - Windows camera: permission granted, catalog, 640×480@30 Texture, live
   non-black frames, Mute-video vs Camera-off, join via Session settings,
   enable-video-later (LifeCam Studio)
-- Video processor blur/replace is GitHub issue #63. Windows runs WinML
-  MediaPipe selfie segmentation on the Production video path. Linux stays
-  `none` plus `processorUnavailable` until that graph grows a segmenter.
+- Video processor blur/replace: Windows WinML MediaPipe selfie segmentation
+  is proven on JamieDesktop / LifeCam Studio (`ProcessorReady`, IR 9). Linux
+  stays `none` plus `processorUnavailable` until that graph grows a segmenter.
 - Missing/denied camera does not fail `start()`
 
 ## Shared machine setup

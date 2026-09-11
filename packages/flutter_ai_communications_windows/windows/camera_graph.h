@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "video_processor.h"
@@ -39,6 +40,8 @@ class CameraGraph {
   void SetMuted(bool muted);
   std::string SetProcessor(const flutter::EncodableMap& args);
   flutter::EncodableMap Stats() const;
+  void AttachProductionSink(const std::string& token);
+  void DetachProductionSink(const std::string& token);
 
  private:
   struct Mode {
@@ -68,7 +71,7 @@ class CameraGraph {
   std::unique_ptr<flutter::TextureVariant> texture_;
   std::unique_ptr<FlutterDesktopPixelBuffer> pixel_buffer_;
   int64_t texture_id_ = -1;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::vector<uint8_t> front_;
   std::vector<uint8_t> capture_rgba_;
   PersonBackgroundProcessor processor_;
@@ -77,6 +80,8 @@ class CameraGraph {
   std::atomic<bool> enabled_{true};
   std::atomic<int64_t> frame_count_{0};
   std::atomic<int64_t> live_frames_{0};
+  std::atomic<int64_t> production_sink_frames_{0};
+  std::unordered_set<std::string> production_sinks_;
   std::thread capture_thread_;
   IMFSourceReader* reader_ = nullptr;
   IMFMediaSource* source_ = nullptr;

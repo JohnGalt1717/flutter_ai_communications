@@ -200,6 +200,41 @@ void main() {
     expect(cameraPermissionFromDeviceAccessStatus(0), isNull);
   });
 
+  test('attachProductionVideoPathNative forwards the sink token', () async {
+    final camera = _RecordingCamera()..cameras = [usb];
+    final adapter = adapterFor(camera);
+    await adapter.attachProductionVideoPathNative(token: 'video-sink-0');
+    await adapter.attachProductionVideoPathNative(token: 'video-sink-1');
+    await adapter.detachProductionVideoPathNative(token: 'video-sink-0');
+    expect(camera.attachedTokens, ['video-sink-0', 'video-sink-1']);
+    expect(camera.detachedTokens, ['video-sink-0']);
+  });
+
+  test('channel attachProductionVideoPathNative sends the token', () async {
+    const methods = MethodChannel('flutter_ai_communications/methods');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    Object? attached;
+    Object? detached;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'attachProductionVideoPathNative') {
+        attached = call.arguments;
+        return null;
+      }
+      if (call.method == 'detachProductionVideoPathNative') {
+        detached = call.arguments;
+        return null;
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(methods, null));
+    final backend = MethodChannelCameraBackend(methods: methods);
+    await backend.attachProductionPath('video-sink-0');
+    await backend.detachProductionPath('video-sink-0');
+    expect(attached, {'token': 'video-sink-0'});
+    expect(detached, {'token': 'video-sink-0'});
+  });
+
   test('blur is selectable mid-preview without restarting capture', () async {
     final camera = _RecordingCamera()..cameras = [usb];
     final adapter = adapterFor(camera);
@@ -320,6 +355,8 @@ final class _RecordingCamera implements CameraBackend {
   String? selectedId;
   NativeProcessorResult processorResult = NativeProcessorResult.ready;
   VideoProcessor? appliedProcessor;
+  final attachedTokens = <String>[];
+  final detachedTokens = <String>[];
   @override
   VideoSurface? lastSurface;
   @override
@@ -391,6 +428,16 @@ final class _RecordingCamera implements CameraBackend {
 
   @override
   Future<void> pollStats() async {}
+
+  @override
+  Future<void> attachProductionPath(String token) async {
+    attachedTokens.add(token);
+  }
+
+  @override
+  Future<void> detachProductionPath(String token) async {
+    detachedTokens.add(token);
+  }
 
   @override
   Future<NativeProcessorResult> setVideoProcessor(

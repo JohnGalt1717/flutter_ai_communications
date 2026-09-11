@@ -131,6 +131,16 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
       result->Success(flutter::EncodableValue(camera_.Stats()));
       return;
     }
+    if (method == "attachProductionVideoPathNative") {
+      camera_.AttachProductionSink(ReadString(map, "token"));
+      result->Success();
+      return;
+    }
+    if (method == "detachProductionVideoPathNative") {
+      camera_.DetachProductionSink(ReadString(map, "token"));
+      result->Success();
+      return;
+    }
     if (method == "enumerateScreenSources") {
       result->Success(flutter::EncodableValue(screen_.Enumerate()));
       return;

@@ -173,6 +173,28 @@ final class MethodChannelCameraBackend implements CameraBackend {
   }
 
   @override
+  Future<void> attachProductionPath(String token) async {
+    try {
+      await _methods.invokeMethod<void>('attachProductionVideoPathNative', {
+        'token': token,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> detachProductionPath(String token) async {
+    try {
+      await _methods.invokeMethod<void>('detachProductionVideoPathNative', {
+        'token': token,
+      });
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
   Future<void> pollStats() async {
     try {
       final value = await _methods.invokeMethod<Object?>('cameraGraphStats');

@@ -321,7 +321,25 @@ flutter::EncodableMap CameraGraph::Stats() const {
       flutter::EncodableValue(frame_count_.load());
   stats[flutter::EncodableValue("liveFrames")] =
       flutter::EncodableValue(live_frames_.load());
+  std::lock_guard<std::mutex> lock(mutex_);
+  stats[flutter::EncodableValue("productionSinkCount")] =
+      flutter::EncodableValue(static_cast<int64_t>(production_sinks_.size()));
+  stats[flutter::EncodableValue("productionSinkFrames")] =
+      flutter::EncodableValue(production_sink_frames_.load());
   return stats;
+}
+
+void CameraGraph::AttachProductionSink(const std::string& token) {
+  if (token.empty()) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  production_sinks_.insert(token);
+}
+
+void CameraGraph::DetachProductionSink(const std::string& token) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  production_sinks_.erase(token);
 }
 
 std::string CameraGraph::SetProcessor(const flutter::EncodableMap& args) {
@@ -642,6 +660,9 @@ void CameraGraph::CopySample(void* raw_sample) {
     }
     if (live) {
       live_frames_.fetch_add(1);
+    }
+    if (!production_sinks_.empty()) {
+      production_sink_frames_.fetch_add(1);
     }
   }
 }
