@@ -391,10 +391,39 @@ struct PersonBackgroundProcessor::Impl {
       input_.assign(static_cast<size_t>(3) * kModel * kModel, 0.f);
       mask256_.assign(static_cast<size_t>(kModel) * kModel, 0);
       return true;
+    } catch (winrt::hresult_error const& error) {
+      load_failed_ = true;
+      model_ = nullptr;
+      session_ = nullptr;
+      wchar_t hr_text[16];
+      _snwprintf_s(hr_text, _TRUNCATE, L"0x%08X",
+                   static_cast<unsigned>(error.code()));
+      const std::wstring message =
+          std::wstring(L"WinML load failed hr=") + hr_text + L" " +
+          std::wstring(error.message());
+      OutputDebugStringW(message.c_str());
+      wchar_t temp_dir[MAX_PATH];
+      const DWORD temp_len = GetTempPathW(MAX_PATH, temp_dir);
+      if (temp_len > 0 && temp_len < MAX_PATH) {
+        const std::wstring log_path =
+            std::wstring(temp_dir) + L"fac_winml_error.txt";
+        HANDLE file = CreateFileW(log_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ,
+                                  nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+                                  nullptr);
+        if (file != INVALID_HANDLE_VALUE) {
+          DWORD written = 0;
+          WriteFile(file, message.data(),
+                    static_cast<DWORD>(message.size() * sizeof(wchar_t)),
+                    &written, nullptr);
+          CloseHandle(file);
+        }
+      }
+      return false;
     } catch (...) {
       load_failed_ = true;
       model_ = nullptr;
       session_ = nullptr;
+      OutputDebugStringW(L"WinML load failed unknown");
       return false;
     }
   }

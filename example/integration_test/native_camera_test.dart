@@ -67,7 +67,6 @@ void main() {
     await waitForCameraStream(platform);
     await platform.pollCameraNative();
     final liveBeforeOff = platform.lastCameraFrameCount;
-
     await lobby.setCameraEnabled(false);
     expect(lobby.isSendingVideo, isFalse);
     expect(identical(lobby.capture, lobbyCapture), isTrue);
@@ -161,6 +160,7 @@ void main() {
       'captureIdentityHeld': true,
       'settingsCameraId': settings.cameraId,
       'nativeFailuresSkipped': false,
+      'processor': blur.runtimeType.toString(),
     });
   });
 }
