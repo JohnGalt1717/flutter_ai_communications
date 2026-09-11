@@ -295,8 +295,15 @@ final class WasapiWindowsBackend implements WasapiBackend {
 
   @override
   void stopDeviceWatch() {
-    _deviceWatch?.stop();
-    _deviceWatch = null;
+    final watch = _deviceWatch;
+    if (watch == null) {
+      return;
+    }
+    watch.stop();
+    // Keep a still-registered client; discarding it would double-register.
+    if (!watch.isRegistered) {
+      _deviceWatch = null;
+    }
   }
 
   @override

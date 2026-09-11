@@ -64,6 +64,28 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('pref-bound-count'))).data,
       '0',
     );
+    expect(
+      tester
+          .widget<Switch>(find.byKey(const Key('pref-row-enable-airpods-out')))
+          .value,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilterChip>(
+            find.byKey(const Key('pref-capture-airpods-out-airpods-in')),
+          )
+          .selected,
+      isTrue,
+    );
+    expect(
+      tester
+          .widget<FilterChip>(
+            find.byKey(const Key('pref-capture-usb-out-brio-in')),
+          )
+          .selected,
+      isFalse,
+    );
   });
 
   testWidgets('selecting a capture chip on USB speakers creates a row', (
@@ -89,10 +111,7 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('pref-capture-usb-out-brio-in')));
     await tester.pump();
-    expect(
-      draft.entries.any((entry) => entry.renderId == 'usb-out'),
-      isTrue,
-    );
+    expect(draft.entries.any((entry) => entry.renderId == 'usb-out'), isTrue);
     expect(
       draft.entries
           .firstWhere((entry) => entry.renderId == 'usb-out')

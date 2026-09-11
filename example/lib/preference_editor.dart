@@ -44,7 +44,7 @@ final class PreferenceEditor extends StatelessWidget {
       ...groups.unpairedRenders,
     ];
     final inDraft = [
-      for (final entry in draft.entries)
+      for (final entry in _effectiveEntries())
         catalog.where((item) => item.id == entry.renderId).firstOrNull,
     ].whereType<Endpoint>().toList();
     final rest = catalogRenders.where(
@@ -111,7 +111,11 @@ final class PreferenceEditor extends StatelessWidget {
     final draftIndex = draft.entries.indexWhere(
       (item) => item.renderId == render.id,
     );
-    final entry = draftIndex < 0 ? null : draft.entries[draftIndex];
+    final effective = _effectiveEntries();
+    final effectiveIndex = effective.indexWhere(
+      (item) => item.renderId == render.id,
+    );
+    final entry = effectiveIndex < 0 ? null : effective[effectiveIndex];
     return Card(
       key: Key('pref-row-${render.id}'),
       child: Padding(
@@ -142,8 +146,7 @@ final class PreferenceEditor extends StatelessWidget {
                 IconButton(
                   key: Key('pref-row-down-${render.id}'),
                   onPressed:
-                      draftIndex < 0 ||
-                          draftIndex == draft.entries.length - 1
+                      draftIndex < 0 || draftIndex == draft.entries.length - 1
                       ? null
                       : () => _move(render.id, 1),
                   icon: const Icon(Icons.arrow_downward),
@@ -200,12 +203,14 @@ final class PreferenceEditor extends StatelessWidget {
     onChanged(EndpointPreference(entries: entries));
   }
 
-  List<EndpointPreferenceEntry> _editableEntries() {
+  List<EndpointPreferenceEntry> _effectiveEntries() {
     if (draft.entries.isNotEmpty) {
-      return [...draft.entries];
+      return draft.entries;
     }
-    return [...EndpointPreference.platformDefault(catalog).entries];
+    return EndpointPreference.platformDefault(catalog).entries;
   }
+
+  List<EndpointPreferenceEntry> _editableEntries() => [..._effectiveEntries()];
 
   void _toggleCapture(String renderId, String captureId) {
     final entries = _editableEntries();

@@ -120,6 +120,7 @@ final class _SessionPageState extends State<SessionPage> {
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
   StreamSubscription<List<Endpoint>>? _catalogSub;
+  var _catalogEpoch = 0;
   EndpointPreference _draft = const EndpointPreference();
 
   CommunicationsManager get _manager => widget.manager;
@@ -136,6 +137,7 @@ final class _SessionPageState extends State<SessionPage> {
       }
     });
     _catalogSub = _manager.endpointCatalog.listen((endpoints) {
+      _catalogEpoch++;
       if (mounted) {
         setState(() => _endpoints = endpoints);
       }
@@ -154,6 +156,7 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _loadEndpoints() async {
+    final epoch = _catalogEpoch;
     final endpoints = await _manager.endpoints();
     List<CameraEndpoint> cameras = const [];
     try {
@@ -169,7 +172,9 @@ final class _SessionPageState extends State<SessionPage> {
     }
     if (mounted) {
       setState(() {
-        _endpoints = endpoints;
+        if (_catalogEpoch == epoch) {
+          _endpoints = endpoints;
+        }
         _cameras = cameras;
         _screenSources = screens;
       });
@@ -190,7 +195,7 @@ final class _SessionPageState extends State<SessionPage> {
     });
   }
 
-  Future<void> _lockLive() async {
+  Future<void> _useCurrent() async {
     final session = _session;
     if (session == null) {
       return;
@@ -724,7 +729,7 @@ final class _SessionPageState extends State<SessionPage> {
         onChanged: (preference) => setState(() => _draft = preference),
         onApply: _applyPreference,
         onReset: () => setState(() => _draft = const EndpointPreference()),
-        onUseCurrent: session == null ? null : _lockLive,
+        onUseCurrent: session == null ? null : _useCurrent,
       ),
       const SizedBox(height: 16),
       Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),

@@ -162,8 +162,7 @@ final class PulseAudioBackend implements AudioBackend {
         _deviceWatchPort?.close();
         _deviceWatchPort = null;
         Future<void>.delayed(const Duration(seconds: 2), () {
-          if (generation != _deviceWatchGeneration ||
-              _deviceChanges.isClosed) {
+          if (generation != _deviceWatchGeneration || _deviceChanges.isClosed) {
             return;
           }
           startDeviceWatch();
@@ -512,16 +511,24 @@ void _captureMain(_CaptureStart start) {
 
 const _pulseSubscribeMask = 0x0001 | 0x0002 | 0x0080 | 0x0200;
 
-void _deviceWatchMain(SendPort send) {
+Future<void> _deviceWatchMain(SendPort send) async {
   final control = ReceivePort();
   send.send(control.sendPort);
   var running = true;
   control.listen((_) {
     running = false;
   });
-  final async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
+  late final PulseAsync async;
+  try {
+    async = PulseAsync(DynamicLibrary.open('libpulse.so.0'));
+  } on Object {
+    control.close();
+    send.send('failed');
+    return;
+  }
   final loop = async.mainloopNew();
   if (loop == nullptr) {
+    control.close();
     send.send('failed');
     return;
   }
@@ -531,12 +538,14 @@ void _deviceWatchMain(SendPort send) {
   malloc.free(name);
   if (context == nullptr) {
     async.mainloopFree(loop);
+    control.close();
     send.send('failed');
     return;
   }
   if (async.contextConnect(context, nullptr, 0, nullptr) < 0) {
     async.contextUnref(context);
     async.mainloopFree(loop);
+    control.close();
     send.send('failed');
     return;
   }
@@ -556,6 +565,7 @@ void _deviceWatchMain(SendPort send) {
     async.contextDisconnect(context);
     async.contextUnref(context);
     async.mainloopFree(loop);
+    control.close();
     send.send('failed');
     return;
   }
@@ -572,13 +582,16 @@ void _deviceWatchMain(SendPort send) {
     nullptr,
     nullptr,
   );
-  if (op != nullptr) {
-    async.operationUnref(op);
-  }
   try {
+    if (op == nullptr) {
+      send.send('failed');
+      return;
+    }
+    async.operationUnref(op);
     while (running) {
       async.mainloopIterate(loop, 0, nullptr);
-      sleep(const Duration(milliseconds: 20));
+      // Yield so the control port can deliver stop.
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     }
   } finally {
     callable.close();
