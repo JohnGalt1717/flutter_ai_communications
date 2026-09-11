@@ -223,6 +223,7 @@ final class PreferenceResolver {
       explicitCaptureId: explicitCaptureId,
       explicitRenderId: explicitRenderId,
       unusableCombinations: unusableCombinations,
+      catalogFallback: preference.isEmpty,
     );
     if (explicit != null) {
       return explicit;
@@ -292,7 +293,7 @@ final class PreferenceResolver {
         unresolvedIds: skipped,
       );
     }
-    if (catalogFallback && !requireCapture) {
+    if (catalogFallback && requireRender && !requireCapture) {
       final render = catalog.where((item) => !item.isCapture).where((item) {
         return !_isUnusable(
           unusableCombinations,
@@ -308,7 +309,7 @@ final class PreferenceResolver {
         );
       }
     }
-    if (catalogFallback && !requireRender) {
+    if (catalogFallback && requireCapture && !requireRender) {
       final capture = catalog.where((item) => item.isCapture).where((item) {
         return !_isUnusable(
           unusableCombinations,
@@ -340,6 +341,7 @@ final class PreferenceResolver {
     required String? explicitCaptureId,
     required String? explicitRenderId,
     required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
   }) {
     if (explicitCaptureId == null && explicitRenderId == null) {
       return null;
@@ -363,6 +365,7 @@ final class PreferenceResolver {
         entries: entries,
         render: render,
         unusableCombinations: unusableCombinations,
+        catalogFallback: catalogFallback,
       );
     }
     if (requireCapture && captureId == null && render == null) {
@@ -388,6 +391,7 @@ final class PreferenceResolver {
             entries: entries,
             render: render,
             unusableCombinations: unusableCombinations,
+            catalogFallback: catalogFallback,
           );
     final captureOverride =
         explicitCaptureId != null &&
@@ -409,6 +413,7 @@ final class PreferenceResolver {
     required List<EndpointPreferenceEntry> entries,
     required Endpoint render,
     required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
   }) {
     final row = _rowFor(entries, render.id);
     if (row != null) {
@@ -433,6 +438,7 @@ final class PreferenceResolver {
       entries: entries,
       renderId: render.id,
       unusableCombinations: unusableCombinations,
+      catalogFallback: catalogFallback,
     );
   }
 
@@ -441,6 +447,7 @@ final class PreferenceResolver {
     required List<EndpointPreferenceEntry> entries,
     required String? renderId,
     required Set<UnusableCombination> unusableCombinations,
+    required bool catalogFallback,
   }) {
     final seen = <String>{};
     for (final entry in entries) {
@@ -465,6 +472,9 @@ final class PreferenceResolver {
         }
         return capture.id;
       }
+    }
+    if (!catalogFallback) {
+      return null;
     }
     return catalog.where((item) => item.isCapture).where((item) {
       return !_isUnusable(
@@ -511,7 +521,7 @@ final class PreferenceResolver {
     String renderId,
   ) {
     for (final entry in entries) {
-      if (entry.enabled && entry.renderId == renderId) {
+      if (entry.renderId == renderId) {
         return entry;
       }
     }

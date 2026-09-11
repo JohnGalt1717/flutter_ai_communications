@@ -287,6 +287,9 @@ final class WasapiWindowsBackend implements WasapiBackend {
       }
     });
     watch.start();
+    if (!watch.isRegistered) {
+      return;
+    }
     _deviceWatch = watch;
   }
 

@@ -99,22 +99,30 @@ final class WasapiDeviceWatch {
       _enumerator.registerEndpointNotificationCallback(client);
       _registered = true;
     } on Object {
-      stop();
+      _teardown(unregister: false);
     }
   }
 
+  /// Whether MMDevice registration succeeded.
+  bool get isRegistered => _registered;
+
   /// Unregisters and frees the COM object.
-  void stop() {
+  void stop() => _teardown(unregister: true);
+
+  void _teardown({required bool unregister}) {
     final object = _object;
-    if (_registered && object != null) {
+    if (unregister && _registered && object != null) {
       try {
         _enumerator.unregisterEndpointNotificationCallback(
           IMMNotificationClient(object.cast()),
         );
       } on Object {
-        // Best-effort unregister.
+        return;
       }
       _registered = false;
+    }
+    if (_registered) {
+      return;
     }
     _queryInterface?.close();
     _addRef?.close();

@@ -89,15 +89,13 @@ final class PreferenceEditor extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        for (var i = 0; i < renders.length; i++)
+        for (final render in renders)
           _row(
             context,
-            render: renders[i],
+            render: render,
             captures: captures,
-            index: i,
-            last: i == renders.length - 1,
             complete: groups.completePairs.any(
-              (pair) => pair.render?.id == renders[i].id,
+              (pair) => pair.render?.id == render.id,
             ),
           ),
       ],
@@ -108,13 +106,12 @@ final class PreferenceEditor extends StatelessWidget {
     BuildContext context, {
     required Endpoint render,
     required List<Endpoint> captures,
-    required int index,
-    required bool last,
     required bool complete,
   }) {
-    final entry = draft.entries
-        .where((item) => item.renderId == render.id)
-        .firstOrNull;
+    final draftIndex = draft.entries.indexWhere(
+      (item) => item.renderId == render.id,
+    );
+    final entry = draftIndex < 0 ? null : draft.entries[draftIndex];
     return Card(
       key: Key('pref-row-${render.id}'),
       child: Padding(
@@ -137,14 +134,16 @@ final class PreferenceEditor extends StatelessWidget {
                 ),
                 IconButton(
                   key: Key('pref-row-up-${render.id}'),
-                  onPressed: entry == null || index == 0
+                  onPressed: draftIndex <= 0
                       ? null
                       : () => _move(render.id, -1),
                   icon: const Icon(Icons.arrow_upward),
                 ),
                 IconButton(
                   key: Key('pref-row-down-${render.id}'),
-                  onPressed: entry == null || last
+                  onPressed:
+                      draftIndex < 0 ||
+                          draftIndex == draft.entries.length - 1
                       ? null
                       : () => _move(render.id, 1),
                   icon: const Icon(Icons.arrow_downward),

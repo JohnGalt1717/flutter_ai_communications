@@ -152,7 +152,15 @@ final class PulseAudioBackend implements AudioBackend {
         return;
       }
       if (message == 'failed') {
-        stopDeviceWatch();
+        _deviceWatchIsolate = null;
+        _deviceWatchPort?.close();
+        _deviceWatchPort = null;
+        Future<void>.delayed(const Duration(seconds: 2), () {
+          if (_deviceChanges.isClosed) {
+            return;
+          }
+          startDeviceWatch();
+        });
         return;
       }
       if (!_deviceChanges.isClosed) {

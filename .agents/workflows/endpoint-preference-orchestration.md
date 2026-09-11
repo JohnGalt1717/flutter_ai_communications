@@ -29,7 +29,7 @@ and the permutation matrix.
 | Playback-only ignores capture lists | yes | yes | n/a | no | no |
 | Select capture keeps render | yes | yes | tap capture Endpoint | no | no |
 | Select render clears capture override | yes | yes | tap render after capture | no | no |
-| Lock live (Explicit both) blocks Brio return | yes (override flags) | yes | `pref-lock` | no | **yes — desktop** |
+| Use current (Explicit both) blocks Brio return | yes (override flags) | yes | `pref-use-current` | no | **yes — desktop** |
 | Unusable combo walks next capture then next row | yes | preference walk downward | n/a | OS mismatch existing | no |
 | New Session ignores prior Explicit | n/a | yes | Leave + Enter lobby | native-orchestration_test | no |
 | bindPreference ends Session | n/a | yes | `pref-apply` | no | no |
@@ -116,8 +116,8 @@ After compose + Enter lobby:
 1. Unplug Brio.
 2. Assert `desired-render` still USB and `desired-capture` is the next listed
    capture (AirPods mic if that chip was selected).
-3. Plug Brio back. Assert capture returns to Brio unless `pref-lock` was tapped
-   while on the fallback mic.
+3. Plug Brio back. Assert capture returns to Brio unless `pref-use-current`
+   was tapped while on the fallback mic.
 
 ### Lock
 
