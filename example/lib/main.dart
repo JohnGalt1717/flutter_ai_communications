@@ -752,7 +752,9 @@ final class _SessionPageState extends State<SessionPage> {
                     ? null
                     : () async {
                         _manager.bindCameraPreference(_store.cameras);
-                        await _manager.startCameraPreview();
+                        await _manager.startCameraPreview(
+                          cameraId: _store.cameras.resolve(_cameras)?.id,
+                        );
                         setState(() {});
                       },
                 child: const Text('Camera preview'),
@@ -772,15 +774,19 @@ final class _SessionPageState extends State<SessionPage> {
           selected:
               camera.id ==
               (session == null
-                  ? _store.cameras.entries
-                        .where((entry) => entry.enabled)
-                        .firstOrNull
-                        ?.id
-                  : session.selectedCameraId),
+                  ? _store.cameras.resolve(_cameras)?.id
+                  : (_manager.cameraPreview?.selectedCameraId ??
+                        session.selectedCameraId)),
           onTap: () async {
             if (session == null) {
               _store.preferCamera(camera.id);
               _manager.bindCameraPreference(_store.cameras);
+              setState(() {});
+              return;
+            }
+            final preview = _manager.cameraPreview;
+            if (preview != null) {
+              await preview.selectCamera(camera.id);
               setState(() {});
               return;
             }

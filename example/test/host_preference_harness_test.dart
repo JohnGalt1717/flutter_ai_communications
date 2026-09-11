@@ -213,6 +213,30 @@ void main() {
     expect(store.cameras.entries.single.id, 'back');
   });
 
+  testWidgets('Camera preview binds stored list after an ephemeral live pick', (
+    tester,
+  ) async {
+    store.preferCamera('back');
+    await pumpHarness(tester);
+    await enterLobby(tester);
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
+    await tester.tap(find.byKey(const Key('camera-front')));
+    await tester.pump();
+    expect(manager.session?.selectedCameraId, 'front');
+    expect(store.cameras.entries.single.id, 'back');
+
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), -80);
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-preview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(manager.cameraPreview?.selectedCameraId, 'back');
+    expect(store.cameras.entries.single.id, 'back');
+  });
+
   testWidgets('editor Apply persists Endpoint preference', (tester) async {
     await pumpHarness(tester);
     await tester.scrollUntilVisible(
