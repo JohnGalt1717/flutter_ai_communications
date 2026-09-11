@@ -18,12 +18,22 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   private(set) var width = 1280
   private(set) var height = 720
   private(set) var frameRate = 30
+  private var frameCount = 0
+  private var liveFrames = 0
+  private let bufferAttrs: [CFString: Any] = [
+    kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+    kCVPixelBufferMetalCompatibilityKey: true,
+  ]
 
   func attach(textures: FlutterTextureRegistry) {
     self.textures = textures
-    if textureId < 0 {
-      textureId = textures.register(self)
+  }
+
+  private func ensureTexture() {
+    guard textureId < 0, let textures else {
+      return
     }
+    textureId = textures.register(self)
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
@@ -79,10 +89,13 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     guard textures != nil else {
       return ["status": "failed"]
     }
+    ensureTexture()
     self.enabled = enabled
     self.muted = muted
     self.width = width
     self.height = height
+    frameCount = 0
+    liveFrames = 0
     makeBlackBuffer(width: width, height: height)
     guard enabled else {
       queue.sync { stopLocked() }
@@ -171,6 +184,12 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     processor.apply(args)
   }
 
+  func stats() -> [String: Any] {
+    queue.sync {
+      ["frameCount": frameCount, "liveFrames": liveFrames]
+    }
+  }
+
   func stop() {
     queue.sync { stopLocked() }
   }
@@ -183,8 +202,12 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     guard enabled, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else {
       return
     }
+    frameCount += 1
     let copied = copyBuffer(image)
     pixelBuffer = copied.map { processor.process($0) } ?? copied
+    if !muted {
+      liveFrames += 1
+    }
     textures?.textureFrameAvailable(textureId)
   }
 
@@ -207,15 +230,12 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
 
   private func copyBuffer(_ src: CVPixelBuffer) -> CVPixelBuffer? {
     var dst: CVPixelBuffer?
-    let attrs: [CFString: Any] = [
-      kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-    ]
     CVPixelBufferCreate(
       kCFAllocatorDefault,
       CVPixelBufferGetWidth(src),
       CVPixelBufferGetHeight(src),
       CVPixelBufferGetPixelFormatType(src),
-      attrs as CFDictionary,
+      bufferAttrs as CFDictionary,
       &dst
     )
     guard let dst else {
@@ -273,15 +293,12 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
 
   private func makeBlackBuffer(width: Int, height: Int) {
     var buffer: CVPixelBuffer?
-    let attrs: [CFString: Any] = [
-      kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-    ]
     CVPixelBufferCreate(
       kCFAllocatorDefault,
       width,
       height,
       kCVPixelFormatType_32BGRA,
-      attrs as CFDictionary,
+      bufferAttrs as CFDictionary,
       &buffer
     )
     if let buffer {

@@ -48,6 +48,21 @@ class AndroidCameraGraph(
     private var closeLatch: CountDownLatch? = null
     private var argbScratch: IntArray? = null
     private var frameBitmap: Bitmap? = null
+    private val frameCount = AtomicInteger(0)
+    private val liveFrames = AtomicInteger(0)
+    private val statsCallback =
+        object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
+            override fun onCaptureCompleted(
+                session: android.hardware.camera2.CameraCaptureSession,
+                request: CaptureRequest,
+                result: android.hardware.camera2.TotalCaptureResult,
+            ) {
+                frameCount.incrementAndGet()
+                if (!videoMuted) {
+                    liveFrames.incrementAndGet()
+                }
+            }
+        }
 
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -96,6 +111,8 @@ class AndroidCameraGraph(
         videoMuted = muted
         lastWidth = width
         lastHeight = height
+        frameCount.set(0)
+        liveFrames.set(0)
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val ids = manager.cameraIdList
         if (ids.isEmpty()) {
@@ -174,7 +191,11 @@ class AndroidCameraGraph(
                                         set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                                     }
                                 if (!videoMuted) {
-                                    captureSession.setRepeatingRequest(request.build(), null, cameraHandler)
+                                    captureSession.setRepeatingRequest(
+                                        request.build(),
+                                        noneModeStatsCallback(),
+                                        cameraHandler,
+                                    )
                                 }
                                 main.post { onResult(started) }
                             }
@@ -218,7 +239,7 @@ class AndroidCameraGraph(
     }
 
     fun select(cameraId: String) {
-        start(cameraId, 1280, 720, cameraEnabled, videoMuted) { }
+        start(cameraId, 1280, 720, cameraEnabled, videoMuted, onResult = {})
     }
 
     fun setEnabled(enabled: Boolean) {
@@ -228,7 +249,9 @@ class AndroidCameraGraph(
             stopRepeatingLocked()
             closeCameraLocked()
         } else {
-            selectedId?.let { id -> start(id, 1280, 720, true, videoMuted) { } }
+            selectedId?.let { id ->
+                start(id, 1280, 720, true, videoMuted, onResult = {})
+            }
         }
     }
 
@@ -271,7 +294,11 @@ class AndroidCameraGraph(
                 set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             }
         try {
-            captureSession.setRepeatingRequest(request.build(), null, cameraHandler)
+            captureSession.setRepeatingRequest(
+                request.build(),
+                noneModeStatsCallback(),
+                cameraHandler,
+            )
         } catch (_: Exception) {
         }
     }
@@ -292,15 +319,34 @@ class AndroidCameraGraph(
         }
     }
 
+    fun stats(): Map<String, Any> {
+        return mapOf(
+            "frameCount" to frameCount.get(),
+            "liveFrames" to liveFrames.get(),
+        )
+    }
+
+    private fun noneModeStatsCallback(): android.hardware.camera2.CameraCaptureSession.CaptureCallback? {
+        return if (processor.mode is AndroidVideoProcessor.Mode.None) {
+            statsCallback
+        } else {
+            null
+        }
+    }
+
     private fun onProcessedImage(imageReader: ImageReader) {
         val image = imageReader.acquireLatestImage() ?: return
         try {
+            frameCount.incrementAndGet()
             val bitmap = yuvToBitmap(image) ?: return
             val processed = processor.process(bitmap)
             val dest = outputSurface ?: return
             val canvas = dest.lockHardwareCanvas()
             canvas.drawBitmap(processed, null, Rect(0, 0, lastWidth, lastHeight), null)
             dest.unlockCanvasAndPost(canvas)
+            if (!videoMuted) {
+                liveFrames.incrementAndGet()
+            }
         } catch (_: Exception) {
         } finally {
             image.close()

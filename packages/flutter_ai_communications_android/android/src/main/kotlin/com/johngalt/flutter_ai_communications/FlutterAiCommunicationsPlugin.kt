@@ -202,7 +202,8 @@ class FlutterAiCommunicationsPlugin :
                         call.argument<Int>("height") ?: 720,
                         call.argument<Boolean>("enabled") ?: true,
                         call.argument<Boolean>("muted") ?: false,
-                    ) { map -> result.success(map) }
+                        onResult = { map -> result.success(map) },
+                    )
                 }
             }
             "stopCameraNative" -> {
@@ -230,6 +231,7 @@ class FlutterAiCommunicationsPlugin :
                 }
                 result.success(cameraGraph?.setProcessor(converted) ?: "unavailable")
             }
+            "cameraGraphStats" -> result.success(cameraGraph?.stats() ?: mapOf("frameCount" to 0, "liveFrames" to 0))
             "enumerateScreenSources" ->
                 result.success(screenGraph?.enumerate() ?: emptyList<Any>())
             "requestScreenPermission" -> result.success("granted")
