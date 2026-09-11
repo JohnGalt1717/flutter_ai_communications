@@ -193,11 +193,17 @@ final class _SessionPageState extends State<SessionPage> {
     String? preferredCapture;
     String? preferredRender;
     for (final entry in _store.endpoints.entries) {
+      if (!entry.enabled) {
+        continue;
+      }
       if (preferredRender == null &&
           _endpoints.any((item) => item.id == entry.renderId)) {
         preferredRender = entry.renderId;
       }
       for (final slot in entry.captures) {
+        if (!slot.enabled) {
+          continue;
+        }
         if (preferredCapture == null &&
             _endpoints.any((item) => item.id == slot.id)) {
           preferredCapture = slot.id;
@@ -216,6 +222,7 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_catalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
     _webrtc?.detach();
+    unawaited(_manager.cameraPreview?.stop());
     unawaited(_session?.stop());
     super.dispose();
   }
@@ -247,6 +254,7 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _applyPreference() async {
+    await _manager.cameraPreview?.stop();
     _store.saveEndpoints(_draft);
     await _manager.bindPreference(_store.endpoints);
     if (!mounted) {
@@ -291,6 +299,7 @@ final class _SessionPageState extends State<SessionPage> {
     final muted = lobby.isMuted;
     setState(() => _status = 'joining');
     await _echo?.dispose();
+    await _manager.cameraPreview?.stop();
     await lobby.stop();
     if (!mounted) {
       return;
@@ -416,6 +425,7 @@ final class _SessionPageState extends State<SessionPage> {
     await _webrtcSub?.cancel();
     _webrtcSub = null;
     _webrtc?.detach();
+    await _manager.cameraPreview?.stop();
     await _session?.stop();
     if (mounted) {
       setState(() {
@@ -761,8 +771,12 @@ final class _SessionPageState extends State<SessionPage> {
           subtitle: Text(camera.facing.name),
           selected:
               camera.id ==
-              (session?.selectedCameraId ??
-                  _store.cameras.entries.firstOrNull?.id),
+              (session == null
+                  ? _store.cameras.entries
+                        .where((entry) => entry.enabled)
+                        .firstOrNull
+                        ?.id
+                  : session.selectedCameraId),
           onTap: () async {
             if (session == null) {
               _store.preferCamera(camera.id);
@@ -818,9 +832,7 @@ final class _SessionPageState extends State<SessionPage> {
         onApply: _applyPreference,
         onReset: () {
           _draft = const EndpointPreference();
-          _store.saveEndpoints(_draft);
-          unawaited(_manager.bindPreference(_draft));
-          setState(() {});
+          unawaited(_applyPreference());
         },
         onUseCurrent: session == null ? null : _useCurrent,
       ),
@@ -967,6 +979,10 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Widget _selfView(Session? session) {
+    final preview = _manager.cameraPreview;
+    if (preview != null) {
+      return _videoSurface(preview.surface);
+    }
     final surface = session?.videoSurface;
     if (session == null ||
         !session.cameraSend ||
@@ -984,6 +1000,10 @@ final class _SessionPageState extends State<SessionPage> {
         ),
       );
     }
+    return _videoSurface(surface);
+  }
+
+  Widget _videoSurface(VideoSurface surface) {
     if (surface.kind == VideoSurfaceKind.htmlElement) {
       // Flutter web platform views overlay the glass pane if they are unmounted
       // or given percentage sizing. Keep a tight pixel box and clip it.

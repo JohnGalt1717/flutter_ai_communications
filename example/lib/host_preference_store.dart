@@ -11,8 +11,11 @@ final class HostPreferenceStore {
   /// Creates a store. [storage] is the durable map (in-memory or hydrated
   /// from the host's existing persistence). [persist] writes a key when
   /// preference changes.
-  HostPreferenceStore({Map<String, String>? storage, this._persist})
-    : _storage = storage ?? <String, String>{};
+  HostPreferenceStore({
+    Map<String, String>? storage,
+    Future<void> Function(String key, String value)? persist,
+  }) : _storage = storage ?? <String, String>{},
+       _persist = persist;
 
   /// Storage key for Endpoint preference JSON.
   static const endpointsKey = 'fac.endpointPreference';
