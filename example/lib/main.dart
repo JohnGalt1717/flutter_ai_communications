@@ -7,6 +7,8 @@ import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/host_preference_store.dart';
+import 'package:flutter_ai_communications_example/meeting/flutter_webrtc_loopback.dart';
+import 'package:flutter_ai_communications_example/meeting/host_webrtc_loopback.dart';
 import 'package:flutter_ai_communications_example/preference_editor.dart';
 import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
@@ -36,6 +38,7 @@ void main() async {
     ExampleApp(
       manager: CommunicationsManager(),
       preferenceStore: await _loadPreferenceStore(),
+      webRtcLoopback: FlutterWebRtcLoopback(),
     ),
   );
 }
@@ -82,13 +85,21 @@ enum _HarnessPhase { idle, lobby, meeting }
 /// manager; `main()` constructs one for the process lifetime.
 final class ExampleApp extends StatefulWidget {
   /// Creates the example app.
-  const ExampleApp({super.key, this.manager, this.preferenceStore});
+  const ExampleApp({
+    super.key,
+    this.manager,
+    this.preferenceStore,
+    this.webRtcLoopback,
+  });
 
   /// Optional injected Communications manager (tests / agent harness).
   final CommunicationsManager? manager;
 
   /// Optional injected host preference store (tests).
   final HostPreferenceStore? preferenceStore;
+
+  /// Optional injected host WebRTC loopback (tests).
+  final HostWebRtcLoopback? webRtcLoopback;
 
   @override
   State<ExampleApp> createState() => _ExampleAppState();
@@ -111,7 +122,11 @@ final class _ExampleAppState extends State<ExampleApp> {
         ),
         useMaterial3: true,
       ),
-      home: SessionPage(manager: _manager, preferenceStore: _store),
+      home: SessionPage(
+        manager: _manager,
+        preferenceStore: _store,
+        webRtcLoopback: widget.webRtcLoopback,
+      ),
     );
   }
 }
@@ -119,13 +134,21 @@ final class _ExampleAppState extends State<ExampleApp> {
 /// Live Session controls and capture visualizer.
 final class SessionPage extends StatefulWidget {
   /// Creates the Session page.
-  const SessionPage({super.key, required this.manager, this.preferenceStore});
+  const SessionPage({
+    super.key,
+    required this.manager,
+    this.preferenceStore,
+    this.webRtcLoopback,
+  });
 
   /// Communications manager driving the Session.
   final CommunicationsManager manager;
 
   /// Host-persisted Endpoint preference and Camera preference.
   final HostPreferenceStore? preferenceStore;
+
+  /// Host-owned WebRTC loopback. Tests inject a fake.
+  final HostWebRtcLoopback? webRtcLoopback;
 
   @override
   State<SessionPage> createState() => _SessionPageState();
@@ -134,6 +157,8 @@ final class SessionPage extends StatefulWidget {
 final class _SessionPageState extends State<SessionPage> {
   late final HostPreferenceStore _store =
       widget.preferenceStore ?? HostPreferenceStore();
+  late final HostWebRtcLoopback _webRtcLoopback =
+      widget.webRtcLoopback ?? FakeHostWebRtcLoopback();
   var _phase = _HarnessPhase.idle;
   Session? _session;
   EchoTransport? _echo;
@@ -222,6 +247,7 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_catalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
     _webrtc?.detach();
+    unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
     unawaited(_session?.stop());
     super.dispose();
@@ -368,7 +394,9 @@ final class _SessionPageState extends State<SessionPage> {
       final webrtc = WebrtcVideoSink();
       _webrtc = webrtc;
       webrtc.attach(session);
-      _webrtcSub = webrtc.localVideos.listen((_) {
+      unawaited(_webRtcLoopback.applySendTrack(webrtc.localVideo));
+      _webrtcSub = webrtc.localVideos.listen((track) {
+        unawaited(_webRtcLoopback.applySendTrack(track));
         if (mounted) {
           setState(() {});
         }
@@ -415,6 +443,7 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _stop() async {
+    await _webRtcLoopback.dispose();
     await _echo?.dispose();
     await _webrtcSub?.cancel();
     _webrtcSub = null;
@@ -561,6 +590,7 @@ final class _SessionPageState extends State<SessionPage> {
                 key: const Key('meeting'),
                 session: session,
                 webrtcTrackId: _webrtc?.localVideo?.id ?? 'none',
+                inbound: _webRtcLoopback.inboundView(),
               ),
             ),
             MeetingBar(

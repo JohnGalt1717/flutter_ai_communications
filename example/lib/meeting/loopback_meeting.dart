@@ -14,6 +14,7 @@ final class LoopbackMeetingStage extends StatelessWidget {
     super.key,
     required this.session,
     this.webrtcTrackId,
+    this.inbound,
   });
 
   /// Live meeting Session.
@@ -21,6 +22,10 @@ final class LoopbackMeetingStage extends StatelessWidget {
 
   /// Send track id from the WebRTC sink, if any.
   final String? webrtcTrackId;
+
+  /// Host inbound video (RTCVideoView or test double). Local self-view stays
+  /// [Session.videoSurface].
+  final Widget? inbound;
   bool get _cameraLive =>
       session.cameraSend &&
       session.isCameraEnabled &&
@@ -63,6 +68,13 @@ final class LoopbackMeetingStage extends StatelessWidget {
   }
 
   Widget _stage(bool sharing) {
+    final inbound = this.inbound;
+    if (inbound != null && !sharing) {
+      return _labeled(
+        label: 'Inbound',
+        child: KeyedSubtree(key: const Key('loopback-tile'), child: inbound),
+      );
+    }
     if (sharing) {
       return _labeled(
         label: 'Screen',
