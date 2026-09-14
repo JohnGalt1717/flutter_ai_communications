@@ -85,6 +85,7 @@ bool FileReadable(const std::string& path) {
   return !path.empty() && access(path.c_str(), R_OK) == 0;
 }
 
+#ifdef FAC_HAS_ONNXRUNTIME
 std::string DirOf(const char* path) {
   if (path == nullptr || path[0] == '\0') {
     return {};
@@ -97,7 +98,6 @@ std::string DirOf(const char* path) {
   return dir;
 }
 
-#ifdef FAC_HAS_ONNXRUNTIME
 std::string ModelPath() {
   const std::string name = "selfie_segmentation.onnx";
   Dl_info info{};

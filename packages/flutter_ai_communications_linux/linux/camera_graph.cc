@@ -18,6 +18,7 @@
 #include <climits>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -570,6 +571,10 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
       return true;
     }
   }
+  if (std::getenv("FAC_ALLOW_V4L2") == nullptr) {
+    FacCameraLog("StartCapture skip v4l2 after pipewire");
+    return false;
+  }
 
   bool opened_v4l2 = false;
   for (const auto& path : paths) {
@@ -985,27 +990,20 @@ bool CameraGraph::StartPipeWire(const std::string& camera_id) {
   const int connected = pw_stream_connect(
       pw_->stream, PW_DIRECTION_INPUT, PW_ID_ANY,
       static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
-                                   PW_STREAM_FLAG_RT_PROCESS),
+                                   PW_STREAM_FLAG_DONT_RECONNECT |
+                                   PW_STREAM_FLAG_ASYNC),
       nullptr, 0);
   FacCameraLog("pw camera connect rc=%d node=%u target=%s %s", connected,
                pw_->node_id, target, camera_id.c_str());
+  pw_thread_loop_unlock(pw_->loop);
   if (connected < 0) {
-    pw_thread_loop_unlock(pw_->loop);
     StopPipeWire();
     return false;
   }
-  for (int i = 0; i < 80; i++) {
-    if (pw_->failed.load() || live_frames_.load() > 0 ||
-        pw_->spa_format != 0) {
-      if (live_frames_.load() > 0 || pw_->failed.load() || i >= 8) {
-        break;
-      }
-    }
-    timespec abstime{};
-    pw_thread_loop_get_time(pw_->loop, &abstime, 50L * SPA_NSEC_PER_MSEC);
-    pw_thread_loop_timed_wait_full(pw_->loop, &abstime);
+  for (int i = 0; i < 80 && live_frames_.load() == 0 && !pw_->failed.load();
+       i++) {
+    g_usleep(50000);
   }
-  pw_thread_loop_unlock(pw_->loop);
   if (pw_->failed.load() || pw_->spa_format == 0) {
     FacCameraLog("pw camera not live format=%u", pw_->spa_format);
     StopPipeWire();
