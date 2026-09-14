@@ -2,14 +2,36 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/dma-buf.h>
 #include <linux/videodev2.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gio/gio.h>
+#include <gio/gunixfdlist.h>
+#include <gtk/gtk.h>
 
+#include <algorithm>
+#include <climits>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <vector>
+
+#ifdef FAC_HAS_PIPEWIRE
+#include <pipewire/loop.h>
+#include <pipewire/pipewire.h>
+#include <spa/param/buffers.h>
+#include <spa/param/format.h>
+#include <spa/param/video/format-utils.h>
+#include <spa/param/video/raw.h>
+#include <spa/pod/builder.h>
+#include <spa/pod/iter.h>
+#endif
 
 namespace {
 
@@ -39,7 +61,81 @@ bool IsCaptureDevice(int fd) {
 
 bool CanConvert(uint32_t fourcc) {
   return fourcc == V4L2_PIX_FMT_YUYV || fourcc == V4L2_PIX_FMT_NV12 ||
-         fourcc == V4L2_PIX_FMT_RGB24 || fourcc == V4L2_PIX_FMT_BGR24;
+         fourcc == V4L2_PIX_FMT_RGB24 || fourcc == V4L2_PIX_FMT_BGR24 ||
+         fourcc == V4L2_PIX_FMT_MJPEG || fourcc == V4L2_PIX_FMT_JPEG;
+}
+
+void FacCameraLog(const char* fmt, ...) G_GNUC_PRINTF(1, 2);
+void FacCameraLog(const char* fmt, ...) {
+  FILE* file = fopen("/tmp/fac-camera.log", "a");
+  if (file == nullptr) {
+    return;
+  }
+  va_list args;
+  va_start(args, fmt);
+  vfprintf(file, fmt, args);
+  va_end(args);
+  fputc('\n', file);
+  fclose(file);
+}
+
+bool LooksLiveRgba(const uint8_t* pixels, size_t bytes) {
+  if (pixels == nullptr || bytes < 4) {
+    return false;
+  }
+  int samples = 0;
+  int any = 0;
+  int chroma_zero = 0;
+  for (size_t i = 0; i + 3 < bytes; i += 64) {
+    samples++;
+    const int r = pixels[i];
+    const int g = pixels[i + 1];
+    const int b = pixels[i + 2];
+    if (g > 24 && r < 10 && b < 10) {
+      chroma_zero++;
+    } else if (r > 8 || g > 8 || b > 8) {
+      any++;
+    }
+  }
+  return samples > 0 && chroma_zero * 2 < samples && any > 0;
+}
+
+bool DecodeJpegRgba(const uint8_t* src, size_t length, int width, int height,
+                    uint8_t* dst) {
+  if (src == nullptr || dst == nullptr || length < 4 || width < 1 ||
+      height < 1) {
+    return false;
+  }
+  g_autoptr(GMemoryInputStream) stream = G_MEMORY_INPUT_STREAM(
+      g_memory_input_stream_new_from_data(src, length, nullptr));
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GdkPixbuf) pixbuf = gdk_pixbuf_new_from_stream_at_scale(
+      G_INPUT_STREAM(stream), width, height, FALSE, nullptr, &error);
+  if (pixbuf == nullptr) {
+    return false;
+  }
+  const int src_w = gdk_pixbuf_get_width(pixbuf);
+  const int src_h = gdk_pixbuf_get_height(pixbuf);
+  const int channels = gdk_pixbuf_get_n_channels(pixbuf);
+  const int stride = gdk_pixbuf_get_rowstride(pixbuf);
+  const uint8_t* pixels = gdk_pixbuf_get_pixels(pixbuf);
+  if (pixels == nullptr || channels < 3 || src_w < 1 || src_h < 1) {
+    return false;
+  }
+  for (int y = 0; y < height; y++) {
+    const int src_y = y * src_h / height;
+    const uint8_t* row = pixels + static_cast<ptrdiff_t>(stride) * src_y;
+    uint8_t* out = dst + static_cast<size_t>(y) * width * 4;
+    for (int x = 0; x < width; x++) {
+      const int src_x = x * src_w / width;
+      const uint8_t* px = row + src_x * channels;
+      out[x * 4 + 0] = px[0];
+      out[x * 4 + 1] = px[1];
+      out[x * 4 + 2] = px[2];
+      out[x * 4 + 3] = 255;
+    }
+  }
+  return true;
 }
 
 uint8_t Clamp(int value) {
@@ -53,6 +149,30 @@ uint8_t Clamp(int value) {
 }
 
 }  // namespace
+
+struct CameraGraph::PwCapture {
+#ifdef FAC_HAS_PIPEWIRE
+  pw_thread_loop* loop = nullptr;
+  pw_context* context = nullptr;
+  pw_core* core = nullptr;
+  pw_registry* registry = nullptr;
+  spa_hook registry_listener{};
+  pw_registry_events registry_events{};
+  pw_stream* stream = nullptr;
+  spa_hook listener{};
+  pw_stream_events events{};
+  uint32_t spa_format = 0;
+  int src_w = 0;
+  int src_h = 0;
+  int process_logs = 0;
+  uint32_t node_id = PW_ID_ANY;
+  std::string path;
+  std::string node_name;
+  std::atomic<bool> failed{false};
+  std::atomic<bool> activated{false};
+  spa_source* timer = nullptr;
+#endif
+};
 
 G_DECLARE_FINAL_TYPE(FacPixelTexture,
                      fac_pixel_texture,
@@ -90,7 +210,10 @@ static void fac_pixel_texture_init(FacPixelTexture* self) {
   self->graph = nullptr;
 }
 
-CameraGraph::CameraGraph(FlTextureRegistrar* textures) : textures_(textures) {}
+CameraGraph::CameraGraph(FlTextureRegistrar* textures, GtkWidget* view)
+    : textures_(textures), view_(view) {
+  (void)view_;
+}
 
 CameraGraph::~CameraGraph() {
   Stop();
@@ -139,7 +262,10 @@ FlValue* CameraGraph::Enumerate() {
   FlValue* cameras = fl_value_new_list();
   for (int i = 0; i < 64; i++) {
     const std::string path = "/dev/video" + std::to_string(i);
-    const int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
+    int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
+    if (fd < 0) {
+      fd = open(path.c_str(), O_RDONLY | O_NONBLOCK);
+    }
     if (fd < 0) {
       continue;
     }
@@ -152,6 +278,8 @@ FlValue* CameraGraph::Enumerate() {
     close(fd);
     const std::string name = reinterpret_cast<const char*>(cap.card);
     const std::string bus = reinterpret_cast<const char*>(cap.bus_info);
+    FacCameraLog("enumerate %s name=%s bus=%s", path.c_str(), name.c_str(),
+                 bus.c_str());
     FlValue* camera = fl_value_new_map();
     fl_value_set_string_take(camera, "id", fl_value_new_string(path.c_str()));
     fl_value_set_string_take(camera, "name",
@@ -167,12 +295,12 @@ FlValue* CameraGraph::Enumerate() {
     fl_value_set_string_take(camera, "modes", modes);
     fl_value_append_take(cameras, camera);
   }
+  FacCameraLog("enumerate count=%zu", fl_value_get_length(cameras));
   return cameras;
 }
 
 std::string CameraGraph::RequestPermission() {
   bool saw_capture = false;
-  bool opened = false;
   bool denied = false;
   for (int i = 0; i < 64; i++) {
     const std::string path = "/dev/video" + std::to_string(i);
@@ -188,14 +316,18 @@ std::string CameraGraph::RequestPermission() {
       continue;
     }
     saw_capture = true;
-    opened = true;
     close(fd);
   }
-  if (!saw_capture && denied) {
-    return "denied";
+  if (saw_capture) {
+    FacCameraLog("permission granted via v4l2");
+    return "granted";
   }
-  (void)opened;
-  return "granted";
+  if (AccessCameraPortal()) {
+    FacCameraLog("permission granted via portal");
+    return "granted";
+  }
+  FacCameraLog("permission denied saw_capture=0 denied=%d", denied ? 1 : 0);
+  return denied ? "denied" : "denied";
 }
 
 FlValue* CameraGraph::Start(const std::string& camera_id,
@@ -305,6 +437,7 @@ void CameraGraph::SetMuted(bool muted) {
 
 void CameraGraph::StopCapture() {
   running_.store(false);
+  StopPipeWire();
   if (fd_ >= 0) {
     v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     ioctl(fd_, VIDIOC_STREAMOFF, &type);
@@ -324,127 +457,873 @@ void CameraGraph::StopCapture() {
   }
 }
 
+bool CameraGraph::ProbeLiveFrames() {
+  live_frames_.store(0);
+  for (int i = 0; i < 16; i++) {
+    pollfd pfd = {};
+    pfd.fd = fd_;
+    pfd.events = POLLIN;
+    if (poll(&pfd, 1, 50) <= 0) {
+      continue;
+    }
+    v4l2_buffer buf = {};
+    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    if (ioctl(fd_, VIDIOC_DQBUF, &buf) < 0) {
+      continue;
+    }
+    if (buf.index < buffers_.size()) {
+      ConvertFrame(static_cast<const uint8_t*>(buffers_[buf.index].start),
+                   buf.bytesused);
+    }
+    ioctl(fd_, VIDIOC_QBUF, &buf);
+    if (live_frames_.load() > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool CameraGraph::StartCapture(const std::string& camera_id,
                                int width,
                                int height,
                                int frame_rate) {
+  FacCameraLog("StartCapture id=%s %dx%d@%d", camera_id.c_str(), width, height,
+               frame_rate);
   StopCapture();
-  std::string path = camera_id;
-  if (path.empty()) {
+  std::vector<std::string> paths;
+  if (!camera_id.empty()) {
+    paths.push_back(camera_id);
+  } else {
     FlValue* cameras = Enumerate();
-    if (fl_value_get_length(cameras) > 0) {
-      FlValue* first = fl_value_get_list_value(cameras, 0);
-      FlValue* id = fl_value_lookup_string(first, "id");
-      if (id != nullptr) {
-        path = fl_value_get_string(id);
+    for (size_t i = 0; i < fl_value_get_length(cameras); i++) {
+      FlValue* camera = fl_value_get_list_value(cameras, i);
+      FlValue* id = camera != nullptr ? fl_value_lookup_string(camera, "id")
+                                      : nullptr;
+      if (id == nullptr) {
+        continue;
+      }
+      const std::string path = fl_value_get_string(id);
+      if (!path.empty()) {
+        paths.push_back(path);
       }
     }
     fl_value_unref(cameras);
   }
-  if (path.empty()) {
+  if (paths.empty()) {
     return false;
   }
-  fd_ = open(path.c_str(), O_RDWR);
-  if (fd_ < 0 || !IsCaptureDevice(fd_)) {
+
+  auto release_buffers = [this]() {
+    if (fd_ >= 0) {
+      v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+      ioctl(fd_, VIDIOC_STREAMOFF, &type);
+    }
+    for (auto& buffer : buffers_) {
+      if (buffer.start != nullptr && buffer.start != MAP_FAILED) {
+        munmap(buffer.start, buffer.length);
+      }
+    }
+    buffers_.clear();
+    if (fd_ >= 0) {
+      v4l2_requestbuffers req = {};
+      req.count = 0;
+      req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+      req.memory = V4L2_MEMORY_MMAP;
+      ioctl(fd_, VIDIOC_REQBUFS, &req);
+    }
+  };
+
+  auto close_device = [this, &release_buffers]() {
+    release_buffers();
     if (fd_ >= 0) {
       close(fd_);
       fd_ = -1;
     }
-    return false;
+  };
+
+  auto open_device = [this, &close_device](const std::string& path) -> bool {
+    close_device();
+    fd_ = open(path.c_str(), O_RDWR);
+    if (fd_ < 0 || !IsCaptureDevice(fd_)) {
+      const int err = errno;
+      if (fd_ >= 0) {
+        close(fd_);
+        fd_ = -1;
+      }
+      FacCameraLog("open failed %s errno=%d", path.c_str(), err);
+      return false;
+    }
+    return true;
+  };
+
+  // MJPEG 640x480 first: USB 2 passthrough cannot carry uncompressed YUYV
+  // together with the BRIO's USB audio interface (STREAMON EPIPE).
+  const uint32_t candidates[] = {
+      V4L2_PIX_FMT_MJPEG, V4L2_PIX_FMT_JPEG, V4L2_PIX_FMT_YUYV,
+      V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_RGB24, V4L2_PIX_FMT_BGR24};
+  const int sizes[][2] = {{640, 480}, {width, height}, {1280, 720}, {0, 0}};
+
+  for (const auto& path : paths) {
+    if (StartPipeWire(path)) {
+      FacCameraLog("pipewire capture %s", path.c_str());
+      return true;
+    }
   }
-  camera_id_ = path;
-  const uint32_t candidates[] = {V4L2_PIX_FMT_YUYV, V4L2_PIX_FMT_NV12,
-                                 V4L2_PIX_FMT_RGB24, V4L2_PIX_FMT_BGR24};
-  const int sizes[][2] = {{width, height}, {1280, 720}, {640, 480}, {0, 0}};
-  bool formatted = false;
-  v4l2_format fmt = {};
-  for (uint32_t fourcc : candidates) {
-    for (const auto& size : sizes) {
-      if (TrySetFormat(fourcc, size[0], size[1], &fmt) &&
-          CanConvert(fmt.fmt.pix.pixelformat)) {
-        formatted = true;
+
+  bool opened_v4l2 = false;
+  for (const auto& path : paths) {
+    if (!open_device(path)) {
+      continue;
+    }
+    opened_v4l2 = true;
+    camera_id_ = path;
+    bool started = false;
+    for (uint32_t fourcc : candidates) {
+      for (const auto& size : sizes) {
+        if (fd_ < 0 && !open_device(path)) {
+          break;
+        }
+        v4l2_format fmt = {};
+        if (!TrySetFormat(fourcc, size[0], size[1], &fmt) ||
+            !CanConvert(fmt.fmt.pix.pixelformat)) {
+          continue;
+        }
         pixelformat_ = fmt.fmt.pix.pixelformat;
+        width_ = static_cast<int>(fmt.fmt.pix.width);
+        height_ = static_cast<int>(fmt.fmt.pix.height);
+        bytesperline_ = static_cast<int>(fmt.fmt.pix.bytesperline);
+        frame_rate_ = frame_rate;
+        v4l2_requestbuffers req = {};
+        req.count = 4;
+        req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        req.memory = V4L2_MEMORY_MMAP;
+        if (ioctl(fd_, VIDIOC_REQBUFS, &req) < 0 || req.count < 2) {
+          FacCameraLog("REQBUFS failed %s fourcc=%u %dx%d errno=%d",
+                       path.c_str(), fourcc, width_, height_, errno);
+          release_buffers();
+          continue;
+        }
+        buffers_.resize(req.count);
+        bool mapped = true;
+        for (uint32_t i = 0; i < req.count; i++) {
+          v4l2_buffer buf = {};
+          buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+          buf.memory = V4L2_MEMORY_MMAP;
+          buf.index = i;
+          if (ioctl(fd_, VIDIOC_QUERYBUF, &buf) < 0) {
+            mapped = false;
+            break;
+          }
+          buffers_[i].length = buf.length;
+          buffers_[i].start =
+              mmap(nullptr, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd_,
+                   buf.m.offset);
+          if (buffers_[i].start == MAP_FAILED) {
+            mapped = false;
+            break;
+          }
+          if (ioctl(fd_, VIDIOC_QBUF, &buf) < 0) {
+            mapped = false;
+            break;
+          }
+        }
+        if (!mapped) {
+          FacCameraLog("mmap/qbuf failed %s fourcc=%u %dx%d", path.c_str(),
+                       fourcc, width_, height_);
+          release_buffers();
+          continue;
+        }
+        v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        FacCameraLog("STREAMON try %s fourcc=%u %dx%d", path.c_str(),
+                     pixelformat_, width_, height_);
+        if (ioctl(fd_, VIDIOC_STREAMON, &type) < 0) {
+          FacCameraLog("STREAMON failed %s fourcc=%u %dx%d errno=%d",
+                       path.c_str(), pixelformat_, width_, height_, errno);
+          close_device();
+          usleep(200000);
+          if (!open_device(path)) {
+            break;
+          }
+          continue;
+        }
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          FillBlackLocked();
+        }
+        frame_count_.store(0);
+        const bool live = ProbeLiveFrames();
+        FacCameraLog("probe %s fourcc=%c%c%c%c %dx%d live=%d frames=%ld",
+                     path.c_str(), static_cast<char>(pixelformat_ & 0xff),
+                     static_cast<char>((pixelformat_ >> 8) & 0xff),
+                     static_cast<char>((pixelformat_ >> 16) & 0xff),
+                     static_cast<char>((pixelformat_ >> 24) & 0xff), width_,
+                     height_, live ? 1 : 0,
+                     static_cast<long>(live_frames_.load()));
+        if (!live) {
+          close_device();
+          usleep(20000);
+          if (!open_device(path)) {
+            break;
+          }
+          continue;
+        }
+        running_.store(true);
+        capture_thread_ = std::thread([this]() { CaptureLoop(); });
+        started = true;
+        break;
+      }
+      if (started) {
         break;
       }
     }
-    if (formatted) {
+    if (started) {
+      return true;
+    }
+    close_device();
+  }
+  (void)opened_v4l2;
+  FacCameraLog("StartCapture no live camera");
+  return false;
+}
+
+void CameraGraph::StopPipeWire() {
+#ifdef FAC_HAS_PIPEWIRE
+  StopPwPoll();
+  if (!pw_) {
+    return;
+  }
+  if (pw_->loop != nullptr) {
+    pw_thread_loop_lock(pw_->loop);
+    if (pw_->timer != nullptr) {
+      pw_loop_destroy_source(pw_thread_loop_get_loop(pw_->loop), pw_->timer);
+      pw_->timer = nullptr;
+    }
+    if (pw_->stream != nullptr) {
+      spa_hook_remove(&pw_->listener);
+      pw_stream_disconnect(pw_->stream);
+      pw_stream_destroy(pw_->stream);
+      pw_->stream = nullptr;
+    }
+    if (pw_->registry != nullptr) {
+      spa_hook_remove(&pw_->registry_listener);
+      pw_->registry = nullptr;
+    }
+    if (pw_->core != nullptr) {
+      pw_core_disconnect(pw_->core);
+      pw_->core = nullptr;
+    }
+    if (pw_->context != nullptr) {
+      pw_context_destroy(pw_->context);
+      pw_->context = nullptr;
+    }
+    pw_thread_loop_unlock(pw_->loop);
+    pw_thread_loop_stop(pw_->loop);
+    pw_thread_loop_destroy(pw_->loop);
+    pw_->loop = nullptr;
+  }
+  pw_.reset();
+#endif
+}
+
+bool CameraGraph::AccessCameraPortal() {
+  if (portal_granted_) {
+    return true;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusProxy) proxy = g_dbus_proxy_new_for_bus_sync(
+      G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
+      "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+      "org.freedesktop.portal.Camera", nullptr, &error);
+  if (proxy == nullptr) {
+    FacCameraLog("camera portal missing %s",
+                 error != nullptr ? error->message : "");
+    return false;
+  }
+  GDBusConnection* bus = g_dbus_proxy_get_connection(proxy);
+  const gchar* unique =
+      bus != nullptr ? g_dbus_connection_get_unique_name(bus) : nullptr;
+  if (unique == nullptr || unique[0] != ':') {
+    return false;
+  }
+  char token[32];
+  g_snprintf(token, sizeof(token), "fac%d", g_random_int_range(1, G_MAXINT));
+  std::string sender(unique + 1);
+  for (char& c : sender) {
+    if (c == '.') {
+      c = '_';
+    }
+  }
+  const std::string request_path =
+      std::string("/org/freedesktop/portal/desktop/request/") + sender + "/" +
+      token;
+  struct Wait {
+    GMainLoop* loop = nullptr;
+    guint code = 2;
+    bool done = false;
+  } wait;
+  wait.loop = g_main_loop_new(g_main_context_default(), FALSE);
+  const guint sub = g_dbus_connection_signal_subscribe(
+      bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request",
+      "Response", request_path.c_str(), nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+      [](GDBusConnection*, const gchar*, const gchar*, const gchar*,
+         const gchar*, GVariant* parameters, gpointer user_data) {
+        auto* wait = static_cast<Wait*>(user_data);
+        GVariant* results = nullptr;
+        g_variant_get(parameters, "(u@a{sv})", &wait->code, &results);
+        if (results != nullptr) {
+          g_variant_unref(results);
+        }
+        wait->done = true;
+        if (wait->loop != nullptr) {
+          g_main_loop_quit(wait->loop);
+        }
+      },
+      &wait, nullptr);
+  GVariantBuilder opts;
+  g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
+  g_variant_builder_add(&opts, "{sv}", "handle_token",
+                        g_variant_new_string(token));
+  g_autoptr(GError) call_error = nullptr;
+  g_autoptr(GVariant) ret = g_dbus_proxy_call_sync(
+      proxy, "AccessCamera", g_variant_new("(a{sv})", &opts),
+      G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &call_error);
+  FacCameraLog("AccessCamera ret=%p err=%s path=%s",
+               static_cast<const void*>(ret),
+               call_error != nullptr ? call_error->message : "none",
+               request_path.c_str());
+  if (ret == nullptr && !wait.done) {
+    g_dbus_connection_signal_unsubscribe(bus, sub);
+    g_main_loop_unref(wait.loop);
+    return false;
+  }
+  if (!wait.done) {
+    const guint timeout_id = g_timeout_add(
+        120000,
+        [](gpointer data) -> gboolean {
+          auto* wait = static_cast<Wait*>(data);
+          if (wait->loop != nullptr) {
+            g_main_loop_quit(wait->loop);
+          }
+          return G_SOURCE_REMOVE;
+        },
+        &wait);
+    g_main_loop_run(wait.loop);
+    g_source_remove(timeout_id);
+  }
+  g_dbus_connection_signal_unsubscribe(bus, sub);
+  g_main_loop_unref(wait.loop);
+  FacCameraLog("AccessCamera response=%u", wait.code);
+  portal_granted_ = wait.code == 0;
+  return portal_granted_;
+}
+
+int CameraGraph::OpenCameraPipeWireRemote() {
+  if (!portal_granted_ && !AccessCameraPortal()) {
+    return -1;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusProxy) proxy = g_dbus_proxy_new_for_bus_sync(
+      G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
+      "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+      "org.freedesktop.portal.Camera", nullptr, &error);
+  if (proxy == nullptr) {
+    return -1;
+  }
+  g_autoptr(GUnixFDList) fd_list = nullptr;
+  GVariantBuilder opts;
+  g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
+  g_autoptr(GVariant) ret = g_dbus_proxy_call_with_unix_fd_list_sync(
+      proxy, "OpenPipeWireRemote", g_variant_new("(a{sv})", &opts),
+      G_DBUS_CALL_FLAGS_NONE, 5000, nullptr, &fd_list, nullptr, &error);
+  if (ret == nullptr || fd_list == nullptr) {
+    FacCameraLog("OpenPipeWireRemote camera err=%s",
+                 error != nullptr ? error->message : "none");
+    return -1;
+  }
+  gint32 handle = -1;
+  g_variant_get(ret, "(h)", &handle);
+  int fd = g_unix_fd_list_get(fd_list, handle, &error);
+  FacCameraLog("OpenPipeWireRemote camera fd=%d", fd);
+  return fd;
+}
+
+bool CameraGraph::StartPipeWire(const std::string& camera_id) {
+#ifdef FAC_HAS_PIPEWIRE
+  if (camera_id.empty()) {
+    return false;
+  }
+  StopPipeWire();
+  static std::once_flag pw_once;
+  std::call_once(pw_once, [] { pw_init(nullptr, nullptr); });
+  pw_ = std::make_unique<PwCapture>();
+  pw_->path = camera_id.rfind("/dev/", 0) == 0 ? std::string("v4l2:") + camera_id
+                                               : camera_id;
+  pw_->loop = pw_thread_loop_new("fac-camera", nullptr);
+  if (pw_->loop == nullptr) {
+    pw_.reset();
+    return false;
+  }
+  if (pw_thread_loop_start(pw_->loop) < 0) {
+    StopPipeWire();
+    return false;
+  }
+  pw_thread_loop_lock(pw_->loop);
+  pw_->context = pw_context_new(pw_thread_loop_get_loop(pw_->loop), nullptr, 0);
+  if (pw_->context == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  // Default PipeWire socket so WirePlumber owns V4L2 STREAMON and can share
+  // the BRIO with USB audio. The Camera portal remote is not used here.
+  pw_->core = pw_context_connect(pw_->context, nullptr, 0);
+  if (pw_->core == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  pw_->registry = pw_core_get_registry(pw_->core, PW_VERSION_REGISTRY, 0);
+  if (pw_->registry == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  pw_->registry_events = {};
+  pw_->registry_events.version = PW_VERSION_REGISTRY_EVENTS;
+  pw_->registry_events.global = [](void* data, uint32_t id,
+                                   uint32_t /*permissions*/, const char* type,
+                                   uint32_t /*version*/,
+                                   const spa_dict* props) {
+    auto* self = static_cast<CameraGraph*>(data);
+    if (self == nullptr || self->pw_ == nullptr || type == nullptr ||
+        props == nullptr || std::strcmp(type, PW_TYPE_INTERFACE_Node) != 0) {
+      return;
+    }
+    const char* klass = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
+    const char* path = spa_dict_lookup(props, PW_KEY_OBJECT_PATH);
+    if (klass == nullptr || std::strstr(klass, "Video/Source") == nullptr) {
+      return;
+    }
+    const bool path_match =
+        path != nullptr && self->pw_->path == path;
+    const bool id_match =
+        path != nullptr && self->pw_->path.find(path) != std::string::npos;
+    if (!path_match && !id_match) {
+      return;
+    }
+    self->pw_->node_id = id;
+    const char* name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
+    if (name != nullptr) {
+      self->pw_->node_name = name;
+    }
+    FacCameraLog("pw camera node=%u path=%s name=%s", id,
+                 path != nullptr ? path : "", name != nullptr ? name : "");
+  };
+  pw_registry_add_listener(pw_->registry, &pw_->registry_listener,
+                           &pw_->registry_events, this);
+  pw_thread_loop_unlock(pw_->loop);
+  for (int i = 0; i < 40 && pw_->node_id == PW_ID_ANY; i++) {
+    g_usleep(25000);
+  }
+  if (pw_->registry != nullptr) {
+    pw_thread_loop_lock(pw_->loop);
+    spa_hook_remove(&pw_->registry_listener);
+    pw_->registry = nullptr;
+    pw_thread_loop_unlock(pw_->loop);
+  }
+  if (pw_->node_id == PW_ID_ANY) {
+    FacCameraLog("pw camera node not found for %s", pw_->path.c_str());
+    StopPipeWire();
+    return false;
+  }
+  pw_thread_loop_lock(pw_->loop);
+  // object.path (v4l2:/dev/video0) is unique. node.name prefixes the IR
+  // node (...usb-0_1_1.0.2) and WirePlumber would bind GRAY 340x340.
+  const char* target = pw_->path.c_str();
+  pw_properties* props = pw_properties_new(
+      PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture",
+      PW_KEY_MEDIA_CLASS, "Stream/Input/Video", PW_KEY_TARGET_OBJECT, target,
+      nullptr);
+  pw_->stream = pw_stream_new(pw_->core, "fac-camera", props);
+  if (pw_->stream == nullptr) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  pw_->events.version = PW_VERSION_STREAM_EVENTS;
+  pw_->events.param_changed = [](void* data, uint32_t id,
+                                 const spa_pod* param) {
+    CameraGraph::OnPwParamChanged(data, id, param);
+  };
+  pw_->events.add_buffer = [](void* data, pw_buffer* /*buffer*/) {
+    auto* self = static_cast<CameraGraph*>(data);
+    FacCameraLog("pw camera add_buffer");
+    if (self != nullptr && self->pw_ != nullptr && self->pw_->loop != nullptr) {
+      pw_thread_loop_signal(self->pw_->loop, false);
+    }
+  };
+  pw_->events.process = [](void* data) { CameraGraph::OnPwProcess(data); };
+  pw_->events.state_changed = [](void* data, pw_stream_state /*old*/,
+                                 pw_stream_state next, const char* error) {
+    auto* self = static_cast<CameraGraph*>(data);
+    FacCameraLog("pw camera state=%s error=%s", pw_stream_state_as_string(next),
+                 error != nullptr ? error : "");
+    if (self == nullptr || self->pw_ == nullptr) {
+      return;
+    }
+    if (next == PW_STREAM_STATE_ERROR) {
+      self->pw_->failed.store(true);
+    }
+    if (self->pw_->loop != nullptr) {
+      pw_thread_loop_signal(self->pw_->loop, false);
+    }
+  };
+  pw_stream_add_listener(pw_->stream, &pw_->listener, &pw_->events, this);
+  // Match gst pipewiresrc: no MAP_BUFFERS. Modifier formats need DMA-BUF
+  // only; MAP_BUFFERS makes v4l2 "use input buffers" fail with -22.
+  const int connected = pw_stream_connect(
+      pw_->stream, PW_DIRECTION_INPUT, PW_ID_ANY,
+      static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
+                                   PW_STREAM_FLAG_RT_PROCESS),
+      nullptr, 0);
+  FacCameraLog("pw camera connect rc=%d node=%u target=%s %s", connected,
+               pw_->node_id, target, camera_id.c_str());
+  if (connected < 0) {
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    return false;
+  }
+  for (int i = 0; i < 80; i++) {
+    if (pw_->failed.load() || live_frames_.load() > 0 ||
+        pw_->spa_format != 0) {
+      if (live_frames_.load() > 0 || pw_->failed.load() || i >= 8) {
+        break;
+      }
+    }
+    timespec abstime{};
+    pw_thread_loop_get_time(pw_->loop, &abstime, 50L * SPA_NSEC_PER_MSEC);
+    pw_thread_loop_timed_wait_full(pw_->loop, &abstime);
+  }
+  pw_thread_loop_unlock(pw_->loop);
+  if (pw_->failed.load() || pw_->spa_format == 0) {
+    FacCameraLog("pw camera not live format=%u", pw_->spa_format);
+    StopPipeWire();
+    return false;
+  }
+  FacCameraLog("pw camera live format=%u %dx%d frames=%ld", pw_->spa_format,
+               pw_->src_w, pw_->src_h, static_cast<long>(live_frames_.load()));
+  if (live_frames_.load() == 0) {
+    FacCameraLog("pw camera no live frames; falling back");
+    StopPipeWire();
+    return false;
+  }
+  camera_id_ = camera_id;
+  running_.store(true);
+  return true;
+#else
+  (void)camera_id;
+  return false;
+#endif
+}
+
+void CameraGraph::StartPwPoll() {
+  if (pw_poll_id_ != 0) {
+    return;
+  }
+  pw_poll_id_ = g_timeout_add(
+      16,
+      [](gpointer user) -> gboolean {
+        auto* self = static_cast<CameraGraph*>(user);
+        if (!self->running_.load() || self->pw_ == nullptr ||
+            self->pw_->stream == nullptr || self->pw_->loop == nullptr) {
+          self->pw_poll_id_ = 0;
+          return G_SOURCE_REMOVE;
+        }
+        pw_thread_loop_lock(self->pw_->loop);
+        CameraGraph::OnPwProcess(self);
+        pw_thread_loop_unlock(self->pw_->loop);
+        return G_SOURCE_CONTINUE;
+      },
+      this);
+}
+
+void CameraGraph::StopPwPoll() {
+  if (pw_poll_id_ == 0) {
+    return;
+  }
+  g_source_remove(pw_poll_id_);
+  pw_poll_id_ = 0;
+}
+
+void CameraGraph::OnPwParamChanged(void* data, uint32_t id, const void* param) {
+#ifdef FAC_HAS_PIPEWIRE
+  auto* self = static_cast<CameraGraph*>(data);
+  if (self == nullptr || self->pw_ == nullptr || param == nullptr ||
+      id != SPA_PARAM_Format) {
+    return;
+  }
+  spa_video_info_raw raw{};
+  if (spa_format_video_raw_parse(static_cast<const spa_pod*>(param), &raw) <
+      0) {
+    return;
+  }
+  self->pw_->spa_format = raw.format;
+  self->pw_->src_w = static_cast<int>(raw.size.width);
+  self->pw_->src_h = static_cast<int>(raw.size.height);
+  if (self->pw_->src_w > 0) {
+    self->width_ = self->pw_->src_w;
+  }
+  if (self->pw_->src_h > 0) {
+    self->height_ = self->pw_->src_h;
+  }
+  if (raw.format == SPA_VIDEO_FORMAT_YUY2) {
+    self->pixelformat_ = V4L2_PIX_FMT_YUYV;
+  } else if (raw.format == SPA_VIDEO_FORMAT_NV12) {
+    self->pixelformat_ = V4L2_PIX_FMT_NV12;
+  } else if (raw.format == SPA_VIDEO_FORMAT_RGB) {
+    self->pixelformat_ = V4L2_PIX_FMT_RGB24;
+  } else if (raw.format == SPA_VIDEO_FORMAT_BGR) {
+    self->pixelformat_ = V4L2_PIX_FMT_BGR24;
+  } else if (raw.format == SPA_VIDEO_FORMAT_GRAY8) {
+    self->pixelformat_ = V4L2_PIX_FMT_GREY;
+  } else {
+    self->pixelformat_ = 0;
+  }
+  FacCameraLog("pw camera format=%u %dx%d modifier=%llu flags=%u", raw.format,
+               self->pw_->src_w, self->pw_->src_h,
+               static_cast<unsigned long long>(raw.modifier), raw.flags);
+  if (self->pw_->stream == nullptr || self->pw_->src_w < 1 ||
+      self->pw_->src_h < 1) {
+    return;
+  }
+  const int stride =
+      self->pw_->src_w *
+      (raw.format == SPA_VIDEO_FORMAT_NV12
+           ? 1
+           : (raw.format == SPA_VIDEO_FORMAT_RGB ||
+                      raw.format == SPA_VIDEO_FORMAT_BGR
+                  ? 3
+                  : 2));
+  const int size = stride * self->pw_->src_h;
+  uint32_t data_type = (1u << SPA_DATA_DmaBuf);
+  if (spa_pod_find_prop(static_cast<const spa_pod*>(param), nullptr,
+                        SPA_FORMAT_VIDEO_modifier) == nullptr) {
+    data_type |= (1u << SPA_DATA_MemFd) | (1u << SPA_DATA_MemPtr);
+  }
+  uint8_t pod_buf[512];
+  spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod_buf, sizeof(pod_buf));
+  spa_pod* buffers_pod = static_cast<spa_pod*>(spa_pod_builder_add_object(
+      &builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+      SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, 16),
+      SPA_PARAM_BUFFERS_blocks, SPA_POD_CHOICE_RANGE_Int(0, 1, 16),
+      SPA_PARAM_BUFFERS_size, SPA_POD_CHOICE_RANGE_Int(size, 1, INT32_MAX),
+      SPA_PARAM_BUFFERS_stride, SPA_POD_CHOICE_RANGE_Int(stride, 0, INT32_MAX),
+      SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int(data_type)));
+  if (buffers_pod != nullptr) {
+    const spa_pod* params[1] = {buffers_pod};
+    const int updated = pw_stream_update_params(self->pw_->stream, params, 1);
+    FacCameraLog("pw camera buffers update rc=%d type=%u size=%d stride=%d",
+                 updated, data_type, size, stride);
+  }
+  if (self->pw_->loop != nullptr) {
+    pw_thread_loop_signal(self->pw_->loop, false);
+  }
+#else
+  (void)data;
+  (void)id;
+  (void)param;
+#endif
+}
+
+void CameraGraph::OnPwProcess(void* data) {
+#ifdef FAC_HAS_PIPEWIRE
+  auto* self = static_cast<CameraGraph*>(data);
+  if (self != nullptr && self->pw_ != nullptr && self->pw_->loop != nullptr) {
+    pw_thread_loop_signal(self->pw_->loop, false);
+  }
+  if (self == nullptr || self->pw_ == nullptr || self->pw_->stream == nullptr) {
+    return;
+  }
+  const int n = self->pw_->process_logs;
+  if (n < 8) {
+    FacCameraLog("pw camera process enter n=%d", n);
+  }
+  pw_buffer* buffer = nullptr;
+  while (true) {
+    pw_buffer* next = pw_stream_dequeue_buffer(self->pw_->stream);
+    if (next == nullptr) {
       break;
     }
+    if (buffer != nullptr) {
+      pw_stream_queue_buffer(self->pw_->stream, buffer);
+    }
+    buffer = next;
   }
-  if (!formatted) {
-    close(fd_);
-    fd_ = -1;
-    return false;
+  if (buffer == nullptr || buffer->buffer == nullptr ||
+      buffer->buffer->n_datas < 1) {
+    if (n < 8) {
+      FacCameraLog("pw camera process empty n=%d", n);
+    }
+    self->pw_->process_logs++;
+    if (buffer != nullptr) {
+      pw_stream_queue_buffer(self->pw_->stream, buffer);
+    }
+    return;
   }
-  width_ = static_cast<int>(fmt.fmt.pix.width);
-  height_ = static_cast<int>(fmt.fmt.pix.height);
-  bytesperline_ = static_cast<int>(fmt.fmt.pix.bytesperline);
-  frame_rate_ = frame_rate;
-  v4l2_streamparm parm = {};
-  parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (ioctl(fd_, VIDIOC_G_PARM, &parm) == 0 &&
-      (parm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME)) {
-    parm.parm.capture.timeperframe.numerator = 1;
-    parm.parm.capture.timeperframe.denominator =
-        static_cast<uint32_t>(frame_rate);
-    ioctl(fd_, VIDIOC_S_PARM, &parm);
-    if (parm.parm.capture.timeperframe.numerator != 0) {
-      frame_rate_ = static_cast<int>(
-          parm.parm.capture.timeperframe.denominator /
-          parm.parm.capture.timeperframe.numerator);
+  spa_data* datas = buffer->buffer->datas;
+  if (datas[0].chunk != nullptr &&
+      (datas[0].chunk->size == 0 ||
+       (datas[0].chunk->flags & SPA_CHUNK_FLAG_CORRUPTED) != 0)) {
+    if (self->pw_->process_logs < 5) {
+      FacCameraLog("pw camera skip empty chunk size=%u flags=%u",
+                   datas[0].chunk->size, datas[0].chunk->flags);
+      self->pw_->process_logs++;
+    }
+    pw_stream_queue_buffer(self->pw_->stream, buffer);
+    return;
+  }
+  auto dma_sync = [](int fd, uint64_t flags) {
+    if (fd < 0) {
+      return;
+    }
+    struct dma_buf_sync sync {};
+    sync.flags = flags;
+    ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync);
+  };
+  const bool log_frame = self->pw_->process_logs < 5;
+  if (log_frame) {
+    FacCameraLog(
+        "pw camera process n=%d type=%u fd=%ld data=%p max=%zu stride=%d off=%u size=%u flags=%u",
+        self->pw_->process_logs, datas[0].type, static_cast<long>(datas[0].fd),
+        datas[0].data, static_cast<size_t>(datas[0].maxsize),
+        datas[0].chunk != nullptr ? datas[0].chunk->stride : 0,
+        datas[0].chunk != nullptr ? datas[0].chunk->offset : 0,
+        datas[0].chunk != nullptr ? datas[0].chunk->size : 0,
+        datas[0].chunk != nullptr ? datas[0].chunk->flags : 0);
+    self->pw_->process_logs++;
+  }
+  const uint8_t* src = nullptr;
+  size_t length = 0;
+  int stride = 0;
+  void* mapped = nullptr;
+  size_t mapped_size = 0;
+  if (datas[0].data != nullptr) {
+    src = static_cast<const uint8_t*>(datas[0].data);
+    if (datas[0].chunk != nullptr) {
+      src += datas[0].chunk->offset;
+      length = datas[0].chunk->size > 0 ? datas[0].chunk->size
+                                        : datas[0].maxsize;
+      stride = datas[0].chunk->stride;
+    } else {
+      length = datas[0].maxsize;
+    }
+    if (log_frame) {
+      FacCameraLog("pw camera mem px=%02x %02x %02x %02x", src[0], src[1],
+                   src[2], src[3]);
+    }
+  } else if (datas[0].fd >= 0 && datas[0].maxsize > 0) {
+    const off_t off = static_cast<off_t>(datas[0].mapoffset);
+    mapped = mmap(nullptr, datas[0].maxsize, PROT_READ, MAP_SHARED, datas[0].fd,
+                  off);
+    if (mapped == MAP_FAILED) {
+      mapped = mmap(nullptr, datas[0].maxsize, PROT_READ, MAP_PRIVATE,
+                    datas[0].fd, off);
+    }
+    if (mapped != MAP_FAILED) {
+      mapped_size = datas[0].maxsize;
+      if (datas[0].type == SPA_DATA_DmaBuf) {
+        dma_sync(static_cast<int>(datas[0].fd),
+                 DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+      }
+      src = static_cast<const uint8_t*>(mapped);
+      if (datas[0].chunk != nullptr) {
+        src += datas[0].chunk->offset;
+        length = datas[0].chunk->size > 0 ? datas[0].chunk->size
+                                          : datas[0].maxsize;
+        stride = datas[0].chunk->stride;
+      } else {
+        length = datas[0].maxsize;
+      }
+      if (log_frame) {
+        FacCameraLog("pw camera mapped px=%02x %02x %02x %02x live=%ld", src[0],
+                     src[1], src[2], src[3],
+                     static_cast<long>(self->live_frames_.load()));
+      }
+    } else if (log_frame) {
+      FacCameraLog("pw camera mmap failed errno=%d", errno);
     }
   }
-  v4l2_requestbuffers req = {};
-  req.count = 4;
-  req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  req.memory = V4L2_MEMORY_MMAP;
-  if (ioctl(fd_, VIDIOC_REQBUFS, &req) < 0 || req.count < 2) {
-    close(fd_);
-    fd_ = -1;
-    return false;
-  }
-  buffers_.resize(req.count);
-  for (uint32_t i = 0; i < req.count; i++) {
-    v4l2_buffer buf = {};
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf.memory = V4L2_MEMORY_MMAP;
-    buf.index = i;
-    if (ioctl(fd_, VIDIOC_QUERYBUF, &buf) < 0) {
-      StopCapture();
-      return false;
+  if (src != nullptr) {
+    if (self->muted_.load() || !self->enabled_.load()) {
+      std::lock_guard<std::mutex> lock(self->mutex_);
+      self->FillBlackLocked();
+    } else if (self->pixelformat_ != 0) {
+      self->bytesperline_ = stride;
+      self->ConvertFrame(src, length);
+    } else if (self->pw_->spa_format == SPA_VIDEO_FORMAT_RGBx ||
+               self->pw_->spa_format == SPA_VIDEO_FORMAT_RGBA ||
+               self->pw_->spa_format == SPA_VIDEO_FORMAT_BGRx ||
+               self->pw_->spa_format == SPA_VIDEO_FORMAT_BGRA) {
+      std::lock_guard<std::mutex> lock(self->mutex_);
+      const int src_w = self->pw_->src_w;
+      const int src_h = self->pw_->src_h;
+      const int out_w = self->width_;
+      const int out_h = self->height_;
+      const size_t bytes = static_cast<size_t>(out_w) * out_h * 4;
+      if (self->front_.size() != bytes) {
+        self->front_.assign(bytes, 0);
+      }
+      const bool bgr = self->pw_->spa_format == SPA_VIDEO_FORMAT_BGRx ||
+                       self->pw_->spa_format == SPA_VIDEO_FORMAT_BGRA;
+      const int row_stride = stride > 0 ? stride : src_w * 4;
+      for (int y = 0; y < out_h; y++) {
+        const int src_y = y * src_h / std::max(1, out_h);
+        const uint8_t* row =
+            src + static_cast<ptrdiff_t>(row_stride) * src_y;
+        uint8_t* out =
+            self->front_.data() + static_cast<size_t>(y) * out_w * 4;
+        for (int x = 0; x < out_w; x++) {
+          const int src_x = x * src_w / std::max(1, out_w);
+          const uint8_t* px = row + src_x * 4;
+          out[x * 4 + 0] = bgr ? px[2] : px[0];
+          out[x * 4 + 1] = px[1];
+          out[x * 4 + 2] = bgr ? px[0] : px[2];
+          out[x * 4 + 3] = 255;
+        }
+      }
+      if (LooksLiveRgba(self->front_.data(), self->front_.size())) {
+        self->processor_.Process(self->front_.data(), out_w, out_h);
+        self->live_frames_.fetch_add(1);
+      } else {
+        self->FillBlackLocked();
+      }
     }
-    buffers_[i].length = buf.length;
-    buffers_[i].start =
-        mmap(nullptr, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd_,
-             buf.m.offset);
-    if (buffers_[i].start == MAP_FAILED) {
-      StopCapture();
-      return false;
+  }
+  if (mapped != nullptr && mapped != MAP_FAILED) {
+    if (datas[0].type == SPA_DATA_DmaBuf) {
+      dma_sync(static_cast<int>(datas[0].fd),
+               DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
     }
-    if (ioctl(fd_, VIDIOC_QBUF, &buf) < 0) {
-      StopCapture();
-      return false;
-    }
+    munmap(mapped, mapped_size);
   }
-  v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (ioctl(fd_, VIDIOC_STREAMON, &type) < 0) {
-    StopCapture();
-    return false;
+  self->frame_count_.fetch_add(1);
+  pw_stream_queue_buffer(self->pw_->stream, buffer);
+  if (log_frame) {
+    FacCameraLog("pw camera queued live=%ld",
+                 static_cast<long>(self->live_frames_.load()));
   }
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    FillBlackLocked();
-  }
-  frame_count_.store(0);
-  live_frames_.store(0);
-  running_.store(true);
-  capture_thread_ = std::thread([this]() { CaptureLoop(); });
-  return true;
+  self->MarkTexture();
+#else
+  (void)data;
+#endif
 }
 
 bool CameraGraph::TrySetFormat(uint32_t fourcc, int width, int height,
                                v4l2_format* out) {
   v4l2_format fmt = {};
+  fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  ioctl(fd_, VIDIOC_G_FMT, &fmt);
   fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   fmt.fmt.pix.pixelformat = fourcc;
   fmt.fmt.pix.field = V4L2_FIELD_NONE;
@@ -453,9 +1332,13 @@ bool CameraGraph::TrySetFormat(uint32_t fourcc, int width, int height,
     fmt.fmt.pix.height = static_cast<uint32_t>(height);
   }
   if (ioctl(fd_, VIDIOC_S_FMT, &fmt) < 0) {
+    FacCameraLog("S_FMT failed fourcc=%u %dx%d errno=%d", fourcc, width, height,
+                 errno);
     return false;
   }
   if (fmt.fmt.pix.pixelformat != fourcc) {
+    FacCameraLog("S_FMT fourcc mismatch want=%u got=%u", fourcc,
+                 fmt.fmt.pix.pixelformat);
     return false;
   }
   *out = fmt;
@@ -492,17 +1375,35 @@ void CameraGraph::CaptureLoop() {
       std::lock_guard<std::mutex> lock(mutex_);
       FillBlackLocked();
     } else if (buf.index < buffers_.size()) {
-      ConvertFrame(static_cast<const uint8_t*>(buffers_[buf.index].start));
+      ConvertFrame(static_cast<const uint8_t*>(buffers_[buf.index].start),
+                   buf.bytesused);
     }
     ioctl(fd_, VIDIOC_QBUF, &buf);
-    if (textures_ != nullptr && texture_ != nullptr) {
-      fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                        FL_TEXTURE(texture_));
-    }
+    MarkTexture();
   }
 }
 
-void CameraGraph::ConvertFrame(const uint8_t* src) {
+void CameraGraph::MarkTexture() {
+  if (textures_ == nullptr || texture_ == nullptr) {
+    return;
+  }
+  if (mark_pending_.exchange(true)) {
+    return;
+  }
+  g_idle_add(
+      [](gpointer user) -> gboolean {
+        auto* graph = static_cast<CameraGraph*>(user);
+        graph->mark_pending_.store(false);
+        if (graph->textures_ != nullptr && graph->texture_ != nullptr) {
+          fl_texture_registrar_mark_texture_frame_available(
+              graph->textures_, FL_TEXTURE(graph->texture_));
+        }
+        return G_SOURCE_REMOVE;
+      },
+      this);
+}
+
+void CameraGraph::ConvertFrame(const uint8_t* src, size_t length) {
   std::lock_guard<std::mutex> lock(mutex_);
   const size_t bytes = static_cast<size_t>(width_) * height_ * 4;
   if (front_.size() != bytes) {
@@ -510,7 +1411,12 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
   }
   uint8_t* dst = front_.data();
   const int stride = bytesperline_ > 0 ? bytesperline_ : width_ * 2;
-  if (pixelformat_ == V4L2_PIX_FMT_RGB24) {
+  if (pixelformat_ == V4L2_PIX_FMT_MJPEG || pixelformat_ == V4L2_PIX_FMT_JPEG) {
+    if (!DecodeJpegRgba(src, length, width_, height_, dst)) {
+      FillBlackLocked();
+      return;
+    }
+  } else if (pixelformat_ == V4L2_PIX_FMT_RGB24) {
     const int row_stride = bytesperline_ > 0 ? bytesperline_ : width_ * 3;
     for (int y = 0; y < height_; y++) {
       const uint8_t* row = src + static_cast<ptrdiff_t>(row_stride) * y;
@@ -552,6 +1458,19 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
         out[x * 4 + 3] = 255;
       }
     }
+  } else if (pixelformat_ == V4L2_PIX_FMT_GREY) {
+    const int row_stride = bytesperline_ > 0 ? bytesperline_ : width_;
+    for (int y = 0; y < height_; y++) {
+      const uint8_t* row = src + static_cast<ptrdiff_t>(row_stride) * y;
+      uint8_t* out = dst + static_cast<size_t>(y) * width_ * 4;
+      for (int x = 0; x < width_; x++) {
+        const uint8_t g = row[x];
+        out[x * 4 + 0] = g;
+        out[x * 4 + 1] = g;
+        out[x * 4 + 2] = g;
+        out[x * 4 + 3] = 255;
+      }
+    }
   } else {
     for (int y = 0; y < height_; y++) {
       const uint8_t* row = src + static_cast<ptrdiff_t>(stride) * y;
@@ -577,11 +1496,15 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
     }
   }
   processor_.Process(front_.data(), width_, height_);
-  for (size_t i = 0; i + 3 < front_.size(); i += 64) {
-    if (front_[i] > 8 || front_[i + 1] > 8 || front_[i + 2] > 8) {
-      live_frames_.fetch_add(1);
-      break;
-    }
+  const bool live = LooksLiveRgba(front_.data(), front_.size());
+  if (live) {
+    live_frames_.fetch_add(1);
+  }
+  static std::atomic<int> convert_logs{0};
+  if (convert_logs.fetch_add(1) < 4 && !front_.empty()) {
+    FacCameraLog("convert fourcc=%u %dx%d len=%zu live=%d px=%02x %02x %02x %02x",
+                 pixelformat_, width_, height_, length, live ? 1 : 0, front_[0],
+                 front_[1], front_[2], front_[3]);
   }
 }
 

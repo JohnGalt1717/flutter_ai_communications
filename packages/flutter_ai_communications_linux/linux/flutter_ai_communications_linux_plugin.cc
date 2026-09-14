@@ -184,9 +184,11 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
           flutter_ai_communications_linux_plugin_get_type(), nullptr));
   plugin->registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
   plugin->camera = new CameraGraph(
-      fl_plugin_registrar_get_texture_registrar(registrar));
+      fl_plugin_registrar_get_texture_registrar(registrar),
+      GTK_WIDGET(fl_plugin_registrar_get_view(registrar)));
   plugin->screen = new ScreenGraph(
-      fl_plugin_registrar_get_texture_registrar(registrar));
+      fl_plugin_registrar_get_texture_registrar(registrar),
+      GTK_WIDGET(fl_plugin_registrar_get_view(registrar)));
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_plugin_registrar_get_messenger(registrar),

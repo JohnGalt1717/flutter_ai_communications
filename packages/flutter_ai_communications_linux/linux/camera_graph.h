@@ -2,12 +2,14 @@
 #define FLUTTER_PLUGIN_LINUX_CAMERA_GRAPH_H_
 
 #include <flutter_linux/flutter_linux.h>
+#include <gtk/gtk.h>
 #include <linux/videodev2.h>
 
 #include "video_processor.h"
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -20,7 +22,7 @@ struct MappedBuffer {
 
 class CameraGraph {
  public:
-  explicit CameraGraph(FlTextureRegistrar* textures);
+  explicit CameraGraph(FlTextureRegistrar* textures, GtkWidget* view = nullptr);
   ~CameraGraph();
 
   CameraGraph(const CameraGraph&) = delete;
@@ -51,13 +53,24 @@ class CameraGraph {
   bool StartCapture(const std::string& camera_id, int width, int height,
                     int frame_rate);
   void CaptureLoop();
-  void ConvertFrame(const uint8_t* src);
+  void ConvertFrame(const uint8_t* src, size_t length);
+  bool ProbeLiveFrames();
+  bool StartPipeWire(const std::string& camera_id);
+  void StopPipeWire();
+  void StartPwPoll();
+  void StopPwPoll();
+  bool AccessCameraPortal();
+  int OpenCameraPipeWireRemote();
   void FillBlackLocked();
+  void MarkTexture();
   bool TrySetFormat(uint32_t fourcc, int width, int height, v4l2_format* out);
   static std::string FacingFor(const std::string& name,
                                const std::string& bus_info);
+  static void OnPwProcess(void* data);
+  static void OnPwParamChanged(void* data, uint32_t id, const void* param);
 
   FlTextureRegistrar* textures_;
+  GtkWidget* view_ = nullptr;
   FlPixelBufferTexture* texture_ = nullptr;
   int64_t texture_id_ = -1;
   std::mutex mutex_;
@@ -81,6 +94,11 @@ class CameraGraph {
   int request_height_ = 720;
   int request_frame_rate_ = 30;
   PersonBackgroundProcessor processor_;
+  struct PwCapture;
+  std::unique_ptr<PwCapture> pw_;
+  bool portal_granted_ = false;
+  std::atomic<bool> mark_pending_{false};
+  guint pw_poll_id_ = 0;
 };
 
 #endif  // FLUTTER_PLUGIN_LINUX_CAMERA_GRAPH_H_

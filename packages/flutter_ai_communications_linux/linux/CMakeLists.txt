@@ -42,6 +42,15 @@ if(PIPEWIRE_FOUND)
   target_compile_definitions(${PLUGIN_NAME} PRIVATE FAC_HAS_PIPEWIRE=1)
   target_include_directories(${PLUGIN_NAME} PRIVATE ${PIPEWIRE_INCLUDE_DIRS})
   target_link_libraries(${PLUGIN_NAME} PRIVATE ${PIPEWIRE_LIBRARIES})
+  pkg_check_modules(EGL egl)
+  pkg_check_modules(GLES2 glesv2)
+  if(EGL_FOUND AND GLES2_FOUND)
+    target_compile_definitions(${PLUGIN_NAME} PRIVATE FAC_HAS_EGL_DMABUF=1)
+    target_include_directories(${PLUGIN_NAME} PRIVATE ${EGL_INCLUDE_DIRS}
+                             ${GLES2_INCLUDE_DIRS} /usr/include/drm)
+    target_link_libraries(${PLUGIN_NAME} PRIVATE ${EGL_LIBRARIES}
+                          ${GLES2_LIBRARIES})
+  endif()
 endif()
 
 find_library(ONNXRUNTIME_LIB NAMES onnxruntime)
@@ -49,6 +58,21 @@ if(NOT ONNXRUNTIME_LIB)
   file(GLOB _ort_so "/usr/lib/*/libonnxruntime.so*")
   if(_ort_so)
     list(GET _ort_so 0 ONNXRUNTIME_LIB)
+  endif()
+endif()
+# Ubuntu/Debian libonnxruntime dynamically links libonnx.so. Both register
+# ONNX operator schemas at load, which prints:
+#   Schema error: ... already registered from file ./onnx/defs/...
+# Official ORT builds static-link onnx with ONNX_DISABLE_STATIC_REGISTRATION.
+if(ONNXRUNTIME_LIB)
+  execute_process(
+    COMMAND ldd "${ONNXRUNTIME_LIB}"
+    OUTPUT_VARIABLE _ort_ldd
+    ERROR_QUIET)
+  if(_ort_ldd MATCHES "libonnx\\.so")
+    message(STATUS
+      "Skipping ${ONNXRUNTIME_LIB}: links libonnx.so (duplicate schema registration)")
+    set(ONNXRUNTIME_LIB "")
   endif()
 endif()
 if(ONNXRUNTIME_LIB)

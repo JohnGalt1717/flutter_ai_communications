@@ -3,6 +3,8 @@
 
 #include <X11/Xlib.h>
 #include <flutter_linux/flutter_linux.h>
+#include <gio/gio.h>
+#include <gtk/gtk.h>
 
 #include <atomic>
 #include <cstdint>
@@ -15,7 +17,7 @@
 
 class ScreenGraph {
  public:
-  explicit ScreenGraph(FlTextureRegistrar* textures);
+  explicit ScreenGraph(FlTextureRegistrar* textures, GtkWidget* view = nullptr);
   ~ScreenGraph();
 
   ScreenGraph(const ScreenGraph&) = delete;
@@ -73,20 +75,40 @@ class ScreenGraph {
   void ShowFrame(int x, int y, int w, int h);
   void HideFrame();
   bool StartPortal(FlMethodCall* pending, bool cursor, bool motion);
+  void EnsureParentWindow();
   void CancelPortal();
+  void FinishPortal(const char* status, const char* reason);
+  void CompletePortalStart(GVariant* results, guint code);
+  void FinishPortalStartIdle();
+  bool InitEglDmaBuf();
+  void DestroyEglDmaBuf();
+  bool CopyDmaBufEgl(int fd, int width, int height, int stride, int offset,
+                     std::vector<uint8_t>* dest);
+  static void OnPortalStartResponse(GDBusConnection* connection,
+                                    const gchar* sender,
+                                    const gchar* object_path,
+                                    const gchar* interface_name,
+                                    const gchar* signal_name,
+                                    GVariant* parameters, gpointer user_data);
   void StopPipeWire();
   bool ConnectPipeWire(int fd, uint32_t node_id, int width, int height);
   void CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h, int stride,
                          uint32_t spa_format, const uint8_t* uv, int uv_stride);
+  void MarkTexture();
   static void OnPwProcess(void* data);
   static void OnPwParamChanged(void* data, uint32_t id, const void* param);
 
   FlTextureRegistrar* textures_;
+  GtkWidget* view_ = nullptr;
+  std::string parent_window_;
   Display* display_ = nullptr;
   FlPixelBufferTexture* texture_ = nullptr;
   int64_t texture_id_ = -1;
   std::mutex mutex_;
   std::vector<uint8_t> front_;
+  std::vector<uint8_t> back_;
+  std::vector<uint8_t> upload_;
+  std::atomic<bool> mark_pending_{false};
   std::vector<Source> sources_;
   std::atomic<bool> running_{false};
   std::atomic<bool> motion_{false};

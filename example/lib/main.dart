@@ -211,6 +211,9 @@ final class _SessionPageState extends State<SessionPage> {
     _draft = _store.endpoints;
     _bindStoredPreference();
     _loadEndpoints();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_loadEndpoints());
+    });
     unawaited(_loadReplaceStill());
   }
 
@@ -319,10 +322,14 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _enterLobby() async {
+    await _loadEndpoints();
     await _applyStart(
       await _manager.start(purpose: 'lobby', cameraSend: true),
       meeting: false,
     );
+    if (mounted) {
+      await _loadEndpoints();
+    }
   }
 
   Future<void> _joinMeeting() async {
