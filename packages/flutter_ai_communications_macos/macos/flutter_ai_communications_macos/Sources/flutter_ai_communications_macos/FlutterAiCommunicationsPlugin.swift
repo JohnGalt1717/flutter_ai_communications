@@ -583,7 +583,28 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     guard let endpointId else {
       return
     }
-    let uid = coreUID(endpointId)
+    let resolved: String
+    switch endpointId {
+    case "built-in-in":
+      if let id = defaultDeviceID(kAudioHardwarePropertyDefaultInputDevice),
+         let uid = stringProperty(id, kAudioDevicePropertyDeviceUID)
+      {
+        resolved = uid
+      } else {
+        resolved = endpointId
+      }
+    case "built-in-out":
+      if let id = defaultDeviceID(kAudioHardwarePropertyDefaultOutputDevice),
+         let uid = stringProperty(id, kAudioDevicePropertyDeviceUID)
+      {
+        resolved = "\(uid)-out"
+      } else {
+        resolved = endpointId
+      }
+    default:
+      resolved = endpointId
+    }
+    let uid = coreUID(resolved)
     guard let deviceID = deviceID(forUID: uid) else {
       return
     }

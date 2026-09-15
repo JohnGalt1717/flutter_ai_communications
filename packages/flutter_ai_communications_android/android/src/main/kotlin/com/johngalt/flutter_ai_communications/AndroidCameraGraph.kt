@@ -81,7 +81,9 @@ class AndroidCameraGraph(
                 return@Runnable
             }
             val rotation = captureRotation()
-            val out = captureBufferSize(1280, 720, rotation)
+            val sourceWidth = reader?.width ?: 1280
+            val sourceHeight = reader?.height ?: 720
+            val out = captureBufferSize(sourceWidth, sourceHeight, rotation)
             lastWidth = out.first
             lastHeight = out.second
             android.util.Log.i(
@@ -204,6 +206,7 @@ class AndroidCameraGraph(
                 }
                 ?: ids.first()
         selectedId = chosen
+        cacheLens(chosen)
         lastAppliedRotation = displayRotationDegrees()
         ensureDisplayWatch()
         val rotation = captureRotation()
@@ -588,18 +591,25 @@ class AndroidCameraGraph(
         }
     }
 
-    private fun captureRotation(): Int {
-        val id = selectedId ?: return 0
+    private var cachedSensorOrientation = 90
+    private var cachedFrontFacing = false
+
+    private fun cacheLens(id: String) {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val chars = manager.getCameraCharacteristics(id)
-        val sensor = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
-        val front =
+        cachedSensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        cachedFrontFacing =
             chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
-        val display = displayRotationDegrees()
+    }
+
+    private fun captureRotation(): Int {
+        if (selectedId == null) {
+            return 0
+        }
         return CameraBufferRotation.clockwisePostRotate(
-            sensorOrientation = sensor,
-            displayRotationDegrees = display,
-            frontFacing = front,
+            sensorOrientation = cachedSensorOrientation,
+            displayRotationDegrees = displayRotationDegrees(),
+            frontFacing = cachedFrontFacing,
         )
     }
 
@@ -673,12 +683,7 @@ class AndroidCameraGraph(
         }
     }
 
-    private fun isFrontFacing(): Boolean {
-        val id = selectedId ?: return false
-        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        return manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
-            CameraCharacteristics.LENS_FACING_FRONT
-    }
+    private fun isFrontFacing(): Boolean = cachedFrontFacing
 
     // CameraX ImageUtil.rotateBitmap = postRotate. TransformationInfo:
     // front mirror after rotation, vertical axis of the upright buffer.

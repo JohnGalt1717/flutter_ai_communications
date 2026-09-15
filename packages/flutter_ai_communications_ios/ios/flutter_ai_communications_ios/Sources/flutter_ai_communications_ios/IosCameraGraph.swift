@@ -1,6 +1,7 @@
 import AVFoundation
 import Flutter
 import Foundation
+import UIKit
 
 final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSampleBufferDelegate {
   private let session = AVCaptureSession()
@@ -257,10 +258,35 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
           connection.videoRotationAngle = angle
         }
       }
+    } else if connection.isVideoOrientationSupported {
+      connection.videoOrientation = Self.captureOrientation()
     }
     if connection.isVideoMirroringSupported {
       connection.automaticallyAdjustsVideoMirroring = false
       connection.isVideoMirrored = device.position == .front
+    }
+  }
+
+  private static func captureOrientation() -> AVCaptureVideoOrientation {
+    let interface: UIInterfaceOrientation
+    if #available(iOS 13.0, *) {
+      interface =
+        UIApplication.shared.connectedScenes
+          .compactMap { $0 as? UIWindowScene }
+          .first?
+          .interfaceOrientation ?? .portrait
+    } else {
+      interface = UIApplication.shared.statusBarOrientation
+    }
+    switch interface {
+    case .landscapeLeft:
+      return .landscapeLeft
+    case .landscapeRight:
+      return .landscapeRight
+    case .portraitUpsideDown:
+      return .portraitUpsideDown
+    default:
+      return .portrait
     }
   }
 
