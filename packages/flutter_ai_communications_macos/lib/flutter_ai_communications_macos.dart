@@ -5,6 +5,7 @@ import 'package:flutter_ai_communications_platform_interface/flutter_ai_communic
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
 import 'src/audio_backend.dart';
+import 'src/macos_camera_facing.dart';
 import 'src/macos_voice_processing_policy.dart';
 import 'src/screen_channel.dart';
 
@@ -279,7 +280,8 @@ final class FlutterAiCommunicationsMacos
 
   @override
   Future<List<CameraEndpoint>> enumerateCameras() async {
-    return _channel?.enumerateCameras() ?? const [];
+    final cameras = await _channel?.enumerateCameras() ?? const [];
+    return overlayMacosCameraFacing(cameras);
   }
 
   @override

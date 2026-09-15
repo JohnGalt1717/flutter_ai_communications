@@ -85,9 +85,11 @@ final class MethodChannelCameraBackend implements CameraBackend {
         }
         final handle =
             _readInt(value['textureId']) ?? _readInt(value['handle']);
-        _lastSurface = handle == null ? null : VideoSurface(handle: handle);
         final width = _readInt(value['width']);
         final height = _readInt(value['height']);
+        _lastSurface = handle == null
+            ? null
+            : VideoSurface(handle: handle, width: width, height: height);
         final frameRate = _readInt(value['frameRate']);
         _lastFormat = width != null && height != null
             ? VideoFormat(

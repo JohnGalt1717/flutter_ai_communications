@@ -221,6 +221,9 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
     VideoProcessor processor,
   ) async => NativeProcessorResult.unavailable;
 
+  /// Live Camera Video surface size. Defaults to empty for older adapters.
+  Stream<VideoSurface?> get videoSurfaces => const Stream.empty();
+
   /// Last Video surface from camera start, if any.
   ///
   /// Transport plugins bind natively to this Production video path. They do

@@ -112,7 +112,7 @@ internal class AndroidVideoProcessor {
         bitmap: Bitmap,
         intensity: Int,
     ): Bitmap {
-        val factor = (1f - intensity / 200f).coerceIn(0.12f, 1f)
+        val factor = (1f - intensity / 100f).coerceIn(0.12f, 1f)
         val width = (bitmap.width * factor).toInt().coerceAtLeast(8)
         val height = (bitmap.height * factor).toInt().coerceAtLeast(8)
         val small = Bitmap.createScaledBitmap(bitmap, width, height, true)

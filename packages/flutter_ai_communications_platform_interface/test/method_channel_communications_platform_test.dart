@@ -33,6 +33,7 @@ void main() {
             'routeClass': 'speakerphone',
             'isCapture': false,
             'pairId': 'speakerphone',
+            'osDefault': true,
           },
           {
             'id': 'bt-in',
@@ -68,6 +69,8 @@ void main() {
     final catalog = await platform.enumerateEndpoints();
     expect(catalog.any((e) => e.routeClass == RouteClass.handset), isTrue);
     expect(catalog.any((e) => e.routeClass == RouteClass.speakerphone), isTrue);
+    expect(catalog.firstWhere((e) => e.id == 'speaker-out').osDefault, isTrue);
+    expect(catalog.firstWhere((e) => e.id == 'handset-in').osDefault, isFalse);
   });
 
   test(
@@ -360,6 +363,73 @@ void main() {
     expect(platform.lastObservedRoute.renderId, 'airpods-out');
     await sub.cancel();
     messenger.setMockStreamHandler(events, null);
+  });
+
+  test('cameraFormat updates last Video surface size', () async {
+    await platform.dispose();
+    const events = EventChannel('flutter_ai_communications/events');
+    late MockStreamHandlerEventSink sink;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          sink = eventSink;
+        },
+      ),
+    );
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'startCameraNative') {
+        return {
+          'status': 'started',
+          'textureId': 7,
+          'width': 720,
+          'height': 1280,
+          'frameRate': 30,
+        };
+      }
+      return null;
+    });
+    platform = MethodChannelCommunicationsPlatform(platformName: 'android');
+    await platform.startCameraNative(cameraId: 'front');
+    expect(platform.lastVideoSurface?.handle, 7);
+    expect(platform.lastVideoSurface?.width, 720);
+    expect(platform.lastVideoSurface?.height, 1280);
+    final seen = <VideoSurface?>[];
+    final sub = platform.videoSurfaces.listen(seen.add);
+    sink.success({
+      'type': 'cameraFormat',
+      'payload': {'width': 1280, 'height': 720, 'quarterTurns': 0},
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(platform.lastVideoSurface?.handle, 7);
+    expect(platform.lastVideoSurface?.width, 1280);
+    expect(platform.lastVideoSurface?.height, 720);
+    expect(seen.single?.handle, 7);
+    expect(seen.single?.width, 1280);
+    expect(seen.single?.height, 720);
+    await sub.cancel();
+    messenger.setMockStreamHandler(events, null);
+  });
+
+  test('selectCameraNative keeps last Video surface handle', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'startCameraNative') {
+        return {
+          'status': 'started',
+          'textureId': 7,
+          'width': 720,
+          'height': 1280,
+          'frameRate': 30,
+        };
+      }
+      return null;
+    });
+    await platform.startCameraNative(cameraId: 'front');
+    await platform.selectCameraNative('back');
+    expect(platform.lastVideoSurface?.handle, 7);
+    expect(platform.lastVideoSurface?.width, 720);
+    expect(platform.lastVideoSurface?.height, 1280);
   });
 
   test('enumerateScreenSources maps kinds including All-displays', () async {

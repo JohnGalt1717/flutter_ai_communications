@@ -10,6 +10,56 @@ void main() {
     });
   });
 
+  group('VideoSurface', () {
+    test('aspectRatio is 16:9 when raster size is missing', () {
+      expect(const VideoSurface(handle: 1).aspectRatio, 16 / 9);
+    });
+
+    test('aspectRatio uses raster size', () {
+      expect(
+        const VideoSurface(handle: 1, width: 1920, height: 1080).aspectRatio,
+        16 / 9,
+      );
+      expect(
+        const VideoSurface(handle: 1, width: 640, height: 480).aspectRatio,
+        closeTo(4 / 3, 0.001),
+      );
+    });
+
+    test('landscape UI never uses a portrait box', () {
+      const surface = VideoSurface(
+        handle: 1,
+        width: 1280,
+        height: 720,
+        quarterTurns: 1,
+      );
+      expect(surface.displayAspectRatio(portrait: false), 16 / 9);
+      expect(surface.displayCoversRaster(portrait: false), isFalse);
+    });
+
+    test('portrait UI uses a 9:16 box for 16:9 raster without rotating', () {
+      const surface = VideoSurface(
+        handle: 1,
+        width: 1280,
+        height: 720,
+      );
+      expect(
+        surface.displayAspectRatio(portrait: true),
+        closeTo(9 / 16, 0.001),
+      );
+      expect(surface.displayCoversRaster(portrait: true), isTrue);
+    });
+
+    test('iOS portrait raster already 9:16 is not cropped', () {
+      const surface = VideoSurface(handle: 1, width: 720, height: 1280);
+      expect(
+        surface.displayAspectRatio(portrait: true),
+        closeTo(9 / 16, 0.001),
+      );
+      expect(surface.displayCoversRaster(portrait: true), isFalse);
+    });
+  });
+
   group('VideoFormatNegotiator', () {
     const negotiator = VideoFormatNegotiator();
     const requested = VideoFormat.defaultFormat;

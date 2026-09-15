@@ -1,6 +1,7 @@
 import AVFoundation
 import Flutter
 import Foundation
+import UIKit
 
 final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSampleBufferDelegate {
   private let session = AVCaptureSession()
@@ -20,6 +21,9 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   private(set) var frameRate = 30
   private var frameCount = 0
   private var liveFrames = 0
+  var onFormat: ((Int, Int) -> Void)?
+  private var rotationCoordinator: AnyObject?
+  private var rotationObservation: NSKeyValueObservation?
   private let bufferAttrs: [CFString: Any] = [
     kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
     kCVPixelBufferMetalCompatibilityKey: true,
@@ -133,6 +137,7 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
         session.commitConfiguration()
         device = chosen
         self.input = input
+        self.startRotationTracking(device: chosen)
         status = "started"
       } catch {
         status = "failed"
@@ -202,6 +207,16 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     guard enabled, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else {
       return
     }
+    let nextWidth = CVPixelBufferGetWidth(image)
+    let nextHeight = CVPixelBufferGetHeight(image)
+    if nextWidth != width || nextHeight != height {
+      width = nextWidth
+      height = nextHeight
+      let report = onFormat
+      DispatchQueue.main.async {
+        report?(nextWidth, nextHeight)
+      }
+    }
     frameCount += 1
     let copied = copyBuffer(image)
     pixelBuffer = copied.map { processor.process($0) } ?? copied
@@ -211,7 +226,74 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     textures?.textureFrameAvailable(textureId)
   }
 
+  private func startRotationTracking(device: AVCaptureDevice) {
+    rotationObservation?.invalidate()
+    rotationObservation = nil
+    rotationCoordinator = nil
+    if #available(iOS 17.0, *) {
+      let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+      rotationCoordinator = coordinator
+      applyUpright(for: device)
+      rotationObservation = coordinator.observe(
+        \.videoRotationAngleForHorizonLevelCapture,
+        options: [.new]
+      ) { [weak self] _, _ in
+        self?.queue.async {
+          self?.applyUpright(for: device)
+        }
+      }
+    } else {
+      applyUpright(for: device)
+    }
+  }
+
+  private func applyUpright(for device: AVCaptureDevice) {
+    guard let connection = output.connection(with: .video) else {
+      return
+    }
+    if #available(iOS 17.0, *) {
+      if let coordinator = rotationCoordinator as? AVCaptureDevice.RotationCoordinator {
+        let angle = coordinator.videoRotationAngleForHorizonLevelCapture
+        if connection.isVideoRotationAngleSupported(angle) {
+          connection.videoRotationAngle = angle
+        }
+      }
+    } else if connection.isVideoOrientationSupported {
+      connection.videoOrientation = Self.captureOrientation()
+    }
+    if connection.isVideoMirroringSupported {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = device.position == .front
+    }
+  }
+
+  private static func captureOrientation() -> AVCaptureVideoOrientation {
+    let interface: UIInterfaceOrientation
+    if #available(iOS 13.0, *) {
+      interface =
+        UIApplication.shared.connectedScenes
+          .compactMap { $0 as? UIWindowScene }
+          .first?
+          .interfaceOrientation ?? .portrait
+    } else {
+      interface = UIApplication.shared.statusBarOrientation
+    }
+    switch interface {
+    case .landscapeLeft:
+      return .landscapeLeft
+    case .landscapeRight:
+      return .landscapeRight
+    case .portraitUpsideDown:
+      return .portraitUpsideDown
+    default:
+      return .portrait
+    }
+  }
+
   private func stopLocked() {
+    rotationObservation?.invalidate()
+    rotationObservation = nil
+    rotationCoordinator = nil
     if session.isRunning {
       session.stopRunning()
     }

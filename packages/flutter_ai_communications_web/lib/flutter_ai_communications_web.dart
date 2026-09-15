@@ -545,14 +545,14 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           ..srcObject = stream;
         video.setAttribute('playsinline', 'true');
         video.style
-          ..setProperty('width', '320px')
-          ..setProperty('height', '220px')
-          ..setProperty('object-fit', 'cover')
+          ..setProperty('width', '100%')
+          ..setProperty('height', '100%')
+          ..setProperty('object-fit', 'contain')
           ..setProperty('display', 'block');
         final wrap = web.HTMLDivElement();
         wrap.style
-          ..setProperty('width', '320px')
-          ..setProperty('height', '220px')
+          ..setProperty('width', '100%')
+          ..setProperty('height', '100%')
           ..setProperty('overflow', 'hidden')
           ..setProperty('position', 'relative');
         wrap.append(video);
@@ -565,6 +565,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       _cameraSurface = VideoSurface(
         handle: _cameraViewId,
         kind: VideoSurfaceKind.htmlElement,
+        width: requested.width,
+        height: requested.height,
       );
       _cameraFormat = requested;
       if (muted) {
@@ -831,7 +833,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       }
       switch (fx) {
         case BlurVideoProcessor(:final intensity):
-          ctx.filter = 'blur(${intensity / 5}px)';
+          ctx.filter = 'blur(${intensity * 0.4}px)';
           ctx.drawImage(video, 0, 0, width, height);
           ctx.filter = 'none';
         case ReplaceVideoProcessor():
@@ -954,14 +956,16 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         });
         _screenFactoryRegistered = true;
       }
-      _screenSurface = const VideoSurface(
-        handle: 1,
-        kind: VideoSurfaceKind.htmlElement,
-      );
       final track = stream.getVideoTracks().toDart.firstOrNull;
       final settings = track?.getSettings();
       final width = (settings?.width ?? 1920).toInt();
       final height = (settings?.height ?? 1080).toInt();
+      _screenSurface = VideoSurface(
+        handle: 1,
+        kind: VideoSurfaceKind.htmlElement,
+        width: width,
+        height: height,
+      );
       _screenFormat = ScreenVideoFormat.request(
         width: width,
         height: height,

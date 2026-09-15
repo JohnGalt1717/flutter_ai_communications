@@ -284,6 +284,8 @@ class MethodChannelCommunicationsPlatform
 
   VideoSurface? _lastVideoSurface;
   VideoFormat? _lastNativeVideoFormat;
+  final StreamController<VideoSurface?> _videoSurfaceOut =
+      StreamController<VideoSurface?>.broadcast();
   var _lastCameraFrameCount = 0;
   var _lastCameraLiveFrames = 0;
   VideoSurface? _lastScreenSurface;
@@ -295,6 +297,12 @@ class MethodChannelCommunicationsPlatform
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
+
+  @override
+  Stream<VideoSurface?> get videoSurfaces {
+    _ensureListening();
+    return _videoSurfaceOut.stream;
+  }
 
   @override
   VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
@@ -364,6 +372,9 @@ class MethodChannelCommunicationsPlatform
         }
         final handle = value['textureId'] as int? ?? value['handle'] as int?;
         final kindName = value['kind'] as String?;
+        final width = value['width'] as int?;
+        final height = value['height'] as int?;
+        final quarterTurns = value['quarterTurns'] as int? ?? 0;
         _lastVideoSurface = handle == null
             ? null
             : VideoSurface(
@@ -371,9 +382,10 @@ class MethodChannelCommunicationsPlatform
                 kind: kindName == 'htmlElement'
                     ? VideoSurfaceKind.htmlElement
                     : VideoSurfaceKind.texture,
+                width: width,
+                height: height,
+                quarterTurns: quarterTurns,
               );
-        final width = value['width'] as int?;
-        final height = value['height'] as int?;
         final frameRate = value['frameRate'] as int?;
         _lastNativeVideoFormat = width != null && height != null
             ? VideoFormat(
@@ -590,6 +602,8 @@ class MethodChannelCommunicationsPlatform
         }
         final handle = value['textureId'] as int? ?? value['handle'] as int?;
         final kindName = value['kind'] as String?;
+        final width = value['width'] as int?;
+        final height = value['height'] as int?;
         _lastScreenSurface = handle == null
             ? null
             : VideoSurface(
@@ -597,9 +611,9 @@ class MethodChannelCommunicationsPlatform
                 kind: kindName == 'htmlElement'
                     ? VideoSurfaceKind.htmlElement
                     : VideoSurfaceKind.texture,
+                width: width,
+                height: height,
               );
-        final width = value['width'] as int?;
-        final height = value['height'] as int?;
         final frameRate = value['frameRate'] as int?;
         _lastScreenNativeFormat = width != null && height != null
             ? VideoFormat(
@@ -689,7 +703,12 @@ class MethodChannelCommunicationsPlatform
         _ => null,
       };
       if (handle != null) {
-        previews[key] = VideoSurface(handle: handle);
+        final map = entry.value is Map ? entry.value as Map : null;
+        previews[key] = VideoSurface(
+          handle: handle,
+          width: map?['width'] as int?,
+          height: map?['height'] as int?,
+        );
       }
     }
     return previews;
@@ -756,6 +775,27 @@ class MethodChannelCommunicationsPlatform
     switch (type) {
       case 'catalog':
         _catalogOut.add(_readEndpoints(payload as List<dynamic>?));
+      case 'cameraFormat':
+        if (payload is Map) {
+          final width = _asInt(payload['width']);
+          final height = _asInt(payload['height']);
+          final surface = _lastVideoSurface;
+          if (width != null && height != null && surface != null) {
+            _lastVideoSurface = VideoSurface(
+              handle: surface.handle,
+              kind: surface.kind,
+              width: width,
+              height: height,
+              quarterTurns: _asInt(payload['quarterTurns']) ?? 0,
+            );
+            _lastNativeVideoFormat = VideoFormat(
+              width: width,
+              height: height,
+              frameRate: _lastNativeVideoFormat?.frameRate ?? 30,
+            );
+            _videoSurfaceOut.add(_lastVideoSurface);
+          }
+        }
       case 'screenCatalog':
         _screenCatalogOut.add(_readScreenSources(payload as List<dynamic>?));
       case 'isolation':
@@ -812,6 +852,7 @@ class MethodChannelCommunicationsPlatform
       pairId: map['pairId'] as String?,
       identityHints: _strings(map['identityHints']),
       capabilities: _capabilities(map['capabilities']),
+      osDefault: map['osDefault'] == true,
     );
   }
 
@@ -873,5 +914,14 @@ class MethodChannelCommunicationsPlatform
     await _pathOut.close();
     await _focusOut.close();
     await _routeOut.close();
+    await _videoSurfaceOut.close();
   }
+}
+
+int? _asInt(Object? value) {
+  return switch (value) {
+    int n => n,
+    num n => n.toInt(),
+    _ => null,
+  };
 }

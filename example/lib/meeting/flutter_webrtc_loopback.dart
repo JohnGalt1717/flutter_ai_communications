@@ -106,7 +106,11 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
   Widget inboundView({Key? key}) {
     final keyOrDefault = key ?? inboundKey;
     if (_hasRemote && _rendererReady) {
-      return RTCVideoView(_renderer, key: keyOrDefault);
+      return RTCVideoView(
+        _renderer,
+        key: keyOrDefault,
+        objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+      );
     }
     final surface = _track?.surface;
     if (surface != null) {
@@ -130,6 +134,8 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
 
   @override
   Future<void> applySendTrack(WebrtcSendTrack? track) {
+    _track = track;
+    _inboundChanged?.call();
     return _run(() => _applySendTrack(track));
   }
 

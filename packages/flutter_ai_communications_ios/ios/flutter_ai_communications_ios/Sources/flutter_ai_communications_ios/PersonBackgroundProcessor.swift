@@ -77,7 +77,8 @@ final class PersonBackgroundProcessor {
 
   private func blurred(_ buffer: CVPixelBuffer, intensity: Int) -> CIImage? {
     let image = CIImage(cvPixelBuffer: buffer)
-    let radius = Double(intensity) / 100.0 * 20.0
+    // Some (50) → 20; Lots (100) → 40. The previous *20 max looked like Some.
+    let radius = Double(intensity) / 100.0 * 40.0
     if radius <= 0.5 {
       return image
     }

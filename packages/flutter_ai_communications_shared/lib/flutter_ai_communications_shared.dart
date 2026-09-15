@@ -17,6 +17,7 @@ export 'src/pairing.dart';
 export 'src/playback_timeline.dart';
 export 'src/sound_floor.dart';
 export 'src/voice_metrics.dart';
+export 'src/camera_capture_rotation.dart';
 export 'src/camera_endpoint.dart';
 export 'src/camera_facing.dart';
 export 'src/camera_preference.dart';

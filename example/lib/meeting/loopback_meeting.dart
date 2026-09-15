@@ -82,8 +82,6 @@ final class LoopbackMeetingStage extends StatelessWidget {
           key: const Key('screen-loopback'),
           surface: session.screenSurface,
           viewTypePrefix: 'fac-screen',
-          pixelWidth: session.screenNativeFormat?.width,
-          pixelHeight: session.screenNativeFormat?.height,
           placeholder: _placeholder(
             session.screenUnavailableReason ?? 'Not sharing',
           ),
@@ -97,8 +95,7 @@ final class LoopbackMeetingStage extends StatelessWidget {
           key: const Key('loopback-tile'),
           surface: session.videoSurface,
           viewTypePrefix: 'fac-camera',
-          pixelWidth: session.nativeVideoFormat?.width,
-          pixelHeight: session.nativeVideoFormat?.height,
+          followUiOrientation: true,
         ),
       );
     }
@@ -135,8 +132,7 @@ final class LoopbackMeetingStage extends StatelessWidget {
               VideoSurfaceView(
                 surface: session.videoSurface,
                 viewTypePrefix: 'fac-camera',
-                pixelWidth: session.nativeVideoFormat?.width,
-                pixelHeight: session.nativeVideoFormat?.height,
+                followUiOrientation: true,
               )
             else
               _placeholder(
@@ -226,6 +222,12 @@ final class MeetingBar extends StatelessWidget {
     required this.onPause,
     required this.onLeave,
     required this.onProve,
+    this.cameras = const [],
+    this.selectedCameraId,
+    this.onSelectCamera,
+    this.processor,
+    this.onProcessor,
+    this.replaceStill = const [],
   });
 
   /// Live meeting Session.
@@ -240,7 +242,7 @@ final class MeetingBar extends StatelessWidget {
   /// Mute-video / unmute video.
   final VoidCallback onMuteVideo;
 
-  /// Start screen send.
+  /// Open the host Share picker, or start the OS picker.
   final VoidCallback onShare;
 
   /// Stop screen send.
@@ -254,8 +256,27 @@ final class MeetingBar extends StatelessWidget {
 
   /// Digital echo Prove.
   final VoidCallback onProve;
+
+  /// Camera catalog for the in-call picker.
+  final List<CameraEndpoint> cameras;
+
+  /// Currently selected Camera Endpoint id.
+  final String? selectedCameraId;
+
+  /// In-session camera pick. Does not write Camera preference.
+  final ValueChanged<String>? onSelectCamera;
+
+  /// Current send-path Video processor.
+  final VideoProcessor? processor;
+
+  /// None / blur / replace from the in-call menu.
+  final ValueChanged<VideoProcessor>? onProcessor;
+
+  /// Still bytes for replace.
+  final List<int> replaceStill;
   @override
   Widget build(BuildContext context) {
+    final sharing = session.isScreenSending;
     return Material(
       color: const Color(0xFF16161F),
       child: SafeArea(
@@ -284,6 +305,8 @@ final class MeetingBar extends StatelessWidget {
                   active: !session.isCameraEnabled,
                   onPressed: onCamera,
                 ),
+                if (cameras.isNotEmpty && onSelectCamera != null) _cameraMenu(),
+                if (onProcessor != null) _processorMenu(),
                 _round(
                   key: const Key('mute-video'),
                   tooltip: session.isVideoMuted ? 'Unmute video' : 'Mute video',
@@ -294,17 +317,15 @@ final class MeetingBar extends StatelessWidget {
                   onPressed: session.isCameraEnabled ? onMuteVideo : null,
                 ),
                 _round(
-                  key: const Key('screen-share'),
-                  tooltip: 'Share',
-                  icon: Icons.present_to_all,
-                  active: session.isScreenSending,
-                  onPressed: session.isScreenSending ? null : onShare,
-                ),
-                _round(
-                  key: const Key('screen-stop'),
-                  tooltip: 'Stop share',
-                  icon: Icons.stop_screen_share_outlined,
-                  onPressed: session.isScreenSending ? onStopShare : null,
+                  key: sharing
+                      ? const Key('screen-stop')
+                      : const Key('screen-share'),
+                  tooltip: sharing ? 'Stop share' : 'Share',
+                  icon: sharing
+                      ? Icons.stop_screen_share
+                      : Icons.present_to_all,
+                  active: sharing,
+                  onPressed: sharing ? onStopShare : onShare,
                 ),
                 _round(
                   key: const Key('pause'),
@@ -329,6 +350,92 @@ final class MeetingBar extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cameraMenu() {
+    return _menu<String>(
+      key: const Key('camera-pick'),
+      tooltip: 'Choose camera',
+      icon: Icons.arrow_drop_up,
+      onSelected: onSelectCamera!,
+      items: [
+        for (final camera in cameras)
+          PopupMenuItem(
+            key: Key('camera-${camera.id}'),
+            value: camera.id,
+            child: Text(
+              camera.id == selectedCameraId ? '${camera.name} ✓' : camera.name,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _processorMenu() {
+    final current = processor;
+    return _menu<VideoProcessor>(
+      key: const Key('processor-pick'),
+      tooltip: 'Background',
+      icon: Icons.blur_on,
+      onSelected: onProcessor!,
+      items: [
+        PopupMenuItem(
+          key: const Key('processor-none'),
+          value: const NoneVideoProcessor(),
+          child: Text(current is NoneVideoProcessor ? 'None ✓' : 'None'),
+        ),
+        PopupMenuItem(
+          key: const Key('processor-blur-50'),
+          value: const BlurVideoProcessor(intensity: 50),
+          child: Text(
+            current == const BlurVideoProcessor(intensity: 50)
+                ? 'Blur ✓'
+                : 'Blur',
+          ),
+        ),
+        PopupMenuItem(
+          key: const Key('processor-blur-100'),
+          value: const BlurVideoProcessor(intensity: 100),
+          child: Text(
+            current == const BlurVideoProcessor(intensity: 100)
+                ? 'Lots of blur ✓'
+                : 'Lots of blur',
+          ),
+        ),
+        PopupMenuItem(
+          key: const Key('processor-replace'),
+          value: ReplaceVideoProcessor(bytes: replaceStill),
+          child: Text(
+            current is ReplaceVideoProcessor
+                ? 'Background image ✓'
+                : 'Background image',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _menu<T>({
+    required Key key,
+    required String tooltip,
+    required IconData icon,
+    required ValueChanged<T> onSelected,
+    required List<PopupMenuEntry<T>> items,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: PopupMenuButton<T>(
+        key: key,
+        tooltip: tooltip,
+        onSelected: onSelected,
+        itemBuilder: (context) => items,
+        icon: Icon(icon, color: const Color(0xFFE8E8F0)),
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFF2B2B38),
+          foregroundColor: const Color(0xFFE8E8F0),
         ),
       ),
     );

@@ -505,9 +505,27 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   VideoSurface? _lastVideoSurface;
   VideoFormat? _lastNativeVideoFormat;
+  final StreamController<VideoSurface?> _videoSurfaceOut =
+      StreamController<VideoSurface?>.broadcast();
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
+
+  @override
+  Stream<VideoSurface?> get videoSurfaces => _videoSurfaceOut.stream;
+
+  /// Tests: push a live Camera Video surface size.
+  void emitVideoSurface(VideoSurface? surface) {
+    _lastVideoSurface = surface;
+    if (surface != null) {
+      _lastNativeVideoFormat = VideoFormat(
+        width: surface.width ?? _lastNativeVideoFormat?.width ?? 1280,
+        height: surface.height ?? _lastNativeVideoFormat?.height ?? 720,
+        frameRate: _lastNativeVideoFormat?.frameRate ?? 30,
+      );
+    }
+    _videoSurfaceOut.add(surface);
+  }
 
   @override
   VideoFormat? get lastNativeVideoFormat => _lastNativeVideoFormat;
@@ -565,7 +583,13 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
           ? const [VideoFormat.defaultFormat]
           : resolved.modes,
     );
-    _lastVideoSurface = cameraRunning ? const VideoSurface(handle: 1) : null;
+    _lastVideoSurface = cameraRunning
+        ? VideoSurface(
+            handle: 1,
+            width: _lastNativeVideoFormat?.width,
+            height: _lastNativeVideoFormat?.height,
+          )
+        : null;
     _cameraFrameCount = cameraRunning ? 8 : 0;
     _cameraLiveFrames = cameraRunning && !muted ? 8 : 0;
     return NativeGraphStart.started;
@@ -589,7 +613,13 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   Future<void> setCameraEnabledNative(bool enabled) async {
     cameraEnabled = enabled;
     cameraRunning = enabled;
-    _lastVideoSurface = enabled ? const VideoSurface(handle: 1) : null;
+    _lastVideoSurface = enabled
+        ? VideoSurface(
+            handle: 1,
+            width: _lastNativeVideoFormat?.width,
+            height: _lastNativeVideoFormat?.height,
+          )
+        : null;
   }
 
   @override
@@ -808,7 +838,11 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       motion: motion,
     );
     _lastScreenNativeFormat = requested;
-    _lastScreenSurface = const VideoSurface(handle: 2);
+    _lastScreenSurface = VideoSurface(
+      handle: 2,
+      width: requested.width,
+      height: requested.height,
+    );
     _lastScreenUnavailableReason = null;
     return NativeGraphStart.started;
   }
@@ -852,5 +886,6 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     await audioFocusController.close();
     await osRouteController.close();
     await screenCatalogController.close();
+    await _videoSurfaceOut.close();
   }
 }
