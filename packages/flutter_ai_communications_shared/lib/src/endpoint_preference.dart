@@ -98,8 +98,8 @@ final class EndpointPreference {
   /// Whether the host supplied any ordered entries.
   bool get isEmpty => entries.isEmpty;
 
-  /// Deterministic new-user order: complete hardware Pairs by Bluetooth,
-  /// wired, car, speakerphone, handset. Capture list is the hardware mate.
+  /// OS default render+capture first when both exist, then complete hardware
+  /// Pairs by Bluetooth, wired, car, speakerphone, handset.
   static EndpointPreference platformDefault(List<Endpoint> catalog) {
     const order = [
       RouteClass.bluetooth,
@@ -108,12 +108,35 @@ final class EndpointPreference {
       RouteClass.speakerphone,
       RouteClass.handset,
     ];
-    final seen = <String>{};
+    final seenRenders = <String>{};
     final entries = <EndpointPreferenceEntry>[];
+    final defaultCapture = catalog
+        .where((item) => item.isCapture && item.osDefault)
+        .firstOrNull;
+    final defaultRender = catalog
+        .where((item) => !item.isCapture && item.osDefault)
+        .firstOrNull;
+    if (defaultCapture != null && defaultRender != null) {
+      final mate = catalog
+          .where(
+            (item) => item.isCapture && item.pairId == defaultRender.pairId,
+          )
+          .firstOrNull;
+      entries.add(
+        EndpointPreferenceEntry(
+          renderId: defaultRender.id,
+          captures: [
+            EndpointPreferenceCapture(id: defaultCapture.id),
+            if (mate != null && mate.id != defaultCapture.id)
+              EndpointPreferenceCapture(id: mate.id),
+          ],
+        ),
+      );
+      seenRenders.add(defaultRender.id);
+    }
     for (final routeClass in order) {
       for (final endpoint in catalog) {
-        if (endpoint.routeClass != routeClass ||
-            seen.contains(endpoint.pairId)) {
+        if (endpoint.routeClass != routeClass) {
           continue;
         }
         final capture = catalog
@@ -125,7 +148,10 @@ final class EndpointPreference {
         if (capture == null || render == null) {
           continue;
         }
-        seen.add(endpoint.pairId);
+        if (seenRenders.contains(render.id)) {
+          continue;
+        }
+        seenRenders.add(render.id);
         entries.add(
           EndpointPreferenceEntry(
             renderId: render.id,
@@ -199,7 +225,7 @@ final class PreferenceResolver {
 
   /// Resolves the Desired Pair.
   ///
-  /// An empty host list uses platform-default complete Pairs. A host list
+  /// An empty host list uses OS default capture/render, then complete Pairs.
   /// walks render rows, then each row's capture list. Explicit render stays
   /// while that render is available; capture is completed from that row,
   /// else the hardware Pair, else a capture-only walk of the lists.

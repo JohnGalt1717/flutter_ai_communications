@@ -34,6 +34,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     instance.screen.onCatalog = { [weak instance] sources in
       instance?.eventSink?(["type": "screenCatalog", "payload": sources])
     }
+    instance.camera.onFormat = { [weak instance] width, height in
+      instance?.eventSink?(
+        [
+          "type": "cameraFormat",
+          "payload": ["width": width, "height": height],
+        ]
+      )
+    }
     let messenger = registrar.messenger()
     let methods = FlutterMethodChannel(name: instance.methods, binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methods)
@@ -620,6 +628,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       },
       idiomIsPhone: UIDevice.current.userInterfaceIdiom == .phone
     )
+    let currentIn = session.currentRoute.inputs.first
+    let currentOut = session.currentRoute.outputs.first
     var items = IosRoutePolicy.builtinEndpoints(hasReceiver: hasReceiver).map {
       endpoint(
         $0.id,
@@ -627,17 +637,58 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         $0.routeClass,
         $0.isCapture,
         $0.pairId,
-        IosRoutePolicy.formFactor(routeClass: $0.routeClass)
+        IosRoutePolicy.formFactor(routeClass: $0.routeClass),
+        osDefault: builtinIsOsDefault(
+          $0,
+          inputType: currentIn?.portType,
+          outputType: currentOut?.portType
+        )
       )
     }
     var seenPairs = Set(items.compactMap { $0["pairId"] as? String })
     for input in session.availableInputs ?? [] {
-      appendAccessory(input.portType, input.portName, input.uid, &items, &seenPairs)
+      appendAccessory(
+        input.portType,
+        input.portName,
+        input.uid,
+        &items,
+        &seenPairs,
+        osDefaultCapture: input.uid == currentIn?.uid,
+        osDefaultRender: false
+      )
     }
     for output in session.currentRoute.outputs {
-      appendAccessory(output.portType, output.portName, output.uid, &items, &seenPairs)
+      appendAccessory(
+        output.portType,
+        output.portName,
+        output.uid,
+        &items,
+        &seenPairs,
+        osDefaultCapture: false,
+        osDefaultRender: output.uid == currentOut?.uid
+      )
     }
     return items
+  }
+
+  private func builtinIsOsDefault(
+    _ endpoint: IosCatalogEndpoint,
+    inputType: AVAudioSession.Port?,
+    outputType: AVAudioSession.Port?
+  ) -> Bool {
+    if endpoint.isCapture {
+      if outputType == .builtInReceiver {
+        return endpoint.routeClass == "handset"
+      }
+      return inputType == .builtInMic && endpoint.routeClass == "speakerphone"
+    }
+    if outputType == .builtInSpeaker {
+      return endpoint.routeClass == "speakerphone"
+    }
+    if outputType == .builtInReceiver {
+      return endpoint.routeClass == "handset"
+    }
+    return false
   }
 
   private func appendAccessory(
@@ -645,16 +696,34 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     _ name: String,
     _ uid: String,
     _ items: inout [[String: Any]],
-    _ seenPairs: inout Set<String>
+    _ seenPairs: inout Set<String>,
+    osDefaultCapture: Bool,
+    osDefaultRender: Bool
   ) {
     let route = routeClass(for: portType)
     if route == "handset" || route == "speakerphone" { return }
     let pair = applePairId(route, name, uid)
-    if seenPairs.contains(pair) { return }
+    if seenPairs.contains(pair) {
+      if let index = items.firstIndex(where: {
+        $0["pairId"] as? String == pair && $0["isCapture"] as? Bool == osDefaultCapture
+      }), osDefaultCapture || osDefaultRender {
+        items[index]["osDefault"] = true
+      }
+      if let index = items.firstIndex(where: {
+        $0["pairId"] as? String == pair && $0["isCapture"] as? Bool == false
+      }), osDefaultRender {
+        items[index]["osDefault"] = true
+      }
+      return
+    }
     seenPairs.insert(pair)
     let form = IosRoutePolicy.formFactor(portType: portType.rawValue)
-    items.append(endpoint("\(pair)-in", name, route, true, pair, form))
-    items.append(endpoint("\(pair)-out", name, route, false, pair, form))
+    items.append(
+      endpoint("\(pair)-in", name, route, true, pair, form, osDefault: osDefaultCapture)
+    )
+    items.append(
+      endpoint("\(pair)-out", name, route, false, pair, form, osDefault: osDefaultRender)
+    )
   }
 
   private func endpoint(
@@ -663,7 +732,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     _ route: String,
     _ capture: Bool,
     _ pairId: String,
-    _ formFactor: String = "unknown"
+    _ formFactor: String = "unknown",
+    osDefault: Bool = false
   ) -> [String: Any] {
     [
       "id": id,
@@ -671,6 +741,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "routeClass": route,
       "isCapture": capture,
       "pairId": pairId,
+      "osDefault": osDefault,
       "capabilities": [
         "formFactor": formFactor,
         "aec": false,

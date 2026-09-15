@@ -96,6 +96,12 @@ class FlutterAiCommunicationsPlugin :
         appContext = binding.applicationContext
         textures = binding.textureRegistry
         cameraGraph = AndroidCameraGraph(binding.applicationContext, binding.textureRegistry)
+        cameraGraph?.onFormat = { width, height, turns ->
+            emit(
+                "cameraFormat",
+                mapOf("width" to width, "height" to height, "quarterTurns" to turns),
+            )
+        }
         screenGraph =
             AndroidScreenGraph(binding.applicationContext, binding.textureRegistry) {
                 emit("screenCatalog", emptyList<Any>())
@@ -268,6 +274,7 @@ class FlutterAiCommunicationsPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         cameraGraph?.stop()
+        cameraGraph?.releaseDisplayWatch()
         stopNative()
         audioManager?.unregisterAudioDeviceCallback(deviceCallback)
         stopListeningForCommunicationDevice()
@@ -280,12 +287,14 @@ class FlutterAiCommunicationsPlugin :
         activityBinding = binding
         binding.addRequestPermissionsResultListener(this)
         binding.addActivityResultListener(this)
+        cameraGraph?.attachActivity(binding.activity)
         screenGraph?.attachActivity(binding.activity)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding?.removeActivityResultListener(this)
+        cameraGraph?.attachActivity(null)
         screenGraph?.attachActivity(null)
         activityBinding = null
     }
@@ -297,6 +306,7 @@ class FlutterAiCommunicationsPlugin :
     override fun onDetachedFromActivity() {
         activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding?.removeActivityResultListener(this)
+        cameraGraph?.attachActivity(null)
         screenGraph?.attachActivity(null)
         activityBinding = null
     }
@@ -718,6 +728,7 @@ class FlutterAiCommunicationsPlugin :
         }
         items += endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone")
         items += endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone")
+        val defaultId = communicationDeviceId(manager)
         for (device in manager.getDevices(AudioManager.GET_DEVICES_ALL)) {
             val route = routeClass(device.type)
             if (route == "handset" || route == "speakerphone") {
@@ -737,6 +748,7 @@ class FlutterAiCommunicationsPlugin :
                     address,
                     form,
                     hints,
+                    osDefault = defaultId != null && device.id == defaultId,
                 )
         }
         return items
@@ -750,6 +762,7 @@ class FlutterAiCommunicationsPlugin :
         pairId: String,
         formFactor: String = "unknown",
         identityHints: List<String> = emptyList(),
+        osDefault: Boolean = false,
     ): Map<String, Any> {
         val map =
             mutableMapOf<String, Any>(
@@ -758,6 +771,7 @@ class FlutterAiCommunicationsPlugin :
                 "routeClass" to route,
                 "isCapture" to capture,
                 "pairId" to pairId,
+                "osDefault" to osDefault,
                 "capabilities" to
                     mapOf(
                         "formFactor" to formFactor,
@@ -771,6 +785,13 @@ class FlutterAiCommunicationsPlugin :
             map["identityHints"] = identityHints
         }
         return map
+    }
+
+    private fun communicationDeviceId(manager: AudioManager): Int? {
+        if (android.os.Build.VERSION.SDK_INT < 31) {
+            return null
+        }
+        return manager.communicationDevice?.id
     }
 
     private fun routeClass(type: Int): String =

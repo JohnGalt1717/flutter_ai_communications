@@ -4,23 +4,25 @@ part of '../flutter_ai_communications.dart';
 final class CameraPreview {
   CameraPreview._({
     required FlutterAiCommunicationsPlatform platform,
-    required this.surface,
+    required VideoSurface surface,
     required String cameraId,
     required void Function() onStopped,
     VideoProcessor videoProcessor = const NoneVideoProcessor(),
   }) : _platform = platform,
        _cameraId = cameraId,
        _onStopped = onStopped,
+       _surface = surface,
        _videoProcessor = videoProcessor;
 
   final FlutterAiCommunicationsPlatform _platform;
   final void Function() _onStopped;
+  final VideoSurface _surface;
   var _stopped = false;
   String _cameraId;
   VideoProcessor _videoProcessor;
 
-  /// Local Video surface.
-  final VideoSurface surface;
+  /// Local Video surface. Size follows live [lastVideoSurface] when present.
+  VideoSurface get surface => _platform.lastVideoSurface ?? _surface;
 
   /// Current camera id.
   String get selectedCameraId => _cameraId;

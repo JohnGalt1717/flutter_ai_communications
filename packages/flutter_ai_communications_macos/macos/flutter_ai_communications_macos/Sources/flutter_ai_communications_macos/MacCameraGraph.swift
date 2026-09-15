@@ -1,11 +1,17 @@
 import AVFoundation
+import CoreImage
+import CoreVideo
 import FlutterMacOS
 import Foundation
+import VideoToolbox
 
 final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSampleBufferDelegate {
-  private let session = AVCaptureSession()
-  private let output = AVCaptureVideoDataOutput()
-  private let queue = DispatchQueue(label: "fac.camera")
+  private var session = AVCaptureSession()
+  private var output = AVCaptureVideoDataOutput()
+  /// Session start/stop/config. Must not be the sample-buffer queue:
+  /// `startRunning` blocks and will starve `captureOutput` if they share it.
+  private let sessionQueue = DispatchQueue(label: "fac.camera.session")
+  private let queue = DispatchQueue(label: "fac.camera.frames")
   private var device: AVCaptureDevice?
   private var input: AVCaptureDeviceInput?
   private var pixelBuffer: CVPixelBuffer?
@@ -15,11 +21,21 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   var muted = false
   var enabled = true
   private let processor = PersonBackgroundProcessor()
+  private let renderContext = CIContext(options: [
+    .cacheIntermediates: false,
+    .workingColorSpace: NSNull(),
+  ])
+  private var transfer: VTPixelTransferSession?
   private(set) var width = 1280
   private(set) var height = 720
   private(set) var frameRate = 30
   private var frameCount = 0
   private var liveFrames = 0
+  private let bufferLock = NSLock()
+  private var sessionObservers: [NSObjectProtocol] = []
+  // Flutter macOS compositor only samples IOSurface-backed 32BGRA. Empty
+  // IOSurface property dict must be a CFDictionary (String:Any does not
+  // create an IOSurface and Texture stays black).
   private let bufferAttrs: [CFString: Any] = [
     kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
     kCVPixelBufferMetalCompatibilityKey: true,
@@ -34,10 +50,13 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
       return
     }
     textureId = textures.register(self)
+    NSLog("fac.camera registered textureId=%lld", textureId)
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
-    let buffer = muted ? blackBuffer : pixelBuffer
+    bufferLock.lock()
+    let buffer = muted ? blackBuffer : (pixelBuffer ?? blackBuffer)
+    bufferLock.unlock()
     guard let buffer else {
       return nil
     }
@@ -45,22 +64,11 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   }
 
   func enumerate() -> [[String: Any]] {
-    let discovery = AVCaptureDevice.DiscoverySession(
-      deviceTypes: [.builtInWideAngleCamera, .externalUnknown],
-      mediaType: .video,
-      position: .unspecified
-    )
-    return discovery.devices.map { device in
-      let facing: String
-      switch device.position {
-      case .front: facing = "user"
-      case .back: facing = "environment"
-      default: facing = "unspecified"
-      }
-      return [
+    return videoDevices().map { device in
+      [
         "id": device.uniqueID,
         "name": device.localizedName,
-        "facing": facing,
+        "facing": facingName(for: device),
         "modes": [["width": 1280, "height": 720, "frameRate": 30]],
       ]
     }
@@ -97,15 +105,17 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     frameCount = 0
     liveFrames = 0
     makeBlackBuffer(width: width, height: height)
+    setLiveBuffer(blackBuffer)
+    publishTexture()
     guard enabled else {
-      queue.sync { stopLocked() }
+      sessionQueue.async { [weak self] in
+        self?.stopLocked()
+      }
+      setLiveBuffer(blackBuffer)
+      publishTexture()
       return ["status": "started", "textureId": textureId, "width": width, "height": height, "frameRate": frameRate]
     }
-    let devices = AVCaptureDevice.DiscoverySession(
-      deviceTypes: [.builtInWideAngleCamera, .externalUnknown],
-      mediaType: .video,
-      position: .unspecified
-    ).devices
+    let devices = videoDevices()
     let chosen =
       devices.first(where: { $0.uniqueID == cameraId })
       ?? devices.first(where: { $0.position == .front })
@@ -113,38 +123,17 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     guard let chosen else {
       return ["status": "unavailable"]
     }
-    var status = "failed"
-    queue.sync {
-      stopLocked()
-      do {
-        let input = try AVCaptureDeviceInput(device: chosen)
-        session.beginConfiguration()
-        session.sessionPreset = .hd1280x720
-        if session.canAddInput(input) {
-          session.addInput(input)
-        }
-        output.videoSettings = [
-          kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        ]
-        output.setSampleBufferDelegate(self, queue: queue)
-        if session.canAddOutput(output) {
-          session.addOutput(output)
-        }
-        session.commitConfiguration()
-        device = chosen
-        self.input = input
-        status = "started"
-      } catch {
-        status = "failed"
-      }
-    }
-    if status == "started" {
-      queue.async { [weak self] in
-        self?.session.startRunning()
-      }
+    // camera_desktop: setup + startRunning on a session queue, never the
+    // method-channel/main thread. startRunning is blocking; on USB DAL it
+    // needs the main run loop, so calling it here wedges captureOutput.
+    // camera_macos only looks like it runs on main — it actually starts
+    // inside requestAccess's off-main completion.
+    camLog("open queued device=\(chosen.localizedName) id=\(chosen.uniqueID)")
+    sessionQueue.async { [weak self] in
+      self?.openLocked(chosen)
     }
     return [
-      "status": status,
+      "status": "started",
       "textureId": textureId,
       "width": width,
       "height": height,
@@ -158,7 +147,7 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
 
   func setEnabled(_ enabled: Bool) {
     self.enabled = enabled
-    queue.async { [weak self] in
+    sessionQueue.async { [weak self] in
       guard let self else {
         return
       }
@@ -170,14 +159,14 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
         if self.session.isRunning {
           self.session.stopRunning()
         }
-        self.pixelBuffer = nil
+        self.setLiveBuffer(nil)
       }
     }
   }
 
   func setMuted(_ muted: Bool) {
     self.muted = muted
-    textures?.textureFrameAvailable(textureId)
+    publishTexture()
   }
 
   func setProcessor(_ args: [String: Any]) -> String {
@@ -185,13 +174,21 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   }
 
   func stats() -> [String: Any] {
-    queue.sync {
-      ["frameCount": frameCount, "liveFrames": liveFrames]
-    }
+    ["frameCount": frameCount, "liveFrames": liveFrames]
   }
 
   func stop() {
-    queue.sync { stopLocked() }
+    sessionQueue.async { [weak self] in
+      self?.stopLocked()
+    }
+  }
+
+  func captureOutput(
+    _ output: AVCaptureOutput,
+    didDrop sampleBuffer: CMSampleBuffer,
+    from connection: AVCaptureConnection
+  ) {
+    camLog("dropped frames=\(frameCount)")
   }
 
   func captureOutput(
@@ -199,19 +196,272 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
-    guard enabled, let image = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+    frameArrived(sampleBuffer)
+  }
+
+  func frameArrived(_ sampleBuffer: CMSampleBuffer) {
+    let image = CMSampleBufferGetImageBuffer(sampleBuffer)
+    if image == nil {
+      camLog("didOutput without imageBuffer")
+    }
+    guard enabled, let image else {
       return
     }
     frameCount += 1
-    let copied = copyBuffer(image)
-    pixelBuffer = copied.map { processor.process($0) } ?? copied
+    let format = CVPixelBufferGetPixelFormatType(image)
+    let hasIOSurface = CVPixelBufferGetIOSurface(image) != nil
+    let formatOK =
+      format == kCVPixelFormatType_32BGRA
+      || format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+      || format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+    // Flutter macOS compositor only wraps IOSurface-backed 32BGRA / NV12.
+    let delivered: CVPixelBuffer? = formatOK && hasIOSurface ? image : copyBuffer(image)
+    let processed = delivered.map { processor.process($0) } ?? delivered
+    setLiveBuffer(processed)
     if !muted {
       liveFrames += 1
     }
-    textures?.textureFrameAvailable(textureId)
+    if frameCount == 1 || frameCount % 30 == 0 {
+      let fourcc = CVPixelBufferGetPixelFormatType(image)
+      let iosurface = processed.flatMap { CVPixelBufferGetIOSurface($0) } != nil
+      camLog(
+        "frames=\(frameCount) live=\(liveFrames) src=0x\(String(fourcc, radix: 16)) dstIOSurface=\(iosurface) w=\(CVPixelBufferGetWidth(image)) h=\(CVPixelBufferGetHeight(image)) delivered=\(delivered != nil)"
+      )
+    }
+    publishTexture()
+  }
+
+  private func observeSession() {
+    guard sessionObservers.isEmpty else {
+      return
+    }
+    let center = NotificationCenter.default
+    sessionObservers.append(
+      center.addObserver(
+        forName: .AVCaptureSessionRuntimeError,
+        object: session,
+        queue: nil
+      ) { [weak self] note in
+        let error = note.userInfo?[AVCaptureSessionErrorKey]
+        self?.camLog("runtimeError \(String(describing: error))")
+      }
+    )
+    sessionObservers.append(
+      center.addObserver(
+        forName: .AVCaptureSessionDidStartRunning,
+        object: session,
+        queue: nil
+      ) { [weak self] _ in
+        self?.camLog("didStartRunning")
+      }
+    )
+  }
+
+  private func camLog(_ message: String) {
+    let line = "fac.camera \(message)"
+    NSLog("%@", line)
+    let dir = FileManager.default.temporaryDirectory
+    let url = dir.appendingPathComponent("fac.camera.log")
+    guard let data = (line + "\n").data(using: .utf8) else {
+      return
+    }
+    if FileManager.default.fileExists(atPath: url.path) {
+      if let handle = try? FileHandle(forWritingTo: url) {
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: data)
+        try? handle.close()
+      }
+    } else {
+      try? data.write(to: url)
+    }
+  }
+
+  private func applyUpright(_ connection: AVCaptureConnection, for device: AVCaptureDevice) {
+    if #available(macOS 14.0, *) {
+      if connection.isVideoRotationAngleSupported(0) {
+        connection.videoRotationAngle = 0
+      }
+    }
+    if connection.isVideoMirroringSupported {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = device.position == .front
+    }
+  }
+
+  private func videoDeviceTypes() -> [AVCaptureDevice.DeviceType] {
+    var types: [AVCaptureDevice.DeviceType] = [
+      .builtInWideAngleCamera,
+      .externalUnknown,
+    ]
+    if #available(macOS 13.0, *) {
+      types.append(.deskViewCamera)
+    }
+    if #available(macOS 14.0, *) {
+      types.append(.continuityCamera)
+      types.append(.external)
+    }
+    return types
+  }
+
+  private func videoDevices() -> [AVCaptureDevice] {
+    AVCaptureDevice.DiscoverySession(
+      deviceTypes: videoDeviceTypes(),
+      mediaType: .video,
+      position: .unspecified
+    ).devices
+  }
+
+  private func facingName(for device: AVCaptureDevice) -> String {
+    switch device.position {
+    case .front:
+      return "user"
+    case .back:
+      return "environment"
+    default:
+      let haystack = device.localizedName.lowercased()
+      let userMarks = [
+        "macbook", "imac", "facetime", "built-in", "studio display",
+        "continuity", "front", "user",
+      ]
+      if userMarks.contains(where: { haystack.contains($0) }) {
+        return "user"
+      }
+      if haystack.contains("rear") || haystack.contains("back") {
+        return "environment"
+      }
+      return "external"
+    }
+  }
+
+  private func publishTexture() {
+    guard textureId >= 0 else {
+      return
+    }
+    if Thread.isMainThread {
+      textures?.textureFrameAvailable(textureId)
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.textureId >= 0 else {
+        return
+      }
+      self.textures?.textureFrameAvailable(self.textureId)
+    }
+  }
+
+  private func openLocked(_ chosen: AVCaptureDevice) {
+    stopLocked()
+    resetSession()
+    // camera_desktop locks for focus/exposure on built-in cameras. On USB
+    // composites (BRIO) this lock can hang forever if AVAudioEngine already
+    // holds the audio function, so skip it unless the device is built-in.
+    if chosen.position == .front || chosen.position == .back {
+      do {
+        try chosen.lockForConfiguration()
+        if chosen.isFocusModeSupported(.continuousAutoFocus) {
+          chosen.focusMode = .continuousAutoFocus
+        }
+        if chosen.isExposureModeSupported(.continuousAutoExposure) {
+          chosen.exposureMode = .continuousAutoExposure
+        }
+        chosen.unlockForConfiguration()
+      } catch {
+        camLog("lockForConfiguration skipped \(error)")
+      }
+    }
+    do {
+      let input = try AVCaptureDeviceInput(device: chosen)
+      session.beginConfiguration()
+      let preset: AVCaptureSession.Preset =
+        chosen.supportsSessionPreset(.hd1280x720) && session.canSetSessionPreset(.hd1280x720)
+        ? .hd1280x720
+        : chosen.supportsSessionPreset(.high) && session.canSetSessionPreset(.high)
+          ? .high
+          : .medium
+      if session.canSetSessionPreset(preset) {
+        session.sessionPreset = preset
+      }
+      guard session.canAddInput(input) else {
+        session.commitConfiguration()
+        camLog("canAddInput=false device=\(chosen.localizedName)")
+        return
+      }
+      session.addInput(input)
+      output.alwaysDiscardsLateVideoFrames = true
+      output.setSampleBufferDelegate(self, queue: .main)
+      guard session.canAddOutput(output) else {
+        session.removeInput(input)
+        session.commitConfiguration()
+        camLog("canAddOutput=false")
+        return
+      }
+      session.addOutput(output)
+      applyPixelFormat(output)
+      if let connection = output.connection(with: .video) {
+        applyUpright(connection, for: chosen)
+      }
+      session.commitConfiguration()
+      device = chosen
+      self.input = input
+      camLog("configured device=\(chosen.localizedName) id=\(chosen.uniqueID) preset=\(preset.rawValue)")
+      observeSession()
+      session.startRunning()
+      let connection = output.connection(with: .video)
+      camLog(
+        "running=\(session.isRunning) inputs=\(session.inputs.count) outputs=\(session.outputs.count) textureId=\(textureId) connEnabled=\(connection?.isEnabled == true) connActive=\(connection?.isActive == true) delegate=\(output.sampleBufferDelegate != nil)"
+      )
+      let expectedId = chosen.uniqueID
+      sessionQueue.asyncAfter(deadline: .now() + 2) { [weak self] in
+        guard let self, self.device?.uniqueID == expectedId else {
+          return
+        }
+        self.retryNativeFormatIfSilent()
+      }
+    } catch {
+      camLog("configure failed \(error)")
+    }
+  }
+
+  private func retryNativeFormatIfSilent() {
+    guard frameCount == 0, session.isRunning, session.outputs.contains(output) else {
+      return
+    }
+    camLog("no frames after 2s, bouncing session with device-native pixel format")
+    session.stopRunning()
+    session.beginConfiguration()
+    output.videoSettings = [:]
+    session.commitConfiguration()
+    session.startRunning()
+    let connection = output.connection(with: .video)
+    camLog(
+      "native-format retry running=\(session.isRunning) connActive=\(connection?.isActive == true) settings=\(String(describing: output.videoSettings))"
+    )
+  }
+
+  private func applyPixelFormat(_ output: AVCaptureVideoDataOutput) {
+    // camera_macos / camera_desktop request 32BGRA. On BRIO that produced a
+    // running session and zero callbacks; retryNativeFormatIfSilent then
+    // bounces to device-native (`2vuy`) after stop/start.
+    output.videoSettings = [
+      kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+    ]
+  }
+
+
+
+
+
+  private func resetSession() {
+    for observer in sessionObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    sessionObservers.removeAll()
+    session = AVCaptureSession()
+    output = AVCaptureVideoDataOutput()
   }
 
   private func stopLocked() {
+    output.setSampleBufferDelegate(nil, queue: nil)
     if session.isRunning {
       session.stopRunning()
     }
@@ -225,70 +475,46 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     session.commitConfiguration()
     input = nil
     device = nil
-    pixelBuffer = nil
+    setLiveBuffer(nil)
+  }
+
+  private func setLiveBuffer(_ buffer: CVPixelBuffer?) {
+    bufferLock.lock()
+    pixelBuffer = buffer
+    bufferLock.unlock()
   }
 
   private func copyBuffer(_ src: CVPixelBuffer) -> CVPixelBuffer? {
+    let width = CVPixelBufferGetWidth(src)
+    let height = CVPixelBufferGetHeight(src)
     var dst: CVPixelBuffer?
     CVPixelBufferCreate(
       kCFAllocatorDefault,
-      CVPixelBufferGetWidth(src),
-      CVPixelBufferGetHeight(src),
-      CVPixelBufferGetPixelFormatType(src),
+      width,
+      height,
+      kCVPixelFormatType_32BGRA,
       bufferAttrs as CFDictionary,
       &dst
     )
     guard let dst else {
       return nil
     }
-    copyPlanes(from: src, to: dst)
+    if transfer == nil {
+      VTPixelTransferSessionCreate(
+        allocator: kCFAllocatorDefault,
+        pixelTransferSessionOut: &transfer
+      )
+    }
+    if let transfer,
+       VTPixelTransferSessionTransferImage(transfer, from: src, to: dst) == noErr
+    {
+      return dst
+    }
+    // CI's origin is bottom-left; flip so Flutter Texture is upright.
+    let image = CIImage(cvPixelBuffer: src).oriented(.downMirrored)
+    let space = CGColorSpaceCreateDeviceRGB()
+    renderContext.render(image, to: dst, bounds: image.extent, colorSpace: space)
     return dst
-  }
-
-  private func copyPlanes(from src: CVPixelBuffer, to dst: CVPixelBuffer) {
-    CVPixelBufferLockBaseAddress(src, .readOnly)
-    CVPixelBufferLockBaseAddress(dst, [])
-    let planes = max(CVPixelBufferGetPlaneCount(src), 1)
-    if CVPixelBufferGetPlaneCount(src) == 0 {
-      copyPlane(from: src, to: dst, plane: nil)
-    } else {
-      for plane in 0..<planes {
-        copyPlane(from: src, to: dst, plane: plane)
-      }
-    }
-    CVPixelBufferUnlockBaseAddress(dst, [])
-    CVPixelBufferUnlockBaseAddress(src, .readOnly)
-  }
-
-  private func copyPlane(from src: CVPixelBuffer, to dst: CVPixelBuffer, plane: Int?) {
-    let srcBase: UnsafeMutableRawPointer?
-    let dstBase: UnsafeMutableRawPointer?
-    let height: Int
-    let srcStride: Int
-    let dstStride: Int
-    let width: Int
-    if let plane {
-      srcBase = CVPixelBufferGetBaseAddressOfPlane(src, plane)
-      dstBase = CVPixelBufferGetBaseAddressOfPlane(dst, plane)
-      height = CVPixelBufferGetHeightOfPlane(src, plane)
-      width = CVPixelBufferGetWidthOfPlane(src, plane)
-      srcStride = CVPixelBufferGetBytesPerRowOfPlane(src, plane)
-      dstStride = CVPixelBufferGetBytesPerRowOfPlane(dst, plane)
-    } else {
-      srcBase = CVPixelBufferGetBaseAddress(src)
-      dstBase = CVPixelBufferGetBaseAddress(dst)
-      height = CVPixelBufferGetHeight(src)
-      width = CVPixelBufferGetWidth(src)
-      srcStride = CVPixelBufferGetBytesPerRow(src)
-      dstStride = CVPixelBufferGetBytesPerRow(dst)
-    }
-    guard let srcBase, let dstBase else {
-      return
-    }
-    let rowBytes = min(srcStride, dstStride, max(width, 1) * 4)
-    for row in 0..<height {
-      memcpy(dstBase + row * dstStride, srcBase + row * srcStride, rowBytes)
-    }
   }
 
   private func makeBlackBuffer(width: Int, height: Int) {
@@ -310,6 +536,11 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
         }
       }
       CVPixelBufferUnlockBaseAddress(buffer, [])
+      NSLog(
+        "fac.camera seed iosurface=%d textureId=%lld",
+        CVPixelBufferGetIOSurface(buffer) != nil,
+        textureId
+      )
     }
     blackBuffer = buffer
   }

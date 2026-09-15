@@ -104,9 +104,11 @@ final class MethodChannelScreenBackend {
               : NativeGraphStart.unavailable;
         }
         final handle = value['textureId'] as int? ?? value['handle'] as int?;
-        lastSurface = handle == null ? null : VideoSurface(handle: handle);
         final width = value['width'] as int?;
         final height = value['height'] as int?;
+        lastSurface = handle == null
+            ? null
+            : VideoSurface(handle: handle, width: width, height: height);
         final frameRate = value['frameRate'] as int?;
         lastFormat = width != null && height != null
             ? VideoFormat(

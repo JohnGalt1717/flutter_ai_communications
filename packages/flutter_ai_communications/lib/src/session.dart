@@ -78,6 +78,7 @@ final class Session {
       _onScreenCatalog,
       onError: (_) {},
     );
+    _videoSurfaceSub = platform.videoSurfaces.listen(_onVideoSurface);
     _onIsolation(platform.lastIsolation);
     if (!preferenceControlled) {
       _explicitCaptureId = preference.captureId;
@@ -226,6 +227,9 @@ final class Session {
   /// snapshot.
   late final Stream<SessionStatus> statuses;
 
+  /// Live Camera Video surface size. The host sizes the tile from this.
+  Stream<VideoSurface?> get videoSurfaces => _platform.videoSurfaces;
+
   /// Last Isolation event. Host UI can seed from this before listening.
   IsolationEvent get lastIsolation => _lastIsolation;
 
@@ -313,10 +317,14 @@ final class Session {
   bool get isVideoMuted => _videoMuted;
 
   /// Local send Video surface, if video is running.
-  VideoSurface? get videoSurface => _videoSurface;
+  VideoSurface? get videoSurface => _cameraEnabled
+      ? (_platform.lastVideoSurface ?? _videoSurface)
+      : _videoSurface;
 
   /// Negotiated Native Video Format, if video is running.
-  VideoFormat? get nativeVideoFormat => _nativeVideoFormat;
+  VideoFormat? get nativeVideoFormat => _cameraEnabled
+      ? (_platform.lastNativeVideoFormat ?? _nativeVideoFormat)
+      : _nativeVideoFormat;
 
   /// Why video is not running: `denied`, `restricted`, `none`, `no-mode`, or null.
   String? get videoUnavailableReason => _videoUnavailableReason;
@@ -400,6 +408,7 @@ final class Session {
       Map<VideoSink, String>.identity();
   var _nextVideoSinkToken = 0;
   StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
+  StreamSubscription<VideoSurface?>? _videoSurfaceSub;
   var _screenPickOpen = false;
   var _screenSending = false;
   var _includeSystemAudio = false;
@@ -673,6 +682,15 @@ final class Session {
     await _platform.setScreenCursorNative(cursor);
   }
 
+  void _onVideoSurface(VideoSurface? surface) {
+    if (_stopped || !_cameraEnabled) {
+      return;
+    }
+    _videoSurface = surface;
+    _nativeVideoFormat = _platform.lastNativeVideoFormat;
+    _notifyVideoSinks();
+  }
+
   void _onScreenCatalog(List<ScreenSource> sources) {
     if (_stopped) {
       return;
@@ -931,6 +949,7 @@ final class Session {
       unawaited(_focusSub?.cancel());
       unawaited(_routeSub?.cancel());
       unawaited(_screenCatalogSub?.cancel());
+      unawaited(_videoSurfaceSub?.cancel());
       _captureSub = null;
       _isolationSub = null;
       _coverageSub = null;
@@ -939,6 +958,7 @@ final class Session {
       _focusSub = null;
       _routeSub = null;
       _screenCatalogSub = null;
+      _videoSurfaceSub = null;
       unawaited(_captureController.close());
       unawaited(_isolationController.close());
       unawaited(_coverageController.close());

@@ -43,8 +43,9 @@ Stable keys on the example Screen send subsection. flutter-skill and
 | Key | Control |
 | --- | --- |
 | `screen-session` | Start a meeting Session from idle |
-| `screen-share` | `startScreenShare` on the indicated (or only) source |
-| `screen-stop` | `stopScreenShare` |
+| `screen-share` | Open the host picker, or `startScreenShare` on an OS-picker catalog |
+| `screen-stop` | `stopScreenShare` (same control while sending) |
+| `share-picker` | Host dialog of Screen sources (enumerable catalogs) |
 | `screen-sound` | Include sound |
 | `screen-motion` | Screen motion (Optimize) |
 | `screen-cursor` | Cursor capture |

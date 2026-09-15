@@ -95,6 +95,7 @@ final class Endpoint {
     String? pairId,
     this.capabilities = const EndpointCapabilities(),
     this.identityHints = const [],
+    this.osDefault = false,
   }) : name = name,
        pairId = pairId ?? name;
 
@@ -120,6 +121,9 @@ final class Endpoint {
   /// Acoustic-profile matching. Empty when the user denied Bluetooth access.
   final List<String> identityHints;
 
+  /// Whether this Endpoint is the OS default capture or render right now.
+  final bool osDefault;
+
   @override
   bool operator ==(Object other) =>
       other is Endpoint &&
@@ -129,6 +133,7 @@ final class Endpoint {
       other.isCapture == isCapture &&
       other.pairId == pairId &&
       other.capabilities == capabilities &&
+      other.osDefault == osDefault &&
       _sameHints(other.identityHints, identityHints);
 
   @override
@@ -139,6 +144,7 @@ final class Endpoint {
     isCapture,
     pairId,
     capabilities,
+    osDefault,
     Object.hashAll(identityHints),
   );
 

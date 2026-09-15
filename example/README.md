@@ -39,10 +39,12 @@ see `docs/echo-e2e.md`.
 Windows and Linux camera receipts: `docs/windows-linux-video-setup.md`.
 Screen send receipts: `.agents/workflows/screen-send-orchestration.md`.
 
-The **Screen send** subsection (after Join) is the Orchestration path for
-share: pick a source, Share, loopback of `session.screenSurface`, Stop share.
-Keys: `screen-session`, `screen-share`, `screen-stop`, `screen-loopback`,
-`screen-source-*`. Lobby cannot share.
+The in-call **Share** control is the Orchestration path for share: tap Share
+to open the host picker (or the OS picker), pick a source, loopback of
+`session.screenSurface`, tap Stop share on the same control. Keys:
+`screen-session`, `screen-share`, `screen-stop`, `screen-loopback`,
+`share-picker`, `screen-source-*`. Lobby cannot share. In-call camera pick
+is `camera-pick`; background is `processor-pick`.
 
 ```text
 flutter test integration_test/native_camera_test.dart -d windows

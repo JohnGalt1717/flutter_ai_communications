@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import CoreAudio
 import FlutterMacOS
 
@@ -262,6 +263,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       emitRoute()
       result(startedFormatMap())
     } catch {
+      let line = "fac.audio start failed \(error)\n"
+      NSLog("%@", line)
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("fac.audio.log")
+      try? line.write(to: url, atomically: true, encoding: .utf8)
       result("failed")
     }
   }
@@ -292,6 +297,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     }
     teardownEngine()
     let next = AVAudioEngine()
+    bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
+    bindDevice(to: next.outputNode, endpointId: selectedRenderId)
     let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
     let inputFormat = next.inputNode.outputFormat(forBus: 0)
     var playerNode: AVAudioPlayerNode?
@@ -311,7 +318,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
 
     if wantCapture {
-      let enableVoiceProcessing = noiseCancelling
+      // Voice Processing on a USB composite (BRIO mic+camera) resets the
+      // UVC function: AVCaptureSession starts, then AVErrorDeviceWasDisconnected.
+      let captureIsBuiltIn =
+        selectedCaptureId?.localizedCaseInsensitiveContains("BuiltIn") == true
+      let enableVoiceProcessing = noiseCancelling && captureIsBuiltIn
       if enableVoiceProcessing {
         do {
           try next.inputNode.setVoiceProcessingEnabled(true)
@@ -503,17 +514,42 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func enumerateEndpoints() -> [[String: Any]] {
-    // Catalog remains best-effort from system default I/O names.
-    // Pair identity for built-ins is "built-in"; accessories use UID.
-    var items: [[String: Any]] = [
-      endpoint("built-in-in", "Built-in Microphone", "speakerphone", true, "built-in"),
-      endpoint("built-in-out", "Built-in Speakers", "speakerphone", false, "built-in"),
-    ]
-    if let captureId = selectedCaptureId, captureId != "built-in-in" {
-      items.append(endpoint(captureId, captureId, "wired", true, captureId))
-    }
-    if let renderId = selectedRenderId, renderId != "built-in-out" {
-      items.append(endpoint(renderId, renderId, "wired", false, renderId))
+    var items: [[String: Any]] = []
+    let defaultIn = defaultDeviceID(kAudioHardwarePropertyDefaultInputDevice)
+    let defaultOut = defaultDeviceID(kAudioHardwarePropertyDefaultOutputDevice)
+    for id in audioDeviceIDs() {
+      let name = stringProperty(id, kAudioObjectPropertyName) ?? "Endpoint"
+      let uid = stringProperty(id, kAudioDevicePropertyDeviceUID) ?? "\(id)"
+      let transport = transportName(id)
+      let route = routeClass(name: name, transport: transport)
+      let pairId = pairIdentity(route: route, uid: uid, name: name)
+      let hasInput = hasStreams(id, scope: kAudioDevicePropertyScopeInput)
+      let hasOutput = hasStreams(id, scope: kAudioDevicePropertyScopeOutput)
+      if hasInput {
+        items.append(
+          endpoint(
+            uid,
+            name,
+            route,
+            true,
+            pairId,
+            osDefault: id == defaultIn
+          )
+        )
+      }
+      if hasOutput {
+        let renderId = hasInput ? "\(uid)-out" : uid
+        items.append(
+          endpoint(
+            renderId,
+            name,
+            route,
+            false,
+            pairId,
+            osDefault: id == defaultOut
+          )
+        )
+      }
     }
     return items
   }
@@ -523,7 +559,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     _ name: String,
     _ route: String,
     _ capture: Bool,
-    _ pairId: String
+    _ pairId: String,
+    osDefault: Bool = false
   ) -> [String: Any] {
     [
       "id": id,
@@ -531,6 +568,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "routeClass": route,
       "isCapture": capture,
       "pairId": pairId,
+      "osDefault": osDefault,
       "capabilities": [
         "formFactor": "unknown",
         "aec": false,
@@ -539,6 +577,160 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         "carConnected": false,
       ],
     ]
+  }
+
+  private func bindDevice(to node: AVAudioNode, endpointId: String?) {
+    guard let endpointId else {
+      return
+    }
+    let uid = coreUID(endpointId)
+    guard let deviceID = deviceID(forUID: uid) else {
+      return
+    }
+    node.auAudioUnit.setValue(NSNumber(value: deviceID), forKey: "deviceID")
+  }
+
+  private func coreUID(_ endpointId: String) -> String {
+    if endpointId.hasSuffix("-out") {
+      return String(endpointId.dropLast(4))
+    }
+    return endpointId
+  }
+
+  private func audioDeviceIDs() -> [AudioDeviceID] {
+    var address = AudioObjectPropertyAddress(
+      mSelector: kAudioHardwarePropertyDevices,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var dataSize: UInt32 = 0
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &dataSize) == noErr else {
+      return []
+    }
+    let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+    var ids = [AudioDeviceID](repeating: 0, count: count)
+    guard AudioObjectGetPropertyData(system, &address, 0, nil, &dataSize, &ids) == noErr else {
+      return []
+    }
+    return ids
+  }
+
+  private func defaultDeviceID(_ selector: AudioObjectPropertySelector) -> AudioDeviceID? {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var id = AudioDeviceID()
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    let system = AudioObjectID(kAudioObjectSystemObject)
+    guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &id) == noErr else {
+      return nil
+    }
+    return id
+  }
+
+  private func deviceID(forUID uid: String) -> AudioDeviceID? {
+    for id in audioDeviceIDs() {
+      if stringProperty(id, kAudioDevicePropertyDeviceUID) == uid {
+        return id
+      }
+    }
+    return nil
+  }
+
+  private func hasStreams(_ id: AudioDeviceID, scope: AudioObjectPropertyScope) -> Bool {
+    var address = AudioObjectPropertyAddress(
+      mSelector: kAudioDevicePropertyStreams,
+      mScope: scope,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr else {
+      return false
+    }
+    return size > 0
+  }
+
+  private func stringProperty(
+    _ id: AudioDeviceID,
+    _ selector: AudioObjectPropertySelector
+  ) -> String? {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(id, &address, 0, nil, &size) == noErr else {
+      return nil
+    }
+    var cf: Unmanaged<CFString>?
+    guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &cf) == noErr else {
+      return nil
+    }
+    return cf?.takeUnretainedValue() as String?
+  }
+
+  private func transportName(_ id: AudioDeviceID) -> String {
+    var address = AudioObjectPropertyAddress(
+      mSelector: kAudioDevicePropertyTransportType,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var code: UInt32 = 0
+    var size = UInt32(MemoryLayout<UInt32>.size)
+    guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &code) == noErr else {
+      return ""
+    }
+    let scalars: [UInt8] = [
+      UInt8((code >> 24) & 0xff),
+      UInt8((code >> 16) & 0xff),
+      UInt8((code >> 8) & 0xff),
+      UInt8(code & 0xff),
+    ]
+    return String(bytes: scalars, encoding: .ascii)?
+      .trimmingCharacters(in: .whitespaces) ?? ""
+  }
+
+  private func routeClass(name: String, transport: String) -> String {
+    let n = name.lowercased()
+    let t = transport.lowercased()
+    if t.contains("blue") || n.contains("bluetooth") {
+      return "bluetooth"
+    }
+    if n.contains("headset") ||
+      n.contains("headphone") ||
+      n.contains("earphone") ||
+      t.contains("usb")
+    {
+      return "wired"
+    }
+    if n.contains("speaker") ||
+      n.contains("microphone") ||
+      n.contains("built-in") ||
+      n.contains("macbook") ||
+      t.contains("bltn") ||
+      t.contains("pci")
+    {
+      return "speakerphone"
+    }
+    return "wired"
+  }
+
+  private func pairIdentity(route: String, uid: String, name: String) -> String {
+    if route == "speakerphone" {
+      return "built-in"
+    }
+    var normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    for suffix in [" microphone", " mic", " speaker", " headphones", " headset"] {
+      if normalized.hasSuffix(suffix) {
+        normalized = String(normalized.dropLast(suffix.count))
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+    }
+    return normalized.isEmpty ? uid : normalized
   }
 
   private func emitCatalog() {

@@ -100,6 +100,24 @@ void main() {
     expect((preview as PreviewReady).preview.surface.handle, 1);
   });
 
+  test('camera format change updates Session Video surface size', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    expect(session.videoSurface?.width, 1280);
+    expect(session.videoSurface?.height, 720);
+    final seen = <VideoSurface?>[];
+    final sub = session.videoSurfaces.listen(seen.add);
+    platform.emitVideoSurface(
+      const VideoSurface(handle: 1, width: 720, height: 1280),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(session.videoSurface?.width, 720);
+    expect(session.videoSurface?.height, 1280);
+    expect(seen.single?.width, 720);
+    expect(seen.single?.height, 1280);
+    await sub.cancel();
+  });
+
   test('enableVideo later does not replace the Capture stream', () async {
     final session = ((await manager.start()) as StartReady).session;
     final capture = session.capture;

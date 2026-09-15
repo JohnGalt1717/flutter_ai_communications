@@ -102,6 +102,65 @@ void main() {
     },
   );
 
+  test(
+    'platform default puts OS default render and capture first across Pairs',
+    () {
+      final preference = EndpointPreference.platformDefault([
+        ...catalog,
+        Endpoint(
+          id: 'brio-in',
+          name: 'Logitech BRIO',
+          routeClass: RouteClass.wired,
+          isCapture: true,
+          pairId: 'logitech brio',
+          osDefault: true,
+        ),
+        Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          pairId: 'usb audio',
+          osDefault: true,
+        ),
+      ]);
+      expect(preference.entries.first.renderId, 'usb-out');
+      expect(preference.entries.first.captures.first.id, 'brio-in');
+      expect(preference.entries.map((e) => e.renderId).skip(1).toList(), [
+        'airpods-out',
+        'car-out',
+        'speaker-out',
+        'handset-out',
+      ]);
+    },
+  );
+
+  test('empty preference resolves OS default capture and render', () {
+    final resolved = resolver.resolve(
+      catalog: [
+        ...catalog,
+        Endpoint(
+          id: 'brio-in',
+          name: 'Logitech BRIO',
+          routeClass: RouteClass.wired,
+          isCapture: true,
+          pairId: 'logitech brio',
+          osDefault: true,
+        ),
+        Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          pairId: 'usb audio',
+          osDefault: true,
+        ),
+      ],
+    );
+    expect(resolved.desired.captureId, 'brio-in');
+    expect(resolved.desired.renderId, 'usb-out');
+  });
+
   test('empty preference resolves the first complete default Pair', () {
     final resolved = resolver.resolve(catalog: catalog);
     expect(resolved.desired.captureId, 'airpods-in');

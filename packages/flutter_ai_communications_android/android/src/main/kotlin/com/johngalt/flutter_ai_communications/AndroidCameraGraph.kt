@@ -6,17 +6,19 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
-import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.media.Image
 import android.media.ImageReader
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.core.content.ContextCompat
 import io.flutter.view.TextureRegistry
@@ -28,13 +30,13 @@ class AndroidCameraGraph(
     private val context: Context,
     private val textures: TextureRegistry,
 ) {
-    private var entry: TextureRegistry.SurfaceTextureEntry? = null
+    private var producer: TextureRegistry.SurfaceProducer? = null
     private var camera: CameraDevice? = null
     private var session: android.hardware.camera2.CameraCaptureSession? = null
     private var surface: Surface? = null
-    private var outputSurface: Surface? = null
     private var reader: ImageReader? = null
     private var selectedId: String? = null
+    private var activity: android.app.Activity? = null
     private val processor = AndroidVideoProcessor()
     private var lastWidth = 1280
     private var lastHeight = 720
@@ -50,6 +52,67 @@ class AndroidCameraGraph(
     private var frameBitmap: Bitmap? = null
     private val frameCount = AtomicInteger(0)
     private val liveFrames = AtomicInteger(0)
+    var onFormat: ((Int, Int, Int) -> Unit)? = null
+    private var watchingDisplay = false
+    private var lastAppliedRotation = -1
+    private var listenerDisplayRotation: Int? = null
+    private val orientationListener =
+        object : OrientationEventListener(context.applicationContext) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) {
+                    return
+                }
+                val rotation = displayRotationFromClockwiseTilt(orientation)
+                if (listenerDisplayRotation == rotation) {
+                    return
+                }
+                listenerDisplayRotation = rotation
+                if (!cameraEnabled || selectedId == null || camera == null) {
+                    return
+                }
+                lastAppliedRotation = -1
+                displayListener.onDisplayChanged(0)
+            }
+        }
+    private val displayRestart =
+        Runnable {
+            val id = selectedId ?: return@Runnable
+            if (!cameraEnabled) {
+                return@Runnable
+            }
+            val rotation = captureRotation()
+            val out = captureBufferSize(1280, 720, rotation)
+            lastWidth = out.first
+            lastHeight = out.second
+            android.util.Log.i(
+                "fac.camera",
+                "upright window=${activityDisplayRotationDegrees()} " +
+                    "listener=$listenerDisplayRotation " +
+                    "used=${displayRotationDegrees()} capture=$rotation " +
+                    "size=${lastWidth}x$lastHeight",
+            )
+            producer?.setSize(lastWidth, lastHeight)
+            onFormat?.invoke(lastWidth, lastHeight, 0)
+        }
+    private val displayListener =
+        object : android.hardware.display.DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+
+            override fun onDisplayRemoved(displayId: Int) {}
+
+            override fun onDisplayChanged(displayId: Int) {
+                if (!cameraEnabled || selectedId == null || camera == null) {
+                    return
+                }
+                val rotation = displayRotationDegrees()
+                if (rotation == lastAppliedRotation) {
+                    return
+                }
+                lastAppliedRotation = rotation
+                main.removeCallbacks(displayRestart)
+                main.postDelayed(displayRestart, 250)
+            }
+        }
     private val statsCallback =
         object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
             override fun onCaptureCompleted(
@@ -63,6 +126,22 @@ class AndroidCameraGraph(
                 }
             }
         }
+
+    private val configCallbacks =
+        object : android.content.ComponentCallbacks {
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+                lastAppliedRotation = -1
+                displayListener.onDisplayChanged(0)
+            }
+
+            override fun onLowMemory() {}
+        }
+
+    fun attachActivity(activity: android.app.Activity?) {
+        this.activity?.unregisterComponentCallbacks(configCallbacks)
+        this.activity = activity
+        activity?.registerComponentCallbacks(configCallbacks)
+    }
 
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -103,14 +182,12 @@ class AndroidCameraGraph(
         onResult: (Map<String, Any>) -> Unit,
         keepTexture: Boolean = false,
     ) {
-        val kept = if (keepTexture) entry else null
+        val kept = if (keepTexture) producer else null
         stop(releaseTexture = !keepTexture)
-        entry = kept
+        producer = kept
         val id = startId.incrementAndGet()
         cameraEnabled = enabled
         videoMuted = muted
-        lastWidth = width
-        lastHeight = height
         frameCount.set(0)
         liveFrames.set(0)
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -127,42 +204,45 @@ class AndroidCameraGraph(
                 }
                 ?: ids.first()
         selectedId = chosen
-        val entry = this.entry ?: textures.createSurfaceTexture()
-        this.entry = entry
-        val texture: SurfaceTexture = entry.surfaceTexture()
-        texture.setDefaultBufferSize(width, height)
-        val flutterSurface = Surface(texture)
-        val captureSurface: Surface
-        if (processor.mode !is AndroidVideoProcessor.Mode.None) {
-            val imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
-            imageReader.setOnImageAvailableListener({ onProcessedImage(it) }, cameraHandler)
-            reader = imageReader
-            outputSurface = flutterSurface
-            captureSurface = imageReader.surface
-        } else {
-            reader = null
-            outputSurface = null
-            captureSurface = flutterSurface
-        }
-        val surface = captureSurface
+        lastAppliedRotation = displayRotationDegrees()
+        ensureDisplayWatch()
+        val rotation = captureRotation()
+        android.util.Log.i(
+            "fac.camera",
+            "start window=${activityDisplayRotationDegrees()} " +
+                "listener=$listenerDisplayRotation used=$lastAppliedRotation " +
+                "capture=$rotation sensor-buffer=${width}x$height",
+        )
+        val out = captureBufferSize(width, height, rotation)
+        lastWidth = out.first
+        lastHeight = out.second
+        val producer = this.producer ?: textures.createSurfaceProducer()
+        this.producer = producer
+        producer.setSize(lastWidth, lastHeight)
+        val imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
+        imageReader.setOnImageAvailableListener({ onProcessedImage(it) }, cameraHandler)
+        reader = imageReader
+        val surface = imageReader.surface
         this.surface = surface
         val started =
             mapOf(
                 "status" to "started",
-                "textureId" to entry.id(),
-                "width" to width,
-                "height" to height,
+                "textureId" to producer.id(),
+                "width" to lastWidth,
+                "height" to lastHeight,
                 "frameRate" to 30,
+                "quarterTurns" to 0,
             )
         if (!enabled) {
             onResult(started)
             return
         }
         if (permission() != "granted") {
-            surface.release()
+            reader?.close()
+            reader = null
             this.surface = null
-            entry.release()
-            this.entry = null
+            producer.release()
+            this.producer = null
             onResult(mapOf("status" to "unavailable"))
             return
         }
@@ -197,7 +277,10 @@ class AndroidCameraGraph(
                                         cameraHandler,
                                     )
                                 }
-                                main.post { onResult(started) }
+                                main.post {
+                                    onFormat?.invoke(lastWidth, lastHeight, 0)
+                                    onResult(started)
+                                }
                             }
 
                             override fun onConfigureFailed(session: android.hardware.camera2.CameraCaptureSession) {
@@ -256,22 +339,9 @@ class AndroidCameraGraph(
     }
 
     fun setProcessor(args: Map<String, Any?>): String {
-        val wasProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
         val status = processor.apply(args)
         if (status != "ready") {
             return status
-        }
-        val nowProcessed = processor.mode !is AndroidVideoProcessor.Mode.None
-        if (wasProcessed != nowProcessed && selectedId != null && cameraEnabled) {
-            start(
-                selectedId,
-                lastWidth,
-                lastHeight,
-                cameraEnabled,
-                videoMuted,
-                { },
-                keepTexture = true,
-            )
         }
         return status
     }
@@ -307,15 +377,12 @@ class AndroidCameraGraph(
         startId.incrementAndGet()
         stopRepeatingLocked()
         closeCameraLocked()
-        surface?.release()
         surface = null
-        outputSurface?.release()
-        outputSurface = null
         reader?.close()
         reader = null
         if (releaseTexture) {
-            entry?.release()
-            entry = null
+            producer?.release()
+            producer = null
         }
     }
 
@@ -339,15 +406,20 @@ class AndroidCameraGraph(
         try {
             frameCount.incrementAndGet()
             val bitmap = yuvToBitmap(image) ?: return
-            val processed = processor.process(bitmap)
-            val dest = outputSurface ?: return
-            val canvas = dest.lockHardwareCanvas()
-            canvas.drawBitmap(processed, null, Rect(0, 0, lastWidth, lastHeight), null)
-            dest.unlockCanvasAndPost(canvas)
+            val processed = rotateUpright(processor.process(bitmap))
+            val destProducer = producer ?: return
+            if (processed.width != lastWidth || processed.height != lastHeight) {
+                lastWidth = processed.width
+                lastHeight = processed.height
+                destProducer.setSize(lastWidth, lastHeight)
+                main.post { onFormat?.invoke(lastWidth, lastHeight, 0) }
+            }
+            blit(processed, destProducer.surface)
             if (!videoMuted) {
                 liveFrames.incrementAndGet()
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            android.util.Log.e("fac.camera", "frame", error)
         } finally {
             image.close()
         }
@@ -431,5 +503,201 @@ class AndroidCameraGraph(
         latch.await(1500, TimeUnit.MILLISECONDS)
         closeLatch = null
         camera = null
+    }
+
+    private fun ensureDisplayWatch() {
+        if (orientationListener.canDetectOrientation()) {
+            orientationListener.enable()
+        }
+        if (watchingDisplay) {
+            return
+        }
+        val displayManager =
+            context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+        displayManager.registerDisplayListener(displayListener, main)
+        watchingDisplay = true
+    }
+
+    fun releaseDisplayWatch() {
+        main.removeCallbacks(displayRestart)
+        orientationListener.disable()
+        activity?.unregisterComponentCallbacks(configCallbacks)
+        activity = null
+        if (!watchingDisplay) {
+            return
+        }
+        val displayManager =
+            context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+        displayManager.unregisterDisplayListener(displayListener)
+        watchingDisplay = false
+    }
+
+    private fun activityDisplayRotationDegrees(): Int {
+        val rotation =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                activity?.display?.rotation
+            } else {
+                @Suppress("DEPRECATION")
+                activity?.windowManager?.defaultDisplay?.rotation
+            }
+                ?: Surface.ROTATION_0
+        return when (rotation) {
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+    }
+
+    /**
+     * Counterclockwise degrees from [android.view.Display.getRotation].
+     *
+     * This must match the Flutter window, not gravity. OrientationEventListener
+     * can report 180 while the activity is still ROTATION_0; using gravity then
+     * inverts the camera against upright chrome. Listener is only used to pick
+     * landscape 90 vs 270 when configuration is landscape but Display still
+     * says 0 (Flutter `configChanges` lag).
+     */
+    private fun displayRotationDegrees(): Int {
+        val resources = activity?.resources ?: context.resources
+        val orientation = resources.configuration.orientation
+        val display = activityDisplayRotationDegrees()
+        val listener = listenerDisplayRotation
+        if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            if (display == 90 || display == 270) {
+                return display
+            }
+            if (listener == 90 || listener == 270) {
+                return listener
+            }
+            return 90
+        }
+        if (display == 0 || display == 180) {
+            return display
+        }
+        return 0
+    }
+
+    private fun displayRotationFromClockwiseTilt(clockwiseDegrees: Int): Int {
+        val rounded = ((clockwiseDegrees % 360) + 360) % 360
+        return when {
+            rounded in 45 until 135 -> 270
+            rounded in 135 until 225 -> 180
+            rounded in 225 until 315 -> 90
+            else -> 0
+        }
+    }
+
+    private fun captureRotation(): Int {
+        val id = selectedId ?: return 0
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val chars = manager.getCameraCharacteristics(id)
+        val sensor = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        val front =
+            chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+        val display = displayRotationDegrees()
+        return CameraBufferRotation.clockwisePostRotate(
+            sensorOrientation = sensor,
+            displayRotationDegrees = display,
+            frontFacing = front,
+        )
+    }
+
+    private fun captureBufferSize(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        rotationDegrees: Int,
+    ): Pair<Int, Int> {
+        return CameraBufferRotation.bufferSize(sourceWidth, sourceHeight, rotationDegrees)
+    }
+
+    private fun quarterTurns(): Int {
+        val turns = captureRotation() / 90
+        return ((turns % 4) + 4) % 4
+    }
+
+    private fun rotateAndCropMode(rotationDegrees: Int): Int {
+        if (Build.VERSION.SDK_INT < 31) {
+            return CaptureRequest.SCALER_ROTATE_AND_CROP_NONE
+        }
+        return when (rotationDegrees % 360) {
+            90 -> CaptureRequest.SCALER_ROTATE_AND_CROP_90
+            180 -> CaptureRequest.SCALER_ROTATE_AND_CROP_180
+            270 -> CaptureRequest.SCALER_ROTATE_AND_CROP_270
+            else -> CaptureRequest.SCALER_ROTATE_AND_CROP_NONE
+        }
+    }
+
+    private fun supportsRotateAndCrop(
+        chars: CameraCharacteristics,
+        mode: Int,
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < 31) {
+            return false
+        }
+        if (mode == CaptureRequest.SCALER_ROTATE_AND_CROP_NONE) {
+            return true
+        }
+        val modes = chars.get(CameraCharacteristics.SCALER_AVAILABLE_ROTATE_AND_CROP_MODES)
+        return modes?.contains(mode) == true
+    }
+
+    private fun applyRotateAndCrop(
+        request: CaptureRequest.Builder,
+        chars: CameraCharacteristics,
+    ) {
+        if (Build.VERSION.SDK_INT < 31) {
+            return
+        }
+        val mode = rotateAndCropMode(captureRotation())
+        if (supportsRotateAndCrop(chars, mode)) {
+            request.set(CaptureRequest.SCALER_ROTATE_AND_CROP, mode)
+        }
+    }
+
+    private fun blit(
+        bitmap: Bitmap,
+        dest: Surface,
+    ) {
+        val canvas =
+            try {
+                dest.lockCanvas(null)
+            } catch (_: Exception) {
+                dest.lockHardwareCanvas()
+            }
+        try {
+            canvas.drawColor(android.graphics.Color.BLACK)
+            canvas.drawBitmap(bitmap, null, Rect(0, 0, canvas.width, canvas.height), null)
+        } finally {
+            dest.unlockCanvasAndPost(canvas)
+        }
+    }
+
+    private fun isFrontFacing(): Boolean {
+        val id = selectedId ?: return false
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        return manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
+            CameraCharacteristics.LENS_FACING_FRONT
+    }
+
+    // CameraX ImageUtil.rotateBitmap = postRotate. TransformationInfo:
+    // front mirror after rotation, vertical axis of the upright buffer.
+    private fun rotateUpright(bitmap: Bitmap): Bitmap {
+        val degrees = captureRotation()
+        val front = isFrontFacing()
+        val rotated =
+            if (degrees == 0) {
+                bitmap
+            } else {
+                val matrix = Matrix()
+                matrix.postRotate(degrees.toFloat())
+                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            }
+        if (!front) {
+            return rotated
+        }
+        val mirror = Matrix()
+        mirror.postScale(-1f, 1f, rotated.width / 2f, rotated.height / 2f)
+        return Bitmap.createBitmap(rotated, 0, 0, rotated.width, rotated.height, mirror, true)
     }
 }

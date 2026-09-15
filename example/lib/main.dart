@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
+import 'package:flutter_ai_communications_example/camera_facing_caption.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/host_preference_store.dart';
 import 'package:flutter_ai_communications_example/meeting/flutter_webrtc_loopback.dart';
@@ -444,6 +445,11 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() => _screenSources = sources);
       }
     }, onError: (_) {});
+    session.videoSurfaces.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     session.capture.listen((bytes) {
       if (!mounted) {
         return;
@@ -502,12 +508,105 @@ final class _SessionPageState extends State<SessionPage> {
     );
   }
 
-  Future<void> _shareScreen(Session session) async {
+  Future<void> _openSharePicker(Session session) async {
+    if (_osPickerCatalog) {
+      await _shareScreen(session);
+      return;
+    }
+    await session.beginScreenPick();
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              key: const Key('share-picker'),
+              title: const Text('Share'),
+              content: SizedBox(
+                width: 480,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilterChip(
+                          key: const Key('screen-sound'),
+                          label: const Text('Include sound'),
+                          selected: _includeSound,
+                          onSelected: (value) {
+                            setState(() => _includeSound = value);
+                            setDialogState(() {});
+                          },
+                        ),
+                        FilterChip(
+                          key: const Key('screen-motion'),
+                          label: const Text('Optimize'),
+                          selected: _screenMotion,
+                          onSelected: (value) {
+                            setState(() => _screenMotion = value);
+                            setDialogState(() {});
+                          },
+                        ),
+                        FilterChip(
+                          key: const Key('screen-cursor'),
+                          label: const Text('Cursor'),
+                          selected: _screenCursor,
+                          onSelected: (value) {
+                            setState(() => _screenCursor = value);
+                            setDialogState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    for (final source in _screenSources)
+                      if (source.kind != ScreenSourceKind.systemPicker)
+                        ListTile(
+                          key: Key('screen-source-${source.id}'),
+                          title: Text(source.name),
+                          subtitle: Text(
+                            '${source.kind.name}'
+                            '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
+                          ),
+                          selected: source.id == _indicatedScreenId,
+                          trailing: _screenPreviewThumb(session, source),
+                          onTap: () {
+                            Navigator.of(dialogContext).pop();
+                            unawaited(
+                              _shareScreen(session, sourceId: source.id),
+                            );
+                          },
+                        ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _shareScreen(Session session, {String? sourceId}) async {
     if (_phase != _HarnessPhase.meeting) {
       setState(() => _screenStatus = 'blocked');
       return;
     }
-    final sourceId =
+    if (sourceId != null) {
+      _indicatedScreenId = sourceId;
+    }
+    final resolvedId =
         _indicatedScreenId ??
         (_osPickerCatalog
             ? _screenSources.first.id
@@ -517,16 +616,16 @@ final class _SessionPageState extends State<SessionPage> {
                   )
                   .firstOrNull
                   ?.id);
-    if (sourceId == null) {
+    if (resolvedId == null) {
       setState(() => _screenStatus = 'none');
       return;
     }
     if (!_osPickerCatalog) {
       await session.beginScreenPick();
-      await session.indicateScreenSource(sourceId);
+      await session.indicateScreenSource(resolvedId);
     }
     final result = await session.startScreenShare(
-      sourceId,
+      resolvedId,
       includeSystemAudio: _includeSound,
       cursor: _screenCursor,
       motion: _screenMotion,
@@ -604,8 +703,8 @@ final class _SessionPageState extends State<SessionPage> {
               onOpen: () => session?.openIsolationSettings(),
             ),
           if (_phase == _HarnessPhase.meeting && session != null) ...[
-            SizedBox(
-              height: 240,
+            Expanded(
+              flex: 3,
               child: LoopbackMeetingStage(
                 key: const Key('meeting'),
                 session: session,
@@ -615,6 +714,15 @@ final class _SessionPageState extends State<SessionPage> {
             ),
             MeetingBar(
               session: session,
+              cameras: _cameras,
+              selectedCameraId: session.selectedCameraId,
+              onSelectCamera: (id) async {
+                await session.selectCamera(id);
+                setState(() {});
+              },
+              processor: session.videoProcessor,
+              onProcessor: _setProcessor,
+              replaceStill: _replaceStill ?? const [],
               onMute: () {
                 if (session.isMuted) {
                   session.unmute();
@@ -635,7 +743,7 @@ final class _SessionPageState extends State<SessionPage> {
                 }
                 setState(() {});
               },
-              onShare: () => _shareScreen(session),
+              onShare: () => _openSharePicker(session),
               onStopShare: () => _stopScreenShare(session),
               onPause: () async {
                 if (session.isPaused) {
@@ -669,6 +777,7 @@ final class _SessionPageState extends State<SessionPage> {
           ],
           Expanded(
             child: ListView(
+              cacheExtent: 4000,
               padding: const EdgeInsets.all(20),
               children: _harnessChildren(context, session, isolation),
             ),
@@ -699,7 +808,7 @@ final class _SessionPageState extends State<SessionPage> {
       const SizedBox(height: 8),
       Text(
         _phase == _HarnessPhase.meeting
-            ? 'Loopback meeting. Media stays on this device. Share and device picks are below.'
+            ? 'Loopback meeting. Share, camera, and background are on the bar.'
             : 'Pick devices, then Join. Permission is requested on Enter lobby.',
         style: Theme.of(context).textTheme.bodyMedium,
       ),
@@ -756,13 +865,12 @@ final class _SessionPageState extends State<SessionPage> {
             ),
           ],
         ),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: _pipelineKeys(session),
-      ),
       if (_phase != _HarnessPhase.meeting) ...[
         const SizedBox(height: 16),
-        SizedBox(height: 220, child: _selfView(session)),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 280),
+          child: _selfView(session),
+        ),
         const SizedBox(height: 12),
         SizedBox(
           height: 72,
@@ -771,6 +879,8 @@ final class _SessionPageState extends State<SessionPage> {
             child: const SizedBox.expand(),
           ),
         ),
+      ],
+      if (_phase != _HarnessPhase.meeting) ...[
         if (session != null) ...[
           const SizedBox(height: 24),
           Wrap(
@@ -810,79 +920,91 @@ final class _SessionPageState extends State<SessionPage> {
           ),
         ],
       ],
-      const SizedBox(height: 16),
-      Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      for (final camera in _cameras)
-        ListTile(
-          key: Key('camera-${camera.id}'),
-          title: Text(camera.name),
-          subtitle: Text(camera.facing.name),
-          selected:
-              camera.id ==
-              (session == null
-                  ? _store.cameras.resolve(_cameras)?.id
-                  : (_manager.cameraPreview?.selectedCameraId ??
-                        session.selectedCameraId)),
-          onTap: () async {
-            if (session == null) {
-              _store.preferCamera(camera.id);
-              _manager.bindCameraPreference(_store.cameras);
-              setState(() {});
-              return;
-            }
-            final preview = _manager.cameraPreview;
-            if (preview != null) {
-              await preview.selectCamera(camera.id);
-              setState(() {});
-              return;
-            }
-            await session.selectCamera(camera.id);
-            setState(() {});
-          },
-        ),
-      if (session != null) ...[
+      if (_phase != _HarnessPhase.meeting) ...[
         const SizedBox(height: 16),
-        Text('Video processor', style: Theme.of(context).textTheme.titleMedium),
+        Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            FilterChip(
-              key: const Key('processor-none'),
-              label: const Text('None'),
-              selected: processor is NoneVideoProcessor,
-              onSelected: (_) => _setProcessor(const NoneVideoProcessor()),
-            ),
-            FilterChip(
-              key: const Key('processor-blur-50'),
-              label: const Text('Some'),
-              selected: processor == const BlurVideoProcessor(intensity: 50),
-              onSelected: (_) =>
-                  _setProcessor(const BlurVideoProcessor(intensity: 50)),
-            ),
-            FilterChip(
-              key: const Key('processor-blur-100'),
-              label: const Text('Lots'),
-              selected: processor == const BlurVideoProcessor(intensity: 100),
-              onSelected: (_) =>
-                  _setProcessor(const BlurVideoProcessor(intensity: 100)),
-            ),
-            FilterChip(
-              key: const Key('processor-replace'),
-              label: const Text('Replace'),
-              selected: processor is ReplaceVideoProcessor,
-              onSelected: (_) {
-                final still = _replaceStill;
-                if (still == null) {
-                  return;
-                }
-                _setProcessor(ReplaceVideoProcessor(bytes: still));
-              },
-            ),
-          ],
-        ),
+        for (final camera in _cameras)
+          ListTile(
+            key: Key('camera-${camera.id}'),
+            title: Text(camera.name),
+            subtitle: switch (cameraFacingCaption(camera.facing)) {
+              final caption? => Text(caption),
+              _ => null,
+            },
+            selected:
+                camera.id ==
+                (session == null
+                    ? _store.cameras.resolve(_cameras)?.id
+                    : (_manager.cameraPreview?.selectedCameraId ??
+                          session.selectedCameraId)),
+            onTap: () async {
+              if (session == null) {
+                _store.preferCamera(camera.id);
+                _manager.bindCameraPreference(_store.cameras);
+                setState(() {});
+                return;
+              }
+              final preview = _manager.cameraPreview;
+              if (preview != null) {
+                await preview.selectCamera(camera.id);
+                setState(() {});
+                return;
+              }
+              await session.selectCamera(camera.id);
+              setState(() {});
+            },
+          ),
+        if (session != null) ...[
+          const SizedBox(height: 16),
+          Text(
+            'Video processor',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                key: const Key('processor-none'),
+                label: const Text('None'),
+                selected: processor is NoneVideoProcessor,
+                onSelected: (_) => _setProcessor(const NoneVideoProcessor()),
+              ),
+              FilterChip(
+                key: const Key('processor-blur-50'),
+                label: const Text('Some'),
+                selected: processor == const BlurVideoProcessor(intensity: 50),
+                onSelected: (_) =>
+                    _setProcessor(const BlurVideoProcessor(intensity: 50)),
+              ),
+              FilterChip(
+                key: const Key('processor-blur-100'),
+                label: const Text('Lots'),
+                selected: processor == const BlurVideoProcessor(intensity: 100),
+                onSelected: (_) =>
+                    _setProcessor(const BlurVideoProcessor(intensity: 100)),
+              ),
+              FilterChip(
+                key: const Key('processor-replace'),
+                label: const Text('Replace'),
+                selected: processor is ReplaceVideoProcessor,
+                onSelected: (_) {
+                  final still = _replaceStill;
+                  if (still == null) {
+                    return;
+                  }
+                  _setProcessor(ReplaceVideoProcessor(bytes: still));
+                },
+              ),
+            ],
+          ),
+        ],
       ],
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _pipelineKeys(session),
+      ),
       PreferenceEditor(
         catalog: _endpoints,
         draft: _draft,
@@ -933,91 +1055,59 @@ final class _SessionPageState extends State<SessionPage> {
             }
           },
         ),
-      const SizedBox(height: 24),
-      Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      Text(
-        _phase == _HarnessPhase.lobby
-            ? 'Join first. Lobby cannot start screen send.'
-            : 'Start a meeting Session, pick a source, Share. Loopback is the send surface.',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      if (_screenStatus != null)
+      if (_phase != _HarnessPhase.meeting) ...[
+        const SizedBox(height: 24),
+        Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        Text(
+          _phase == _HarnessPhase.lobby
+              ? 'Join first. Lobby cannot start screen send.'
+              : 'Start a meeting Session, then Share from the bar to pick a screen or window.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (_screenStatus != null)
+          Text(
+            _screenStatus!,
+            key: const Key('screen-status'),
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              key: const Key('screen-session'),
+              onPressed: _phase == _HarnessPhase.idle
+                  ? _startScreenSession
+                  : null,
+              child: const Text('Start session'),
+            ),
+            FilterChip(
+              key: const Key('screen-sound'),
+              label: const Text('Include sound'),
+              selected: _includeSound,
+              onSelected: (value) => setState(() => _includeSound = value),
+            ),
+            FilterChip(
+              key: const Key('screen-motion'),
+              label: const Text('Optimize'),
+              selected: _screenMotion,
+              onSelected: (value) => setState(() => _screenMotion = value),
+            ),
+            FilterChip(
+              key: const Key('screen-cursor'),
+              label: const Text('Cursor'),
+              selected: _screenCursor,
+              onSelected: (value) => setState(() => _screenCursor = value),
+            ),
+          ],
+        ),
+      ] else if (_screenStatus != null)
         Text(
           _screenStatus!,
           key: const Key('screen-status'),
           style: Theme.of(context).textTheme.labelLarge,
-        ),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: [
-          FilledButton(
-            key: const Key('screen-session'),
-            onPressed: _phase == _HarnessPhase.idle
-                ? _startScreenSession
-                : null,
-            child: const Text('Start session'),
-          ),
-          FilterChip(
-            key: const Key('screen-sound'),
-            label: const Text('Include sound'),
-            selected: _includeSound,
-            onSelected: (value) async {
-              setState(() => _includeSound = value);
-              if (session?.isScreenSending == true) {
-                await session!.setIncludeSystemAudio(value);
-                setState(() {});
-              }
-            },
-          ),
-          FilterChip(
-            key: const Key('screen-motion'),
-            label: const Text('Optimize'),
-            selected: _screenMotion,
-            onSelected: (value) async {
-              setState(() => _screenMotion = value);
-              if (session?.isScreenSending == true) {
-                await session!.setScreenMotion(value);
-                setState(() {});
-              }
-            },
-          ),
-          FilterChip(
-            key: const Key('screen-cursor'),
-            label: const Text('Cursor'),
-            selected: _screenCursor,
-            onSelected: (value) async {
-              setState(() => _screenCursor = value);
-              if (session?.isScreenSending == true) {
-                await session!.setScreenCursor(value);
-                setState(() {});
-              }
-            },
-          ),
-        ],
-      ),
-      const SizedBox(height: 8),
-      for (final source in _screenSources)
-        ListTile(
-          key: Key('screen-source-${source.id}'),
-          title: Text(source.name),
-          subtitle: Text(
-            '${source.kind.name}'
-            '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
-          ),
-          selected: source.id == _indicatedScreenId,
-          trailing: _screenPreviewThumb(session, source),
-          onTap: session == null || _phase != _HarnessPhase.meeting
-              ? null
-              : () async {
-                  if (!_osPickerCatalog) {
-                    await session.beginScreenPick();
-                    await session.indicateScreenSource(source.id);
-                  }
-                  setState(() => _indicatedScreenId = source.id);
-                },
         ),
       if (session != null) ...[
         const SizedBox(height: 16),
@@ -1039,7 +1129,12 @@ final class _SessionPageState extends State<SessionPage> {
   Widget _selfView(Session? session) {
     final preview = _manager.cameraPreview;
     if (preview != null) {
-      return _videoSurface(preview.surface);
+      return VideoSurfaceView(
+        key: const Key('self-view'),
+        surface: preview.surface,
+        viewTypePrefix: 'fac-camera',
+        followUiOrientation: true,
+      );
     }
     final surface = session?.videoSurface;
     if (session == null ||
@@ -1047,27 +1142,25 @@ final class _SessionPageState extends State<SessionPage> {
         !session.isCameraEnabled ||
         session.isVideoMuted ||
         surface == null) {
-      return ColoredBox(
-        color: const Color(0xFF111118),
-        child: Center(
-          child: Text(
-            session?.videoUnavailableReason ?? 'Camera off',
-            key: const Key('self-view'),
-            style: const TextStyle(color: Color(0xFFB0B0C0)),
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ColoredBox(
+          color: const Color(0xFF111118),
+          child: Center(
+            child: Text(
+              session?.videoUnavailableReason ?? 'Camera off',
+              key: const Key('self-view'),
+              style: const TextStyle(color: Color(0xFFB0B0C0)),
+            ),
           ),
         ),
       );
     }
-    return _videoSurface(surface, session?.nativeVideoFormat);
-  }
-
-  Widget _videoSurface(VideoSurface surface, [VideoFormat? format]) {
     return VideoSurfaceView(
       key: const Key('self-view'),
       surface: surface,
       viewTypePrefix: 'fac-camera',
-      pixelWidth: format?.width,
-      pixelHeight: format?.height,
+      followUiOrientation: true,
     );
   }
 
@@ -1076,15 +1169,16 @@ final class _SessionPageState extends State<SessionPage> {
       return null;
     }
     final preview = session.screenPreview(source.id);
-    if (preview == null || preview.kind != VideoSurfaceKind.texture) {
+    if (preview == null) {
       return null;
     }
     return SizedBox(
       width: 72,
       height: 40,
-      child: Texture(
+      child: VideoSurfaceView(
         key: Key('screen-preview-${source.id}'),
-        textureId: preview.handle,
+        surface: preview,
+        viewTypePrefix: 'fac-screen',
       ),
     );
   }

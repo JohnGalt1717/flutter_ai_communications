@@ -487,7 +487,7 @@ struct PersonBackgroundProcessor::Impl {
       return;
     }
     const float t = intensity / 100.f;
-    const float factor = std::pow(1.f - t, 1.5f) * 0.88f + 0.12f;
+    const float factor = std::pow(1.f - t, 2.5f) * 0.88f + 0.12f;
     const int small_w = std::max(8, static_cast<int>(width * factor));
     const int small_h = std::max(8, static_cast<int>(height * factor));
     scratch_.assign(static_cast<size_t>(small_w) * small_h * 4, 0);

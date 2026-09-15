@@ -5,7 +5,7 @@ import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 ///
 /// Texture id on most platforms; HtmlElementView on web. Callers do not
 /// import `RTCVideoView` for local send. Inbound WebRTC views stay host
-/// PeerConnection code.
+/// PeerConnection code. The feed is always contained — never stretched.
 final class VideoSurfaceView extends StatelessWidget {
   /// Creates a host Video surface widget.
   const VideoSurfaceView({
@@ -13,9 +13,7 @@ final class VideoSurfaceView extends StatelessWidget {
     required this.surface,
     required this.viewTypePrefix,
     this.placeholder,
-    this.pixelWidth,
-    this.pixelHeight,
-    this.fit = BoxFit.cover,
+    this.followUiOrientation = false,
   });
 
   /// Surface to render, or null for [placeholder].
@@ -27,14 +25,10 @@ final class VideoSurfaceView extends StatelessWidget {
   /// Shown when [surface] is null.
   final Widget? placeholder;
 
-  /// Native frame width. Used with [pixelHeight] to keep aspect ratio.
-  final int? pixelWidth;
-
-  /// Native frame height.
-  final int? pixelHeight;
-
-  /// How the native frame fills the widget. Cover matches in-call tiles.
-  final BoxFit fit;
+  /// When true, the tile is portrait-shaped in portrait UI and
+  /// landscape-shaped in landscape UI (iOS Camera and Android Camera2
+  /// upright rasters). Screen send leaves this false so 16:9 stays 16:9.
+  final bool followUiOrientation;
 
   @override
   Widget build(BuildContext context) {
@@ -42,25 +36,66 @@ final class VideoSurfaceView extends StatelessWidget {
     if (surface == null) {
       return placeholder ?? const ColoredBox(color: Color(0xFF111118));
     }
-    final Widget child;
+    // HtmlElementView on web must sit in a tight pixel box. LayoutBuilder /
+    // AspectRatio inside ListView asserts in the viewport during mount.
     if (surface.kind == VideoSurfaceKind.htmlElement) {
-      child = HtmlElementView(viewType: '$viewTypePrefix-${surface.handle}');
-    } else {
-      child = Texture(textureId: surface.handle);
+      const width = 320.0;
+      final height = width / surface.aspectRatio;
+      return SizedBox(
+        width: width,
+        height: height,
+        child: ClipRect(
+          child: HtmlElementView(viewType: '$viewTypePrefix-${surface.handle}'),
+        ),
+      );
     }
-    final width = pixelWidth;
-    final height = pixelHeight;
-    if (width == null || height == null || width <= 0 || height <= 0) {
-      return ClipRect(child: child);
-    }
-    return FittedBox(
-      fit: fit,
-      clipBehavior: Clip.hardEdge,
-      child: SizedBox(
-        width: width.toDouble(),
-        height: height.toDouble(),
-        child: child,
-      ),
+    // Texture fills its layout size and ignores FittedBox / RotatedBox.
+    // Camera tiles follow the UI orientation so a landscape session is a
+    // wide box (iOS RotationCoordinator already reports 16:9; Android
+    // Camera2 rasters catch up on cameraFormat).
+    final portrait = MediaQuery.orientationOf(context) == Orientation.portrait;
+    final aspect = followUiOrientation
+        ? surface.displayAspectRatio(portrait: portrait)
+        : surface.rasterAspect;
+    return _ContainedFeed(
+      aspectRatio: aspect,
+      child: Texture(textureId: surface.handle),
+    );
+  }
+}
+
+final class _ContainedFeed extends StatelessWidget {
+  const _ContainedFeed({required this.aspectRatio, required this.child});
+
+  final double aspectRatio;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final maxHeight = constraints.maxHeight;
+        final widthBounded = maxWidth.isFinite;
+        final heightBounded = maxHeight.isFinite;
+        final Size box;
+        if (widthBounded && heightBounded) {
+          box = applyBoxFit(
+            BoxFit.contain,
+            Size(aspectRatio, 1),
+            Size(maxWidth, maxHeight),
+          ).destination;
+        } else if (widthBounded) {
+          box = Size(maxWidth, maxWidth / aspectRatio);
+        } else if (heightBounded) {
+          box = Size(maxHeight * aspectRatio, maxHeight);
+        } else {
+          box = Size(aspectRatio * 720, 720);
+        }
+        return Align(
+          child: SizedBox(width: box.width, height: box.height, child: child),
+        );
+      },
     );
   }
 }

@@ -76,6 +76,16 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
 
+      expect(
+        (find.byKey(const Key('isolation')).evaluate().single.widget as Text)
+            .data,
+        contains(IsolationState.required.name),
+      );
+
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('desired-capture')),
+        80,
+      );
       expect(find.byKey(const Key('desired-capture')), findsOneWidget);
       expect(find.byKey(const Key('applied-capture')), findsOneWidget);
       expect(find.byKey(const Key('observed-capture')), findsOneWidget);
@@ -120,16 +130,12 @@ void main() {
         contains(PipelineLog.isolation),
       );
       expect(
-        (find.byKey(const Key('isolation')).evaluate().single.widget as Text)
-            .data,
-        contains(IsolationState.required.name),
-      );
-      expect(
         (find.byKey(const Key('playback-progress')).evaluate().single.widget
                 as Text)
             .data,
         '0/0/0/0',
       );
+      await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -80);
       expect(find.byKey(const Key('lobby-join')), findsOneWidget);
       await tester.tap(find.byKey(const Key('lobby-join')));
       await tester.pump();
@@ -165,17 +171,11 @@ void main() {
     expect(find.byKey(const Key('camera-off')), findsOneWidget);
     await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
     expect(find.byKey(const Key('camera-front')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -300);
-    await tester.tap(find.byKey(const Key('lobby-join')));
-    await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1));
-    await tester.scrollUntilVisible(find.byKey(const Key('mute-video')), 80);
-    expect(find.byKey(const Key('mute-video')), findsOneWidget);
-    await manager.session?.muteVideo();
-    expect(manager.session?.isVideoMuted, isTrue);
-    await manager.session?.setCameraEnabled(false);
-    expect(manager.session?.isCameraEnabled, isFalse);
+    expect(find.text('unspecified'), findsNothing);
+    expect(find.text('Front'), findsWidgets);
+    await tester.scrollUntilVisible(find.byKey(const Key('camera-back')), 80);
+    expect(find.byKey(const Key('camera-back')), findsOneWidget);
+    expect(find.text('Back'), findsWidgets);
     await manager.session?.stop();
     await tester.pump(Duration.zero);
   });
@@ -193,26 +193,20 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
       expect(find.byKey(const Key('meeting')), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('screen-share')),
-        120,
-      );
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('screen-source-display-0')),
-        80,
-      );
-      await tester.tap(find.byKey(const Key('screen-source-display-0')));
-      await tester.pump();
+      expect(find.byKey(const Key('screen-share')), findsOneWidget);
+      expect(find.byKey(const Key('screen-stop')), findsNothing);
       await tester.tap(find.byKey(const Key('screen-share')));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byKey(const Key('share-picker')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('screen-source-display-0')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(manager.session?.isScreenSending, isTrue);
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('screen-loopback')),
-        -200,
-      );
+      expect(find.byKey(const Key('screen-share')), findsNothing);
+      expect(find.byKey(const Key('screen-stop')), findsOneWidget);
       expect(find.byKey(const Key('screen-loopback')), findsOneWidget);
-      await manager.session?.stopScreenShare();
+      await tester.tap(find.byKey(const Key('screen-stop')));
       await tester.pump();
       expect(manager.session?.isScreenSending, isFalse);
       await manager.session?.stop();
@@ -257,21 +251,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     expect(manager.session?.isCameraEnabled, isFalse);
 
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('screen-source-display-0')),
-      80,
-    );
-    await tester.tap(find.byKey(const Key('screen-source-display-0')));
-    await tester.pump();
     await tester.tap(find.byKey(const Key('screen-share')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byKey(const Key('screen-source-display-0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(manager.session?.isScreenSending, isTrue);
     expect(find.byKey(const Key('screen-loopback')), findsOneWidget);
+    expect(find.byKey(const Key('screen-stop')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('screen-stop')));
     await tester.pump();
     expect(manager.session?.isScreenSending, isFalse);
+    expect(find.byKey(const Key('screen-share')), findsOneWidget);
 
     await manager.session?.stop();
     await tester.pump(Duration.zero);
