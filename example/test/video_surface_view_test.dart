@@ -102,6 +102,34 @@ void main() {
     expect(size.width / size.height, closeTo(16 / 9, 0.01));
   });
 
+  testWidgets(
+    'followUiOrientation makes a 16:9 raster 9:16 in portrait UI',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 400,
+              height: 800,
+              child: VideoSurfaceView(
+                surface: VideoSurface(handle: 8, width: 1280, height: 720),
+                viewTypePrefix: 'fac-camera',
+                followUiOrientation: true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final size = tester.getSize(find.byType(Texture));
+      expect(size.width / size.height, closeTo(9 / 16, 0.01));
+    },
+  );
+
   testWidgets('iOS 9:16 raster stays 9:16 in a portrait slot', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
