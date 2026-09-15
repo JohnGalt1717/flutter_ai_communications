@@ -325,7 +325,17 @@ class AndroidCameraGraph(
     }
 
     fun select(cameraId: String) {
-        start(cameraId, 1280, 720, cameraEnabled, videoMuted, onResult = {})
+        // Keep the SurfaceProducer so Session/CameraPreview keep a live texture
+        // id. selectCameraNative is void and cameraFormat only updates size.
+        start(
+            cameraId,
+            1280,
+            720,
+            cameraEnabled,
+            videoMuted,
+            onResult = {},
+            keepTexture = true,
+        )
     }
 
     fun setEnabled(enabled: Boolean) {
@@ -336,7 +346,15 @@ class AndroidCameraGraph(
             closeCameraLocked()
         } else {
             selectedId?.let { id ->
-                start(id, 1280, 720, true, videoMuted, onResult = {})
+                start(
+                    id,
+                    1280,
+                    720,
+                    true,
+                    videoMuted,
+                    onResult = {},
+                    keepTexture = true,
+                )
             }
         }
     }
