@@ -22,6 +22,8 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
   private var frameCount = 0
   private var liveFrames = 0
   var onFormat: ((Int, Int) -> Void)?
+  var onCatalog: (([[String: Any]]) -> Void)?
+  private var catalogObservers: [NSObjectProtocol] = []
   private var rotationCoordinator: AnyObject?
   private var rotationObservation: NSKeyValueObservation?
   private let bufferAttrs: [CFString: Any] = [
@@ -48,9 +50,51 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     return Unmanaged.passRetained(buffer)
   }
 
+  func startCatalogWatch() {
+    guard catalogObservers.isEmpty else {
+      return
+    }
+    let center = NotificationCenter.default
+    let emit: (Notification) -> Void = { [weak self] _ in
+      self?.emitCatalog()
+    }
+    catalogObservers.append(
+      center.addObserver(
+        forName: .AVCaptureDeviceWasConnected,
+        object: nil,
+        queue: .main,
+        using: emit
+      )
+    )
+    catalogObservers.append(
+      center.addObserver(
+        forName: .AVCaptureDeviceWasDisconnected,
+        object: nil,
+        queue: .main,
+        using: emit
+      )
+    )
+  }
+
+  func emitCatalog() {
+    onCatalog?(enumerate())
+  }
+
+  private func videoDeviceTypes() -> [AVCaptureDevice.DeviceType] {
+    var types: [AVCaptureDevice.DeviceType] = [
+      .builtInWideAngleCamera,
+      .builtInTelephotoCamera,
+      .builtInUltraWideCamera,
+    ]
+    if #available(iOS 17.0, *) {
+      types.append(.external)
+    }
+    return types
+  }
+
   func enumerate() -> [[String: Any]] {
     let discovery = AVCaptureDevice.DiscoverySession(
-      deviceTypes: [.builtInWideAngleCamera, .builtInTelephotoCamera, .builtInUltraWideCamera],
+      deviceTypes: videoDeviceTypes(),
       mediaType: .video,
       position: .unspecified
     )
@@ -106,7 +150,7 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
       return ["status": "started", "textureId": textureId, "width": width, "height": height, "frameRate": frameRate]
     }
     let devices = AVCaptureDevice.DiscoverySession(
-      deviceTypes: [.builtInWideAngleCamera, .builtInTelephotoCamera, .builtInUltraWideCamera],
+      deviceTypes: videoDeviceTypes(),
       mediaType: .video,
       position: .unspecified
     ).devices

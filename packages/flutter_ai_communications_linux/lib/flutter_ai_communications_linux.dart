@@ -254,6 +254,9 @@ final class FlutterAiCommunicationsLinux
   Future<List<CameraEndpoint>> enumerateCameras() => _camera.enumerate();
 
   @override
+  Stream<List<CameraEndpoint>> get cameraCatalog => _camera.catalog;
+
+  @override
   Future<CameraPermission> requestCameraPermission() =>
       _camera.requestPermission();
 

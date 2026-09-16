@@ -294,6 +294,8 @@ class MethodChannelCommunicationsPlatform
   final Map<String, VideoSurface> _screenPreviews = {};
   final StreamController<List<ScreenSource>> _screenCatalogOut =
       StreamController<List<ScreenSource>>.broadcast();
+  final StreamController<List<CameraEndpoint>> _cameraCatalogOut =
+      StreamController<List<CameraEndpoint>>.broadcast();
 
   @override
   VideoSurface? get lastVideoSurface => _lastVideoSurface;
@@ -324,6 +326,13 @@ class MethodChannelCommunicationsPlatform
     } on MissingPluginException {
       return const [];
     }
+  }
+
+  @override
+  Stream<List<CameraEndpoint>> get cameraCatalog async* {
+    _ensureListening();
+    yield await enumerateCameras();
+    yield* _cameraCatalogOut.stream;
   }
 
   @override
@@ -775,6 +784,8 @@ class MethodChannelCommunicationsPlatform
     switch (type) {
       case 'catalog':
         _catalogOut.add(_readEndpoints(payload as List<dynamic>?));
+      case 'cameraCatalog':
+        _cameraCatalogOut.add(_readCameras(payload as List<dynamic>?));
       case 'cameraFormat':
         if (payload is Map) {
           final width = _asInt(payload['width']);
@@ -915,6 +926,7 @@ class MethodChannelCommunicationsPlatform
     await _focusOut.close();
     await _routeOut.close();
     await _videoSurfaceOut.close();
+    await _cameraCatalogOut.close();
   }
 }
 

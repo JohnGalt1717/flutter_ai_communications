@@ -1,11 +1,16 @@
 #include "include/flutter_ai_communications_windows/flutter_ai_communications_windows_plugin.h"
 
+#include <flutter/event_channel.h>
+#include <flutter/event_stream_handler_functions.h>
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
 #include <memory>
+#include <optional>
 #include <string>
+
+#include <windows.h>
 
 #include "camera_graph.h"
 #include "screen_graph.h"
@@ -58,7 +63,8 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
 
   explicit FlutterAiCommunicationsWindowsPlugin(
       flutter::PluginRegistrarWindows* registrar)
-      : camera_(registrar->texture_registrar()),
+      : registrar_(registrar),
+        camera_(registrar->texture_registrar()),
         screen_(registrar->texture_registrar(),
                 registrar->GetView() == nullptr
                     ? nullptr
@@ -71,9 +77,37 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
         [this](const auto& call, auto result) {
           HandleMethodCall(call, std::move(result));
         });
+    events_ =
+        std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+            registrar->messenger(), "flutter_ai_communications/events",
+            &flutter::StandardMethodCodec::GetInstance());
+    events_->SetStreamHandler(
+        std::make_unique<flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
+            [this](const flutter::EncodableValue*,
+                   std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>
+                       sink) {
+              event_sink_ = std::move(sink);
+              return nullptr;
+            },
+            [this](const flutter::EncodableValue*) {
+              event_sink_.reset();
+              return nullptr;
+            }));
+    window_proc_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+        [this](HWND, UINT message, WPARAM, LPARAM)
+            -> std::optional<LRESULT> {
+          if (message == WM_DEVICECHANGE) {
+            EmitCameraCatalog();
+          }
+          return std::nullopt;
+        });
   }
 
-  ~FlutterAiCommunicationsWindowsPlugin() override = default;
+  ~FlutterAiCommunicationsWindowsPlugin() override {
+    if (window_proc_id_.has_value()) {
+      registrar_->UnregisterTopLevelWindowProcDelegate(*window_proc_id_);
+    }
+  }
 
   FlutterAiCommunicationsWindowsPlugin(
       const FlutterAiCommunicationsWindowsPlugin&) = delete;
@@ -193,7 +227,23 @@ class FlutterAiCommunicationsWindowsPlugin : public flutter::Plugin {
     result->NotImplemented();
   }
 
+  void EmitCameraCatalog() {
+    if (event_sink_ == nullptr) {
+      return;
+    }
+    flutter::EncodableMap event;
+    event[flutter::EncodableValue("type")] =
+        flutter::EncodableValue("cameraCatalog");
+    event[flutter::EncodableValue("payload")] =
+        flutter::EncodableValue(camera_.Enumerate());
+    event_sink_->Success(flutter::EncodableValue(event));
+  }
+
+  flutter::PluginRegistrarWindows* registrar_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
+  std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> events_;
+  std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> event_sink_;
+  std::optional<int> window_proc_id_;
   CameraGraph camera_;
   ScreenGraph screen_;
 };

@@ -26,6 +26,7 @@ final class Session {
     this.cameraPreference = const CameraPreference(),
     VideoProcessor videoProcessor = const NoneVideoProcessor(),
     String? cameraId,
+    bool cameraPreferenceControlled = true,
     bool cameraEnabled = true,
     bool videoMuted = false,
     VideoSurface? videoSurface,
@@ -49,6 +50,7 @@ final class Session {
        _statusController = StreamController<SessionStatus>.broadcast(),
        _videoProcessor = videoProcessor,
        _cameraId = cameraId,
+       _cameraPreferenceControlled = cameraPreferenceControlled,
        _cameraEnabled = cameraEnabled,
        _videoMuted = videoMuted,
        _videoSurface = videoSurface,
@@ -71,6 +73,10 @@ final class Session {
       onError: _coverageController.addError,
     );
     _catalogSub = platform.endpointCatalog.listen(_onCatalog);
+    _cameraCatalogSub = platform.cameraCatalog.listen(
+      _onCameraCatalog,
+      onError: (_) {},
+    );
     _pathSub = platform.pathCoverage.listen(_onPathCoverage);
     _focusSub = platform.audioFocus.listen(_onAudioFocus);
     _routeSub = platform.osRouteChanges.listen(_onOsRoute);
@@ -398,6 +404,8 @@ final class Session {
 
   String? _cameraId;
   late bool _cameraEnabled;
+  late bool _cameraPreferenceControlled;
+  List<CameraEndpoint> _cameras = const [];
   late bool _videoMuted;
   VideoSurface? _videoSurface;
   VideoFormat? _nativeVideoFormat;
@@ -408,6 +416,7 @@ final class Session {
       Map<VideoSink, String>.identity();
   var _nextVideoSinkToken = 0;
   StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
+  StreamSubscription<List<CameraEndpoint>>? _cameraCatalogSub;
   StreamSubscription<VideoSurface?>? _videoSurfaceSub;
   var _screenPickOpen = false;
   var _screenSending = false;
@@ -478,6 +487,7 @@ final class Session {
       return;
     }
     _cameraId = cameraId;
+    _cameraPreferenceControlled = false;
     await _platform.selectCameraNative(cameraId);
     _nativeVideoFormat = _platform.lastNativeVideoFormat;
     _notifyVideoSinks();
@@ -945,6 +955,7 @@ final class Session {
       unawaited(_isolationSub?.cancel());
       unawaited(_coverageSub?.cancel());
       unawaited(_catalogSub?.cancel());
+      unawaited(_cameraCatalogSub?.cancel());
       unawaited(_pathSub?.cancel());
       unawaited(_focusSub?.cancel());
       unawaited(_routeSub?.cancel());
@@ -954,6 +965,7 @@ final class Session {
       _isolationSub = null;
       _coverageSub = null;
       _catalogSub = null;
+      _cameraCatalogSub = null;
       _pathSub = null;
       _focusSub = null;
       _routeSub = null;
@@ -1165,6 +1177,55 @@ final class Session {
     } else {
       unawaited(_clearPark(_ParkReason.interruption));
     }
+  }
+
+  void _onCameraCatalog(List<CameraEndpoint> catalog) {
+    _cameras = List<CameraEndpoint>.of(catalog);
+    unawaited(_enqueue(() => _applyCameraCatalog(catalog)));
+  }
+
+  Future<void> _applyCameraCatalog(List<CameraEndpoint> catalog) async {
+    if (_stopped) {
+      return;
+    }
+    if (!_cameraPreferenceControlled) {
+      if (_cameraId != null &&
+          catalog.every((camera) => camera.id != _cameraId)) {
+        _cameraPreferenceControlled = true;
+        _cameraId = null;
+      } else {
+        return;
+      }
+    }
+    final resolved = cameraPreference.resolve(catalog);
+    final nextId = resolved?.id;
+    if (nextId == _cameraId) {
+      return;
+    }
+    if (nextId == null) {
+      if (_cameraEnabled && cameraSend) {
+        await setCameraEnabled(false);
+        _videoUnavailableReason = 'none';
+      }
+      _cameraId = null;
+      return;
+    }
+    if (_cameraEnabled && cameraSend) {
+      await _platform.selectCameraNative(nextId);
+      _cameraId = nextId;
+      _nativeVideoFormat = _platform.lastNativeVideoFormat;
+      final surface = _platform.lastVideoSurface;
+      if (surface != null) {
+        _videoSurface = surface;
+      }
+      _notifyVideoSinks();
+      return;
+    }
+    if (cameraSend && !_cameraEnabled && _videoUnavailableReason == 'none') {
+      await enableVideo(cameraId: nextId);
+      return;
+    }
+    _cameraId = nextId;
   }
 
   void _onCatalog(List<Endpoint> catalog) {

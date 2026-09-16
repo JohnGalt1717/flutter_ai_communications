@@ -39,6 +39,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     instance.screen.attachCatalog { [weak instance] sources in
       instance?.eventSink?(["type": "screenCatalog", "payload": sources])
     }
+    instance.camera.onCatalog = { [weak instance] cameras in
+      instance?.eventSink?(["type": "cameraCatalog", "payload": cameras])
+    }
+    instance.camera.startCatalogWatch()
     let messenger = registrar.messenger
     let methods = FlutterMethodChannel(name: instance.methods, binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methods)

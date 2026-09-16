@@ -480,6 +480,45 @@ void main() {
     expect(catalog[2].applicationName, 'TextEdit');
   });
 
+  test('cameraCatalog yields the enumerate snapshot then live updates', () async {
+    await platform.dispose();
+    const events = EventChannel('flutter_ai_communications/events');
+    late MockStreamHandlerEventSink sink;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          sink = eventSink;
+        },
+      ),
+    );
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'enumerateCameras') {
+        return [
+          {'id': 'front', 'name': 'Front', 'facing': 'user'},
+        ];
+      }
+      return null;
+    });
+    platform = MethodChannelCommunicationsPlatform(platformName: 'android');
+    final seen = <List<CameraEndpoint>>[];
+    final sub = platform.cameraCatalog.listen(seen.add);
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isNotEmpty);
+    expect(seen.first.single.id, 'front');
+    sink.success({
+      'type': 'cameraCatalog',
+      'payload': [
+        {'id': 'front', 'name': 'Front', 'facing': 'user'},
+        {'id': 'usb', 'name': 'USB', 'facing': 'external'},
+      ],
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(seen.last.map((camera) => camera.id), ['front', 'usb']);
+    await sub.cancel();
+    messenger.setMockStreamHandler(events, null);
+  });
+
   test('screenSourceCatalog yields the enumerate snapshot first', () async {
     messenger.setMockMethodCallHandler(methods, (call) async {
       if (call.method == 'enumerateScreenSources') {

@@ -285,6 +285,18 @@ final class FlutterAiCommunicationsMacos
   }
 
   @override
+  Stream<List<CameraEndpoint>> get cameraCatalog async* {
+    final channel = _channel;
+    if (channel == null) {
+      yield const [];
+      return;
+    }
+    await for (final cameras in channel.cameraCatalog) {
+      yield overlayMacosCameraFacing(cameras);
+    }
+  }
+
+  @override
   Future<CameraPermission> requestCameraPermission() async {
     return _channel?.requestCameraPermission() ?? CameraPermission.denied;
   }

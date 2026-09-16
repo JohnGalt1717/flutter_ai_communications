@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -7,11 +10,18 @@ import 'camera_backend.dart';
 /// MethodChannel camera graph. Audio stays on Pulse FFI.
 final class MethodChannelCameraBackend implements CameraBackend {
   /// Creates a channel backend.
-  MethodChannelCameraBackend({MethodChannel? methods})
+  MethodChannelCameraBackend({MethodChannel? methods, EventChannel? events})
     : _methods =
-          methods ?? const MethodChannel('flutter_ai_communications/methods');
+          methods ?? const MethodChannel('flutter_ai_communications/methods'),
+      _events =
+          events ?? const EventChannel('flutter_ai_communications/events');
 
   final MethodChannel _methods;
+  final EventChannel _events;
+  final StreamController<List<CameraEndpoint>> _catalogOut =
+      StreamController<List<CameraEndpoint>>.broadcast();
+  StreamSubscription<dynamic>? _eventsSub;
+  StreamSubscription<FileSystemEvent>? _devWatch;
   VideoSurface? _lastSurface;
   VideoFormat? _lastFormat;
   var _frameCount = 0;
@@ -28,6 +38,34 @@ final class MethodChannelCameraBackend implements CameraBackend {
 
   @override
   int get liveFrames => _liveFrames;
+
+  @override
+  Stream<List<CameraEndpoint>> get catalog async* {
+    _ensureWatch();
+    yield await enumerate();
+    yield* _catalogOut.stream;
+  }
+
+  void _ensureWatch() {
+    _eventsSub ??= _events.receiveBroadcastStream().listen((event) {
+      if (event is Map && event['type'] == 'cameraCatalog') {
+        _catalogOut.add(_readCameras(event['payload'] as List<dynamic>?));
+      }
+    });
+    try {
+      _devWatch ??= Directory('/dev').watch().listen((change) {
+        if (change.path.contains('video')) {
+          unawaited(_emitDevCatalog());
+        }
+      });
+    } on Object {
+      // Host without a watchable /dev.
+    }
+  }
+
+  Future<void> _emitDevCatalog() async {
+    _catalogOut.add(await enumerate());
+  }
 
   @override
   Future<List<CameraEndpoint>> enumerate() async {

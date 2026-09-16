@@ -245,6 +245,9 @@ final class FlutterAiCommunicationsWindows
   Future<List<CameraEndpoint>> enumerateCameras() => _camera.enumerate();
 
   @override
+  Stream<List<CameraEndpoint>> get cameraCatalog => _camera.catalog;
+
+  @override
   Future<CameraPermission> requestCameraPermission() async {
     final consent = await _cameraConsent.request();
     if (consent != CameraPermission.granted) {

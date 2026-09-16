@@ -102,6 +102,8 @@ class FlutterAiCommunicationsPlugin :
                 mapOf("width" to width, "height" to height, "quarterTurns" to turns),
             )
         }
+        cameraGraph?.onCatalog = { cameras -> emit("cameraCatalog", cameras) }
+        cameraGraph?.startCatalogWatch()
         screenGraph =
             AndroidScreenGraph(binding.applicationContext, binding.textureRegistry) {
                 emit("screenCatalog", emptyList<Any>())

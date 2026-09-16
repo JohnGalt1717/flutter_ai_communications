@@ -555,6 +555,24 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   Future<List<CameraEndpoint>> enumerateCameras() async =>
       List<CameraEndpoint>.of(cameras);
 
+  /// Catalog updates tests inject.
+  late final StreamController<List<CameraEndpoint>> cameraCatalogController =
+      StreamController<List<CameraEndpoint>>.broadcast(
+        onListen: () {
+          cameraCatalogController.add(List<CameraEndpoint>.of(cameras));
+        },
+      );
+
+  @override
+  Stream<List<CameraEndpoint>> get cameraCatalog =>
+      cameraCatalogController.stream;
+
+  /// Replaces the Camera catalog and broadcasts it.
+  void publishCameras(List<CameraEndpoint> next) {
+    cameras = List<CameraEndpoint>.of(next);
+    cameraCatalogController.add(List<CameraEndpoint>.of(cameras));
+  }
+
   @override
   Future<CameraPermission> requestCameraPermission() async {
     cameraPermissionRequests++;
@@ -898,6 +916,7 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     await audioFocusController.close();
     await osRouteController.close();
     await screenCatalogController.close();
+    await cameraCatalogController.close();
     await _videoSurfaceOut.close();
   }
 }
