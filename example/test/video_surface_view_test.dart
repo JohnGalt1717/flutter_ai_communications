@@ -4,6 +4,30 @@ import 'package:flutter_ai_communications_example/meeting/video_surface_view.dar
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('Texture caption and mute badge paint over the feed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 320,
+            height: 180,
+            child: VideoSurfaceView(
+              surface: VideoSurface(handle: 1, width: 1280, height: 720),
+              viewTypePrefix: 'fac-camera',
+              caption: 'You',
+              showMuteBadge: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('You'), findsOneWidget);
+    expect(find.byIcon(Icons.mic_off), findsOneWidget);
+  });
+
   testWidgets('Texture keeps 16:9 inside a wide short tile', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

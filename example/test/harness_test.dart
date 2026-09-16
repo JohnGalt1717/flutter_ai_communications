@@ -78,6 +78,38 @@ void main() {
     );
   });
 
+  testWidgets('live lobby camera self-view stays outside ListView', (
+    tester,
+  ) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('self-view')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.byKey(const Key('self-view')),
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('lobby chrome does not overflow a short viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 520);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('self-view')), findsOneWidget);
+    expect(find.byKey(const Key('lobby-enter')), findsOneWidget);
+  });
+
   testWidgets(
     'Orchestration debug keys prove Desired/Applied/Observed and logs',
     (tester) async {
@@ -310,7 +342,17 @@ void main() {
     expect(manager.session?.isMuted, isTrue);
     expect(find.text('Unmute'), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('endpoint-handset-out')));
+    final handset = find.byKey(
+      const Key('endpoint-handset-out'),
+      skipOffstage: false,
+    );
+    await tester.scrollUntilVisible(
+      handset,
+      400,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pump();
+    await tester.tap(handset);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
     expect(manager.session?.selectedRenderId, 'handset-out');
@@ -321,12 +363,27 @@ void main() {
     expect(manager.session?.diagnostics.preferenceControlled, isFalse);
     expect(
       tester
-          .widget<ListTile>(find.byKey(const Key('endpoint-handset-out')))
+          .widget<ListTile>(
+            find.byKey(
+              const Key('endpoint-handset-out'),
+              skipOffstage: false,
+            ),
+          )
           .selected,
       isTrue,
     );
 
-    await tester.tap(find.byKey(const Key('endpoint-speaker-in')));
+    final speaker = find.byKey(
+      const Key('endpoint-speaker-in'),
+      skipOffstage: false,
+    );
+    await tester.scrollUntilVisible(
+      speaker,
+      400,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pump();
+    await tester.tap(speaker);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
     expect(manager.session?.selectedCaptureId, 'speaker-in');
@@ -336,9 +393,7 @@ void main() {
     expect(manager.session?.diagnostics.observed.captureId, 'speaker-in');
     expect(manager.session?.isMuted, isTrue);
     expect(
-      tester
-          .widget<ListTile>(find.byKey(const Key('endpoint-speaker-in')))
-          .selected,
+      tester.widget<ListTile>(speaker).selected,
       isTrue,
     );
 

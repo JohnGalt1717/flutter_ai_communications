@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
+import 'camera_dom_chrome_stub.dart'
+    if (dart.library.html) 'camera_dom_chrome_web.dart';
+
 /// Host widget for one [VideoSurface].
 ///
 /// Texture id on most platforms; HtmlElementView on web. Callers do not
@@ -14,6 +17,8 @@ final class VideoSurfaceView extends StatelessWidget {
     required this.viewTypePrefix,
     this.placeholder,
     this.followUiOrientation = false,
+    this.caption,
+    this.showMuteBadge = false,
   });
 
   /// Surface to render, or null for [placeholder].
@@ -30,6 +35,12 @@ final class VideoSurfaceView extends StatelessWidget {
   /// upright rasters). Screen send leaves this false so 16:9 stays 16:9.
   final bool followUiOrientation;
 
+  /// Optional name drawn on the tile (`You` on the meeting PIP).
+  final String? caption;
+
+  /// When true, draw a mute badge on the tile.
+  final bool showMuteBadge;
+
   @override
   Widget build(BuildContext context) {
     final surface = this.surface;
@@ -39,14 +50,10 @@ final class VideoSurfaceView extends StatelessWidget {
     // HtmlElementView on web must sit in a tight pixel box. LayoutBuilder /
     // AspectRatio inside ListView asserts in the viewport during mount.
     if (surface.kind == VideoSurfaceKind.htmlElement) {
-      const width = 320.0;
-      final height = width / surface.aspectRatio;
-      return SizedBox(
-        width: width,
-        height: height,
-        child: ClipRect(
-          child: HtmlElementView(viewType: '$viewTypePrefix-${surface.handle}'),
-        ),
+      setCameraDomChrome(caption: caption, muted: showMuteBadge);
+      return _HtmlCameraSlot(
+        viewType: '$viewTypePrefix-${surface.handle}',
+        aspectRatio: surface.aspectRatio,
       );
     }
     // Texture fills its layout size and ignores FittedBox / RotatedBox.
@@ -57,9 +64,61 @@ final class VideoSurfaceView extends StatelessWidget {
     final aspect = followUiOrientation
         ? surface.displayAspectRatio(portrait: portrait)
         : surface.rasterAspect;
-    return _ContainedFeed(
+    final feed = _ContainedFeed(
       aspectRatio: aspect,
       child: Texture(textureId: surface.handle),
+    );
+    if (caption == null && !showMuteBadge) {
+      return feed;
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        feed,
+        if (caption != null)
+          Positioned(
+            left: 8,
+            bottom: 6,
+            child: Text(
+              caption!,
+              style: const TextStyle(color: Color(0xFFE8E8F0), fontSize: 12),
+            ),
+          ),
+        if (showMuteBadge)
+          const Positioned(
+            right: 6,
+            top: 6,
+            child: Icon(Icons.mic_off, size: 16, color: Color(0xFFFF8A80)),
+          ),
+      ],
+    );
+  }
+}
+
+final class _HtmlCameraSlot extends StatefulWidget {
+  const _HtmlCameraSlot({required this.viewType, required this.aspectRatio});
+
+  final String viewType;
+  final double aspectRatio;
+
+  @override
+  State<_HtmlCameraSlot> createState() => _HtmlCameraSlotState();
+}
+
+final class _HtmlCameraSlotState extends State<_HtmlCameraSlot> {
+  @override
+  void dispose() {
+    setCameraDomChrome();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _ContainedFeed(
+      aspectRatio: widget.aspectRatio,
+      child: ClipRect(
+        child: HtmlElementView(viewType: widget.viewType),
+      ),
     );
   }
 }

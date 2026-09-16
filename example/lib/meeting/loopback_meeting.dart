@@ -133,26 +133,29 @@ final class LoopbackMeetingStage extends StatelessWidget {
                 surface: session.videoSurface,
                 viewTypePrefix: 'fac-camera',
                 followUiOrientation: true,
+                caption: 'You',
+                showMuteBadge: session.isMuted,
               )
-            else
+            else ...[
               _placeholder(
                 session.videoUnavailableReason ??
                     (session.isVideoMuted ? 'Video muted' : 'Camera off'),
               ),
-            const Positioned(
-              left: 8,
-              bottom: 6,
-              child: Text(
-                'You',
-                style: TextStyle(color: Color(0xFFE8E8F0), fontSize: 12),
-              ),
-            ),
-            if (session.isMuted)
               const Positioned(
-                right: 6,
-                top: 6,
-                child: Icon(Icons.mic_off, size: 16, color: Color(0xFFFF8A80)),
+                left: 8,
+                bottom: 6,
+                child: Text(
+                  'You',
+                  style: TextStyle(color: Color(0xFFE8E8F0), fontSize: 12),
+                ),
               ),
+              if (session.isMuted)
+                const Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Icon(Icons.mic_off, size: 16, color: Color(0xFFFF8A80)),
+                ),
+            ],
           ],
         ),
       ),
