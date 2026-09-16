@@ -578,7 +578,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     bool enabled = true,
     bool muted = false,
   }) async {
-    await stopCameraNative();
+    final startGen = ++_cameraStartGen;
+    await _teardownCamera();
+    if (startGen != _cameraStartGen) {
+      return NativeGraphStart.unavailable;
+    }
     _selectedCameraId = cameraId;
     final requested = videoFormat ?? VideoFormat.defaultFormat;
     if (!enabled) {
@@ -586,7 +590,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       _cameraFormat = requested;
       return NativeGraphStart.started;
     }
-    final startGen = ++_cameraStartGen;
     try {
       final JSAny videoConstraint = cameraId == null || cameraId.isEmpty
           ? true.toJS
@@ -670,6 +673,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
                 ? 'block'
                 : 'none',
           );
+          final chrome =
+              web.document.getElementById('fac-camera-chrome')
+                  as web.HTMLElement?;
+          chrome?.style.setProperty('display', visible ? 'block' : 'none');
           if (visible) {
             void pin(web.HTMLElement el) {
               el.style
@@ -684,9 +691,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
             if (canvas != null) {
               pin(canvas);
             }
-            final chrome =
-                web.document.getElementById('fac-camera-chrome')
-                    as web.HTMLElement?;
             if (chrome != null) {
               pin(chrome);
             }
@@ -733,6 +737,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> stopCameraNative() async {
     _cameraStartGen++;
+    await _teardownCamera();
+  }
+
+  Future<void> _teardownCamera() async {
     _domVideoFrame++;
     _stopWebProcessor();
     _revokeStill();

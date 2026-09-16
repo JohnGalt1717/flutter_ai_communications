@@ -112,6 +112,9 @@ final class _HtmlCameraSlot extends StatefulWidget {
 
   bool get _isCamera => viewType.startsWith('fac-camera-');
 
+  bool get _ownsChrome =>
+      _isCamera && (caption != null || showMuteBadge);
+
   @override
   State<_HtmlCameraSlot> createState() => _HtmlCameraSlotState();
 }
@@ -126,19 +129,22 @@ final class _HtmlCameraSlotState extends State<_HtmlCameraSlot> {
   @override
   void didUpdateWidget(_HtmlCameraSlot oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget._ownsChrome && !widget._ownsChrome) {
+      setCameraDomChrome();
+    }
     _publishChrome();
   }
 
   @override
   void dispose() {
-    if (widget._isCamera) {
+    if (widget._ownsChrome) {
       setCameraDomChrome();
     }
     super.dispose();
   }
 
   void _publishChrome() {
-    if (!widget._isCamera) {
+    if (!widget._ownsChrome) {
       return;
     }
     setCameraDomChrome(caption: widget.caption, muted: widget.showMuteBadge);
