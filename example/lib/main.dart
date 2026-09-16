@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
@@ -56,7 +56,7 @@ Future<HostPreferenceStore> _loadPreferenceStore() async {
           HostPreferenceStore.endpointsKey,
           HostPreferenceStore.camerasKey,
         ])
-          if (prefs.getString(key) case final value?) key: value,
+          key: ?prefs.getString(key),
       },
       persist: (key, value) async {
         await prefs.setString(key, value);
@@ -851,9 +851,7 @@ final class _SessionPageState extends State<SessionPage> {
                             }
                             setState(() {});
                           },
-                    child: Text(
-                      session?.isMuted == true ? 'Unmute' : 'Mute',
-                    ),
+                    child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
                   ),
                 ],
               ),
@@ -865,7 +863,7 @@ final class _SessionPageState extends State<SessionPage> {
           ],
           Expanded(
             child: ListView(
-              cacheExtent: 4000,
+              scrollCacheExtent: ScrollCacheExtent.pixels(4000),
               padding: const EdgeInsets.all(20),
               children: _harnessChildren(context, session, isolation),
             ),

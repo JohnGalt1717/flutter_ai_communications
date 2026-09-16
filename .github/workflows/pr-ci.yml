@@ -28,6 +28,18 @@ jobs:
       - name: Pub get (workspace)
         run: flutter pub get
 
+      - name: Dart fix (no remaining suggestions)
+        run: |
+          set -euo pipefail
+          dart fix --dry-run | tee dart-fix-dry-run.log
+          if grep -q 'proposed fix' dart-fix-dry-run.log; then
+            echo '::error::dart fix has remaining suggestions. Run dart fix --apply.'
+            exit 1
+          fi
+
+      - name: Dart analyze
+        run: dart analyze --no-fatal-warnings
+
       - name: Test flutter_ai_communications
         working-directory: packages/flutter_ai_communications
         run: flutter test

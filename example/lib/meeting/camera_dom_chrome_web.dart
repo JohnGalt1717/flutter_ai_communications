@@ -1,5 +1,3 @@
-import 'dart:js_interop';
-
 import 'package:web/web.dart' as web;
 
 const _id = 'fac-camera-chrome';

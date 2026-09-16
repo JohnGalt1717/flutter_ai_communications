@@ -309,7 +309,9 @@ IUnknown? _createFromDeviceClass(IUnknown factory, int deviceClass) {
               NativeFunction<
                 Int32 Function(VTablePointer, Int32, Pointer<Pointer>)
               >
-            >.fromAddress((factory.ptr.value + _createFromDeviceClassSlot).value)
+            >.fromAddress(
+              (factory.ptr.value + _createFromDeviceClassSlot).value,
+            )
             .asFunction<int Function(VTablePointer, int, Pointer<Pointer>)>();
     final hr = HRESULT(fn(factory.ptr, deviceClass, out));
     if (hr.isError || out.value == nullptr) {
@@ -395,10 +397,10 @@ const _appCapabilityStaticsCreateSlot = 8;
 /// IAsyncInfo: get_Id, get_Status.
 const _asyncInfoStatusSlot = 7;
 
-/// IAsyncOperation<T>: put_Completed, get_Completed, GetResults.
+/// `IAsyncOperation<T>`: put_Completed, get_Completed, GetResults.
 const _asyncOperationGetResultsSlot = 8;
 
-late final _roGetActivationFactory =
+final _roGetActivationFactory =
     DynamicLibrary.open('api-ms-win-core-winrt-l1-1-0.dll').lookupFunction<
       Int32 Function(Pointer, Pointer<GUID>, Pointer<Pointer>),
       int Function(Pointer, Pointer<GUID>, Pointer<Pointer>)

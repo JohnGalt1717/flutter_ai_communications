@@ -3,16 +3,12 @@ part of '../flutter_ai_communications.dart';
 /// Video-only local graph for in-call camera settings. Not a Session.
 final class CameraPreview {
   CameraPreview._({
-    required FlutterAiCommunicationsPlatform platform,
-    required VideoSurface surface,
-    required String cameraId,
-    required void Function() onStopped,
-    VideoProcessor videoProcessor = const NoneVideoProcessor(),
-  }) : _platform = platform,
-       _cameraId = cameraId,
-       _onStopped = onStopped,
-       _surface = surface,
-       _videoProcessor = videoProcessor;
+    required this._platform,
+    required this._surface,
+    required this._cameraId,
+    required this._onStopped,
+    this._videoProcessor = const NoneVideoProcessor(),
+  });
 
   final FlutterAiCommunicationsPlatform _platform;
   final void Function() _onStopped;

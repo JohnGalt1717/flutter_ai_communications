@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -96,35 +94,37 @@ void main() {
     expect(adapter.lastScreenSurface?.handle, 9);
   });
 
-  test('Include sound uses WASAPI FFI loopback, not the screen channel',
-      () async {
-    var screenAudioCalls = 0;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'setIncludeSystemAudioNative') {
-            screenAudioCalls++;
-            return true;
-          }
-          if (call.method == 'stopScreenShareNative') {
-            return null;
-          }
-          return null;
-        });
-    addTearDown(() {
+  test(
+    'Include sound uses WASAPI FFI loopback, not the screen channel',
+    () async {
+      var screenAudioCalls = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, null);
-    });
-    final backend = _LoopbackWasapi();
-    final adapter = FlutterAiCommunicationsWindows(
-      backend: backend,
-      screen: MethodChannelScreenBackend(methods: channel),
-    );
-    expect(await adapter.setIncludeSystemAudioNative(true), isTrue);
-    expect(backend.starts, 1);
-    expect(screenAudioCalls, 0);
-    await adapter.stopScreenShareNative();
-    expect(backend.stops, 1);
-  });
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'setIncludeSystemAudioNative') {
+              screenAudioCalls++;
+              return true;
+            }
+            if (call.method == 'stopScreenShareNative') {
+              return null;
+            }
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final backend = _LoopbackWasapi();
+      final adapter = FlutterAiCommunicationsWindows(
+        backend: backend,
+        screen: MethodChannelScreenBackend(methods: channel),
+      );
+      expect(await adapter.setIncludeSystemAudioNative(true), isTrue);
+      expect(backend.starts, 1);
+      expect(screenAudioCalls, 0);
+      await adapter.stopScreenShareNative();
+      expect(backend.stops, 1);
+    },
+  );
 
   test('unpackaged Win32 skips Store screen consent', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -138,7 +138,8 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
     });
-    final packaged = _RecordingScreenConsent()..result = ScreenPermission.denied;
+    final packaged = _RecordingScreenConsent()
+      ..result = ScreenPermission.denied;
     final adapter = FlutterAiCommunicationsWindows(
       screen: MethodChannelScreenBackend(methods: channel),
       screenConsent: GatedWindowsScreenConsent(
@@ -164,7 +165,8 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
     });
-    final packaged = _RecordingScreenConsent()..result = ScreenPermission.denied;
+    final packaged = _RecordingScreenConsent()
+      ..result = ScreenPermission.denied;
     final adapter = FlutterAiCommunicationsWindows(
       screen: MethodChannelScreenBackend(methods: channel),
       screenConsent: GatedWindowsScreenConsent(
@@ -200,7 +202,10 @@ void main() {
   });
 
   test('AppCapabilityAccessStatus maps to ScreenPermission', () {
-    expect(screenPermissionFromAppCapabilityStatus(4), ScreenPermission.granted);
+    expect(
+      screenPermissionFromAppCapabilityStatus(4),
+      ScreenPermission.granted,
+    );
     expect(screenPermissionFromAppCapabilityStatus(2), ScreenPermission.denied);
     expect(screenPermissionFromAppCapabilityStatus(1), ScreenPermission.denied);
     expect(
@@ -231,9 +236,7 @@ final class _RecordingScreenConsent implements WindowsScreenConsent {
   }
 }
 
-final class _LoopbackWasapi
-    with DeviceWatchSupport
-    implements WasapiBackend {
+final class _LoopbackWasapi with DeviceWatchSupport implements WasapiBackend {
   var starts = 0;
   var stops = 0;
 
