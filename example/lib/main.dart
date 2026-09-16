@@ -791,15 +791,19 @@ final class _SessionPageState extends State<SessionPage> {
               ),
           ],
           if (_phase != _HarnessPhase.meeting) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: SizedBox(
-                height: 240,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: KeyedSubtree(
-                    key: const Key('self-view'),
-                    child: _selfView(session),
+            Flexible(
+              fit: FlexFit.loose,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    heightFactor: 1,
+                    child: KeyedSubtree(
+                      key: const Key('self-view'),
+                      child: _selfView(session),
+                    ),
                   ),
                 ),
               ),
