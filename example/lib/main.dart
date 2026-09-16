@@ -479,6 +479,7 @@ final class _SessionPageState extends State<SessionPage> {
         _waveScheduled = false;
         if (mounted) {
           _wave.value++;
+          setState(() {});
         }
       });
     });
@@ -793,7 +794,7 @@ final class _SessionPageState extends State<SessionPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
               child: SizedBox(
-                height: 200,
+                height: 240,
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: KeyedSubtree(

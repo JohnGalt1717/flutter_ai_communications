@@ -89,9 +89,15 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
 
       expect(
-        (find.byKey(const Key('isolation')).evaluate().single.widget as Text)
+        (find
+                    .byKey(const Key('isolation'), skipOffstage: false)
+                    .evaluate()
+                    .single
+                    .widget
+                as Text)
             .data,
         contains(IsolationState.required.name),
       );

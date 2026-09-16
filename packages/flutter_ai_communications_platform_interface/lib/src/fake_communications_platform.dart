@@ -286,6 +286,7 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   }) async {
     startNativeCalls++;
     nativeGeneration++;
+    startNativeCompleted = false;
     if (startNativeDelay > Duration.zero) {
       await Future<void>.delayed(startNativeDelay);
     }

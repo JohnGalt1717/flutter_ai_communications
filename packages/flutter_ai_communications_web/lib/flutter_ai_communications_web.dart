@@ -377,12 +377,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         analyser.connect(mute);
         mute.connect(context.destination);
       }
-      _captureTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      final periodUs =
+          ((analyser.fftSize / context.sampleRate) * 1000000).round();
+      _captureTimer = Timer.periodic(Duration(microseconds: periodUs), (_) {
         _pumpAnalyser();
       });
-      // First tick after this turn so capture does not notify during start's
-      // widget rebuild.
-      Timer(const Duration(milliseconds: 100), _pumpAnalyser);
     }
     _running = true;
     _paused = false;
@@ -546,11 +545,20 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       if (cameras.any((device) => device.label.isNotEmpty)) {
         return CameraPermission.granted;
       }
-      final stream = await web.window.navigator.mediaDevices
+      final streamFuture = web.window.navigator.mediaDevices
           .getUserMedia(web.MediaStreamConstraints(video: true.toJS))
-          .toDart
-          .timeout(const Duration(seconds: 15));
-      stream.getTracks().toDart.forEach((track) => track.stop());
+          .toDart;
+      try {
+        final stream = await streamFuture.timeout(const Duration(seconds: 15));
+        stream.getTracks().toDart.forEach((track) => track.stop());
+      } on TimeoutException {
+        unawaited(
+          streamFuture.then((lateStream) {
+            lateStream.getTracks().toDart.forEach((track) => track.stop());
+          }).catchError((_) {}),
+        );
+        return CameraPermission.denied;
+      }
       return CameraPermission.granted;
     } on Object {
       return CameraPermission.denied;
@@ -588,7 +596,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         unawaited(
           streamFuture.then((lateStream) {
             lateStream.getTracks().toDart.forEach((track) => track.stop());
-          }),
+          }).catchError((_) {}),
         );
         return NativeGraphStart.unavailable;
       }
@@ -596,12 +604,16 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       final track = stream.getVideoTracks().toDart.firstOrNull;
       var width = requested.width;
       var height = requested.height;
+      var frameRate = requested.frameRate;
       if (track != null) {
         try {
           final settings = track.getSettings();
           if (settings.width > 0 && settings.height > 0) {
             width = settings.width;
             height = settings.height;
+          }
+          if (settings.frameRate > 0) {
+            frameRate = settings.frameRate.round();
           }
         } on Object {
           // Settings omitted until the track is live.
@@ -635,11 +647,19 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
             return;
           }
           final rect = slot.getBoundingClientRect();
-          video.style
-            ..setProperty('left', '${rect.x}px')
-            ..setProperty('top', '${rect.y}px')
-            ..setProperty('width', '${rect.width}px')
-            ..setProperty('height', '${rect.height}px');
+          void pin(web.HTMLElement el) {
+            el.style
+              ..setProperty('left', '${rect.x}px')
+              ..setProperty('top', '${rect.y}px')
+              ..setProperty('width', '${rect.width}px')
+              ..setProperty('height', '${rect.height}px');
+          }
+
+          pin(video);
+          final canvas = _videoCanvas;
+          if (canvas != null) {
+            pin(canvas);
+          }
           web.window.requestAnimationFrame(sync.toJS);
         }
 
@@ -658,7 +678,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       _cameraFormat = VideoFormat(
         width: width,
         height: height,
-        frameRate: requested.frameRate,
+        frameRate: frameRate,
       );
       if (muted) {
         stream.getVideoTracks().toDart.forEach((track) {
@@ -685,7 +705,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _videoStream = null;
     _videoEl?.remove();
     _videoEl = null;
+    _videoCanvas?.remove();
     _videoCanvas = null;
+    _personCanvas?.remove();
     _personCanvas = null;
     _cameraSurface = null;
     _cameraFormat = null;
@@ -848,20 +870,18 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     if (video == null) {
       return;
     }
-    final parent = video.parentElement;
     var canvas = _videoCanvas;
     if (canvas == null) {
       canvas = web.HTMLCanvasElement()
         ..width = 1280
         ..height = 720;
       canvas.style
-        ..setProperty('width', '100%')
-        ..setProperty('height', '100%')
+        ..setProperty('position', 'fixed')
+        ..setProperty('z-index', '9')
         ..setProperty('object-fit', 'cover')
         ..setProperty('display', 'block')
-        ..setProperty('position', 'absolute')
-        ..setProperty('inset', '0');
-      parent?.append(canvas);
+        ..setProperty('pointer-events', 'none');
+      web.document.body!.append(canvas);
       _videoCanvas = canvas;
       _personCanvas = web.HTMLCanvasElement()
         ..width = 1280
