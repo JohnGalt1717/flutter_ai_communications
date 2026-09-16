@@ -169,7 +169,7 @@ Whether barge-in is detected locally (flush playback, keep preroll) or left to t
 _Avoid_: interrupt mode
 
 **Camera Endpoint**:
-One camera the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; preference resolution uses whatever is present rather than dropping to a lowest-common-denominator record.
+One camera the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; preference resolution uses whatever is present rather than dropping to a lowest-common-denominator record. `cameras()` is a snapshot; a live catalog stream updates when Camera Endpoints appear or disappear.
 _Avoid_: camera device, video device, webcam (as the type name), Endpoint (that is audio)
 
 **Mute-video**:

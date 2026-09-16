@@ -206,6 +206,9 @@ final class LoopbackCommunicationsPlatform
   Future<List<CameraEndpoint>> enumerateCameras() => inner.enumerateCameras();
 
   @override
+  Stream<List<CameraEndpoint>> get cameraCatalog => inner.cameraCatalog;
+
+  @override
   Future<CameraPermission> requestCameraPermission() =>
       inner.requestCameraPermission();
 

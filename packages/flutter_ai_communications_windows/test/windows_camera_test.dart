@@ -370,6 +370,11 @@ final class _RecordingCamera implements CameraBackend {
   Future<List<CameraEndpoint>> enumerate() async => cameras;
 
   @override
+  Stream<List<CameraEndpoint>> get catalog async* {
+    yield await enumerate();
+  }
+
+  @override
   Future<CameraPermission> requestPermission() async {
     permissionCalls++;
     return permission;

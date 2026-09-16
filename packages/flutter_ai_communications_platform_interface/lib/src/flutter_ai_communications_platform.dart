@@ -176,6 +176,12 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
     throw UnimplementedError('enumerateCameras() has not been implemented.');
   }
 
+  /// Live Camera Endpoint catalog. Defaults to a single [enumerateCameras]
+  /// snapshot so older adapters still load.
+  Stream<List<CameraEndpoint>> get cameraCatalog async* {
+    yield await enumerateCameras();
+  }
+
   /// Requests the camera and waits for the OS answer.
   Future<CameraPermission> requestCameraPermission() {
     throw UnimplementedError(

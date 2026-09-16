@@ -41,8 +41,52 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     kCVPixelBufferMetalCompatibilityKey: true,
   ]
 
+  var onCatalog: (([[String: Any]]) -> Void)?
+  private var catalogObservers: [NSObjectProtocol] = []
+
   func attach(textures: FlutterTextureRegistry) {
     self.textures = textures
+  }
+
+  func startCatalogWatch() {
+    guard catalogObservers.isEmpty else {
+      return
+    }
+    let center = NotificationCenter.default
+    let emit: (Notification) -> Void = { [weak self] _ in
+      self?.emitCatalog()
+    }
+    catalogObservers.append(
+      center.addObserver(
+        forName: .AVCaptureDeviceWasConnected,
+        object: nil,
+        queue: .main,
+        using: emit
+      )
+    )
+    catalogObservers.append(
+      center.addObserver(
+        forName: .AVCaptureDeviceWasDisconnected,
+        object: nil,
+        queue: .main,
+        using: emit
+      )
+    )
+  }
+
+  func stopCatalogWatch() {
+    for observer in catalogObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    catalogObservers.removeAll()
+  }
+
+  deinit {
+    stopCatalogWatch()
+  }
+
+  func emitCatalog() {
+    onCatalog?(enumerate())
   }
 
   private func ensureTexture() {

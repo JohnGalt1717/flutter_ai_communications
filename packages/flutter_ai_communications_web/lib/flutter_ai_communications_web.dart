@@ -49,6 +49,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       StreamController<Uint8List>.broadcast();
   final StreamController<List<Endpoint>> _catalog =
       StreamController<List<Endpoint>>.broadcast();
+  final StreamController<List<CameraEndpoint>> _camerasOut =
+      StreamController<List<CameraEndpoint>>.broadcast();
   final StreamController<IsolationEvent> _isolation =
       StreamController<IsolationEvent>.broadcast();
   final StreamController<OsRouteChange> _routes =
@@ -102,6 +104,13 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Stream<List<Endpoint>> get endpointCatalog => _catalog.stream;
+
+  @override
+  Stream<List<CameraEndpoint>> get cameraCatalog async* {
+    _listenForDeviceChanges();
+    yield await enumerateCameras();
+    yield* _camerasOut.stream;
+  }
 
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async {
@@ -317,6 +326,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           ),
     ];
     _catalog.add(List<Endpoint>.of(_endpoints));
+    _camerasOut.add(await enumerateCameras());
   }
 
   Future<void> _startGraph() async {

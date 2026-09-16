@@ -30,8 +30,12 @@ final class CommunicationsManager {
   /// In-call Camera preview, if running.
   CameraPreview? get cameraPreview => _preview;
 
-  /// Idle camera catalog.
+  /// Idle camera catalog snapshot.
   Future<List<CameraEndpoint>> cameras() => _platform.enumerateCameras();
+
+  /// Live Camera Endpoint catalog. Full snapshots, not connect/disconnect
+  /// deltas.
+  Stream<List<CameraEndpoint>> get cameraCatalog => _platform.cameraCatalog;
 
   /// Idle or live Screen source catalog snapshot.
   Future<List<ScreenSource>> screenSources() =>
@@ -247,6 +251,7 @@ final class CommunicationsManager {
           : cameraPreference,
       videoProcessor: videoProcessor,
       cameraId: resolvedCameraId,
+      cameraPreferenceControlled: cameraId == null,
       cameraEnabled: cameraEnabledOut,
       videoMuted: false,
       videoSurface: videoSurface,
@@ -360,6 +365,7 @@ final class CommunicationsManager {
     CameraPreference cameraPreference = const CameraPreference(),
     VideoProcessor videoProcessor = const NoneVideoProcessor(),
     String? cameraId,
+    bool cameraPreferenceControlled = true,
     bool cameraEnabled = true,
     bool videoMuted = false,
     VideoSurface? videoSurface,
@@ -387,6 +393,7 @@ final class CommunicationsManager {
       cameraPreference: cameraPreference,
       videoProcessor: videoProcessor,
       cameraId: cameraId,
+      cameraPreferenceControlled: cameraPreferenceControlled,
       cameraEnabled: cameraEnabled,
       videoMuted: videoMuted,
       videoSurface: videoSurface,

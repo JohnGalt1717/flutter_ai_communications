@@ -145,6 +145,35 @@ class AndroidCameraGraph(
         activity?.registerComponentCallbacks(configCallbacks)
     }
 
+    var onCatalog: ((List<Map<String, Any>>) -> Unit)? = null
+    private var availabilityCallback: CameraManager.AvailabilityCallback? = null
+
+    fun startCatalogWatch() {
+        if (availabilityCallback != null) {
+            return
+        }
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val callback =
+            object : CameraManager.AvailabilityCallback() {
+                override fun onCameraAvailable(cameraId: String) {
+                    main.post { onCatalog?.invoke(enumerate()) }
+                }
+
+                override fun onCameraUnavailable(cameraId: String) {
+                    main.post { onCatalog?.invoke(enumerate()) }
+                }
+            }
+        availabilityCallback = callback
+        manager.registerAvailabilityCallback(callback, main)
+    }
+
+    fun stopCatalogWatch() {
+        val callback = availabilityCallback ?: return
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        manager.unregisterAvailabilityCallback(callback)
+        availabilityCallback = null
+    }
+
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         return manager.cameraIdList.map { id ->

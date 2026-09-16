@@ -39,6 +39,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     instance.screen.attachCatalog { [weak instance] sources in
       instance?.eventSink?(["type": "screenCatalog", "payload": sources])
     }
+    instance.camera.onCatalog = { [weak instance] cameras in
+      instance?.eventSink?(["type": "cameraCatalog", "payload": cameras])
+    }
+    instance.camera.startCatalogWatch()
     let messenger = registrar.messenger
     let methods = FlutterMethodChannel(name: instance.methods, binaryMessenger: messenger)
     registrar.addMethodCallDelegate(instance, channel: methods)
@@ -46,6 +50,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       .setStreamHandler(CaptureHandler(plugin: instance))
     FlutterEventChannel(name: instance.eventsName, binaryMessenger: messenger)
       .setStreamHandler(EventHandler(plugin: instance))
+  }
+
+  public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    camera.stopCatalogWatch()
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

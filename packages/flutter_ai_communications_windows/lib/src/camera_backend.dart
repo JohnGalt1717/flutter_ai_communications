@@ -6,6 +6,11 @@ abstract class CameraBackend {
   /// Snapshot of Camera Endpoints.
   Future<List<CameraEndpoint>> enumerate();
 
+  /// Live Camera Endpoint catalog. Defaults to a single snapshot.
+  Stream<List<CameraEndpoint>> get catalog async* {
+    yield await enumerate();
+  }
+
   /// Asks the OS whether video capture is allowed. Must not leave a graph running.
   Future<CameraPermission> requestPermission();
 

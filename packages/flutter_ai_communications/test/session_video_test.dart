@@ -24,6 +24,78 @@ void main() {
     expect(cameras.map((camera) => camera.id), ['front', 'back']);
   });
 
+  test(
+    'cameraCatalog connect and disconnect without a second cameras() call',
+    () async {
+      const usb = CameraEndpoint(
+        id: 'usb',
+        name: 'USB Camera',
+        facing: CameraFacing.external,
+        modes: [VideoFormat.defaultFormat],
+      );
+      final seen = <List<String>>[];
+      final sub = manager.cameraCatalog.listen(
+        (cameras) => seen.add(cameras.map((camera) => camera.id).toList()),
+      );
+      platform.publishCameras([
+        ...FakeCommunicationsPlatform.defaultCameras,
+        usb,
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.last, ['front', 'back', 'usb']);
+      platform.publishCameras(FakeCommunicationsPlatform.defaultCameras);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.last, ['front', 'back']);
+      await sub.cancel();
+    },
+  );
+
+  test(
+    'Session re-resolves Camera preference when a camera appears',
+    () async {
+      platform.cameras = [
+        const CameraEndpoint(
+          id: 'back',
+          name: 'Back',
+          facing: CameraFacing.environment,
+          modes: [VideoFormat.defaultFormat],
+        ),
+      ];
+      manager.bindCameraPreference(
+        const CameraPreference(
+          entries: [
+            CameraPreferenceEntry(id: 'front'),
+            CameraPreferenceEntry(id: 'back'),
+          ],
+        ),
+      );
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      expect(session.selectedCameraId, 'back');
+      platform.publishCameras(FakeCommunicationsPlatform.defaultCameras);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.selectedCameraId, 'front');
+    },
+  );
+
+  test(
+    'Explicit camera pick expires when that Camera Endpoint disappears',
+    () async {
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      await Future<void>.delayed(Duration.zero);
+      await session.selectCamera('back');
+      expect(session.selectedCameraId, 'back');
+      platform.publishCameras([
+        FakeCommunicationsPlatform.defaultCameras.first,
+      ]);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.selectedCameraId, 'front');
+    },
+  );
+
   test('missing camera does not fail start', () async {
     platform.cameras = [];
     final result = await manager.start(cameraSend: true);

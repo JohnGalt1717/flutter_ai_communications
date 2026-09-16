@@ -190,6 +190,7 @@ final class _SessionPageState extends State<SessionPage> {
   final _pipeline = <String>[];
   StreamSubscription<LogRecord>? _logSub;
   StreamSubscription<List<Endpoint>>? _catalogSub;
+  StreamSubscription<List<CameraEndpoint>>? _cameraCatalogSub;
   Uint8List? _replaceStill;
   var _catalogEpoch = 0;
   EndpointPreference _draft = const EndpointPreference();
@@ -210,6 +211,17 @@ final class _SessionPageState extends State<SessionPage> {
     _catalogSub = _manager.endpointCatalog.listen((endpoints) {
       _catalogEpoch++;
       _endpoints = endpoints;
+      if (!mounted) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    });
+    _cameraCatalogSub = _manager.cameraCatalog.listen((cameras) {
+      _cameras = cameras;
       if (!mounted) {
         return;
       }
@@ -271,6 +283,7 @@ final class _SessionPageState extends State<SessionPage> {
   void dispose() {
     unawaited(_logSub?.cancel());
     unawaited(_catalogSub?.cancel());
+    unawaited(_cameraCatalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
     _webrtc?.detach();
     unawaited(_webRtcLoopback.dispose());
@@ -283,12 +296,6 @@ final class _SessionPageState extends State<SessionPage> {
   Future<void> _loadEndpoints() async {
     final epoch = _catalogEpoch;
     final endpoints = await _manager.endpoints();
-    List<CameraEndpoint> cameras = const [];
-    try {
-      cameras = await _manager.cameras();
-    } on Object {
-      cameras = const [];
-    }
     List<ScreenSource> screens = const [];
     try {
       screens = await _manager.screenSources();
@@ -300,7 +307,6 @@ final class _SessionPageState extends State<SessionPage> {
         if (_catalogEpoch == epoch) {
           _endpoints = endpoints;
         }
-        _cameras = cameras;
         _screenSources = screens;
       });
     }

@@ -99,6 +99,58 @@ void main() {
     expect(adapter.lastVideoSurface, isNull);
   });
 
+  test(
+    'cameraCatalog is the enumerate snapshot without an EventChannel',
+    () async {
+      const methods = MethodChannel('flutter_ai_communications/methods');
+      const events = EventChannel('flutter_ai_communications/events');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var eventListens = 0;
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        if (call.method == 'enumerateCameras') {
+          return [
+            {
+              'id': '/dev/video0',
+              'name': 'USB Camera',
+              'facing': 'external',
+              'modes': [
+                {'width': 1280, 'height': 720, 'frameRate': 30},
+              ],
+            },
+          ];
+        }
+        return null;
+      });
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (arguments, events) {
+            eventListens += 1;
+          },
+        ),
+      );
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(methods, null);
+        messenger.setMockStreamHandler(events, null);
+      });
+      final backend = MethodChannelCameraBackend(methods: methods);
+      final seen = <List<String>>[];
+      final errors = <Object>[];
+      final sub = backend.catalog.listen(
+        (cameras) => seen.add(cameras.map((camera) => camera.id).toList()),
+        onError: errors.add,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(errors, isEmpty);
+      expect(seen, [
+        ['/dev/video0'],
+      ]);
+      expect(eventListens, 0);
+      await sub.cancel();
+    },
+  );
+
   test('native status failed is NativeGraphStart.failed', () async {
     const methods = MethodChannel('flutter_ai_communications/methods');
     final messenger =
@@ -231,6 +283,11 @@ final class _RecordingCamera implements CameraBackend {
 
   @override
   Future<List<CameraEndpoint>> enumerate() async => cameras;
+
+  @override
+  Stream<List<CameraEndpoint>> get catalog async* {
+    yield await enumerate();
+  }
 
   @override
   Future<CameraPermission> requestPermission() async => permission;
