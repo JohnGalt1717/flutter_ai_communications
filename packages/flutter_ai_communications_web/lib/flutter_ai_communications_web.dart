@@ -729,9 +729,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> setCameraEnabledNative(bool enabled) async {
     if (!enabled) {
-      _videoStream?.getTracks().toDart.forEach((track) => track.stop());
-      _videoStream = null;
-      _cameraSurface = null;
+      final id = _selectedCameraId;
+      final format = _cameraFormat;
+      await stopCameraNative();
+      _selectedCameraId = id;
+      _cameraFormat = format;
     } else {
       await startCameraNative(
         cameraId: _selectedCameraId,
