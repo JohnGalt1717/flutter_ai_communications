@@ -18,7 +18,25 @@ import 'src/web_route_class.dart';
 /// the host should see after [startNative].
 final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   /// Creates the web adapter.
-  FlutterAiCommunicationsWeb();
+  FlutterAiCommunicationsWeb() {
+    // AudioContext created after CanvasKit's WebGL surface can reset the
+    // GPU context and leave a blank Flutter view. Open it before first frame.
+    _warmAudioContext();
+  }
+
+  void _warmAudioContext() {
+    if (_context != null) {
+      return;
+    }
+    try {
+      _context = web.AudioContext();
+      _sinkCapability = _context!.has('sinkId');
+      unawaited(_context!.suspend().toDart);
+    } on Object {
+      _context = null;
+      _sinkCapability = false;
+    }
+  }
 
   /// Registers this class as the default instance.
   static void registerWith(Registrar registrar) {
@@ -40,7 +58,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   web.MediaStream? _stream;
   web.AudioContext? _context;
-  web.ScriptProcessorNode? _processor;
+  web.AnalyserNode? _analyser;
+  Timer? _captureTimer;
   web.MediaStreamAudioSourceNode? _source;
   web.AudioBufferSourceNode? _player;
   List<Endpoint> _endpoints = const [];
@@ -132,10 +151,12 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> stopNative() async {
     _running = false;
-    _processor?.disconnect();
+    _captureTimer?.cancel();
+    _captureTimer = null;
+    _analyser?.disconnect();
     _source?.disconnect();
     _player?.stop();
-    _processor = null;
+    _analyser = null;
     _source = null;
     _player = null;
     _stopTracks();
@@ -305,13 +326,20 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     if (wantCapture && stream == null) {
       throw StateError('capture stream missing');
     }
-    _processor?.disconnect();
+    _captureTimer?.cancel();
+    _captureTimer = null;
+    _analyser?.disconnect();
     _source?.disconnect();
     final render = _policy.renderPlan(_renderId, sinkSupported: _sinkSupported);
+    final desiredSink = switch (render.sinkId) {
+      null || '' => null,
+      final id when id.startsWith('loopback') => null,
+      final id => id,
+    };
     final bind = _policy.sinkBind(
       contextOpen: _context != null,
       appliedSinkId: _appliedSinkId,
-      desiredSinkId: render.sinkId,
+      desiredSinkId: desiredSink,
       stopping: false,
     );
     final web.AudioContext context;
@@ -338,35 +366,22 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     if (wantCapture && stream != null) {
       final source = context.createMediaStreamSource(stream);
       _source = source;
-      final processor = context.createScriptProcessor(2048, 2, 1);
-      _processor = processor;
-      processor.onaudioprocess = ((web.AudioProcessingEvent event) {
-        if (_paused || !_running) {
-          return;
-        }
-        final channels = event.inputBuffer.numberOfChannels;
-        final left = event.inputBuffer.getChannelData(0).toDart;
-        final right = channels > 1
-            ? event.inputBuffer.getChannelData(1).toDart
-            : left;
-        final out = Uint8List(left.length * 2);
-        final data = ByteData.sublistView(out);
-        for (var i = 0; i < left.length; i++) {
-          final mixed = channels > 1 ? (left[i] + right[i]) / 2 : left[i];
-          final sample = (mixed * 32767).round().clamp(-32767, 32767);
-          data.setInt16(i * 2, sample, Endian.little);
-        }
-        _capture.add(out);
-      }).toJS;
-      source.connect(processor);
+      final analyser = context.createAnalyser()..fftSize = 2048;
+      _analyser = analyser;
+      source.connect(analyser);
       if (wantPlayback) {
-        processor.connect(context.destination);
+        analyser.connect(context.destination);
       } else {
         final mute = context.createGain();
         mute.gain.value = 0;
-        processor.connect(mute);
+        analyser.connect(mute);
         mute.connect(context.destination);
       }
+      final periodUs =
+          ((analyser.fftSize / context.sampleRate) * 1000000).round();
+      _captureTimer = Timer.periodic(Duration(microseconds: periodUs), (_) {
+        _pumpAnalyser();
+      });
     }
     _running = true;
     _paused = false;
@@ -378,11 +393,36 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     _emitObserved(unsupported: render.unsupported);
   }
 
+  void _pumpAnalyser() {
+    final analyser = _analyser;
+    if (analyser == null || _paused || !_running || _capture.isClosed) {
+      return;
+    }
+    try {
+      final size = analyser.fftSize;
+      final samples = Float32List(size);
+      analyser.getFloatTimeDomainData(samples.toJS);
+      final out = Uint8List(size * 2);
+      final data = ByteData.sublistView(out);
+      for (var i = 0; i < size; i++) {
+        final sample = (samples[i] * 32767).round().clamp(-32767, 32767);
+        data.setInt16(i * 2, sample, Endian.little);
+      }
+      _capture.add(out);
+    } on Object {
+      // Drop a bad buffer rather than tear down the element tree.
+    }
+  }
+
   web.AudioContext _openContext(WebRenderPlan render) {
-    final sinkId = render.sinkId;
+    final sinkId = switch (render.sinkId) {
+      null || '' => null,
+      final id when id.startsWith('loopback') => null,
+      final id => id,
+    };
     if (sinkId == null) {
       _appliedSinkId = null;
-      return web.AudioContext();
+      return _context ?? web.AudioContext();
     }
     try {
       final context = web.AudioContext(
@@ -392,23 +432,13 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       return context;
     } on Object {
       _appliedSinkId = null;
-      return web.AudioContext();
+      return _context ?? web.AudioContext();
     }
   }
 
   bool get _sinkSupported {
-    final cached = _sinkCapability;
-    if (cached != null) {
-      return cached;
-    }
-    try {
-      final probe = web.AudioContext();
-      final supported = probe.has('sinkId');
-      unawaited(probe.close().toDart);
-      return _sinkCapability = supported;
-    } on Object {
-      return _sinkCapability = false;
-    }
+    _warmAudioContext();
+    return _sinkCapability ?? false;
   }
 
   Future<void> _closeContext() async {
@@ -469,6 +499,7 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   var _selfieFailed = false;
   web.CanvasImageSource? _lastMask;
   var _cameraViewId = 0;
+  var _domVideoFrame = 0;
   VideoSurface? _cameraSurface;
   VideoFormat? _cameraFormat;
   String? _selectedCameraId;
@@ -499,11 +530,35 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<CameraPermission> requestCameraPermission() async {
     try {
-      final stream = await web.window.navigator.mediaDevices
+      final devices =
+          (await web.window.navigator.mediaDevices.enumerateDevices().toDart)
+              .toDart;
+      final cameras = [
+        for (final device in devices)
+          if (device.kind == 'videoinput') device,
+      ];
+      if (cameras.isEmpty) {
+        return CameraPermission.denied;
+      }
+      // Labels mean the page already has camera permission; a second
+      // getUserMedia here races startCameraNative and can stall Chrome.
+      if (cameras.any((device) => device.label.isNotEmpty)) {
+        return CameraPermission.granted;
+      }
+      final streamFuture = web.window.navigator.mediaDevices
           .getUserMedia(web.MediaStreamConstraints(video: true.toJS))
-          .toDart
-          .timeout(const Duration(seconds: 2));
-      stream.getTracks().toDart.forEach((track) => track.stop());
+          .toDart;
+      try {
+        final stream = await streamFuture.timeout(const Duration(seconds: 15));
+        stream.getTracks().toDart.forEach((track) => track.stop());
+      } on TimeoutException {
+        unawaited(
+          streamFuture.then((lateStream) {
+            lateStream.getTracks().toDart.forEach((track) => track.stop());
+          }).catchError((_) {}),
+        );
+        return CameraPermission.denied;
+      }
       return CameraPermission.granted;
     } on Object {
       return CameraPermission.denied;
@@ -531,13 +586,44 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           : web.MediaTrackConstraints(
               deviceId: web.ConstrainDOMStringParameters(exact: cameraId.toJS),
             );
-      final stream = await web.window.navigator.mediaDevices
+      final streamFuture = web.window.navigator.mediaDevices
           .getUserMedia(web.MediaStreamConstraints(video: videoConstraint))
-          .toDart
-          .timeout(const Duration(seconds: 3));
+          .toDart;
+      late final web.MediaStream stream;
+      try {
+        stream = await streamFuture.timeout(const Duration(seconds: 15));
+      } on TimeoutException {
+        unawaited(
+          streamFuture.then((lateStream) {
+            lateStream.getTracks().toDart.forEach((track) => track.stop());
+          }).catchError((_) {}),
+        );
+        return NativeGraphStart.unavailable;
+      }
       _videoStream = stream;
+      final track = stream.getVideoTracks().toDart.firstOrNull;
+      var width = requested.width;
+      var height = requested.height;
+      var frameRate = requested.frameRate;
+      if (track != null) {
+        try {
+          final settings = track.getSettings();
+          if (settings.width > 0 && settings.height > 0) {
+            width = settings.width;
+            height = settings.height;
+          }
+          if (settings.frameRate > 0) {
+            frameRate = settings.frameRate.round();
+          }
+        } on Object {
+          // Settings omitted until the track is live.
+        }
+      }
       _cameraViewId++;
       final viewType = 'fac-camera-$_cameraViewId';
+      // Invisible slot (no CanvasKit overlay split). The <video> is pinned
+      // to document.body over that slot so HtmlElementView does not sandwich
+      // the Flutter canvas.
       ui_web.platformViewRegistry.registerViewFactory(viewType, (int _) {
         final video = web.HTMLVideoElement()
           ..autoplay = true
@@ -545,30 +631,55 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
           ..srcObject = stream;
         video.setAttribute('playsinline', 'true');
         video.style
-          ..setProperty('width', '100%')
-          ..setProperty('height', '100%')
+          ..setProperty('position', 'fixed')
+          ..setProperty('z-index', '8')
           ..setProperty('object-fit', 'contain')
-          ..setProperty('display', 'block');
-        final wrap = web.HTMLDivElement();
-        wrap.style
-          ..setProperty('width', '100%')
-          ..setProperty('height', '100%')
-          ..setProperty('overflow', 'hidden')
-          ..setProperty('position', 'relative');
-        wrap.append(video);
+          ..setProperty('pointer-events', 'none');
+        web.document.body!.append(video);
         _videoEl = video;
+        final slot = web.HTMLDivElement();
+        slot.style
+          ..setProperty('width', '100%')
+          ..setProperty('height', '100%');
+        final token = ++_domVideoFrame;
+        void sync(num _) {
+          if (token != _domVideoFrame || _videoEl != video) {
+            return;
+          }
+          final rect = slot.getBoundingClientRect();
+          void pin(web.HTMLElement el) {
+            el.style
+              ..setProperty('left', '${rect.x}px')
+              ..setProperty('top', '${rect.y}px')
+              ..setProperty('width', '${rect.width}px')
+              ..setProperty('height', '${rect.height}px');
+          }
+
+          pin(video);
+          final canvas = _videoCanvas;
+          if (canvas != null) {
+            pin(canvas);
+          }
+          web.window.requestAnimationFrame(sync.toJS);
+        }
+
+        web.window.requestAnimationFrame(sync.toJS);
         if (_webVideoProcessor is! NoneVideoProcessor) {
           _startWebProcessor();
         }
-        return wrap;
-      });
+        return slot;
+      }, isVisible: false);
       _cameraSurface = VideoSurface(
         handle: _cameraViewId,
         kind: VideoSurfaceKind.htmlElement,
-        width: requested.width,
-        height: requested.height,
+        width: width,
+        height: height,
       );
-      _cameraFormat = requested;
+      _cameraFormat = VideoFormat(
+        width: width,
+        height: height,
+        frameRate: frameRate,
+      );
       if (muted) {
         stream.getVideoTracks().toDart.forEach((track) {
           track.enabled = false;
@@ -587,12 +698,16 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<void> stopCameraNative() async {
+    _domVideoFrame++;
     _stopWebProcessor();
     _revokeStill();
     _videoStream?.getTracks().toDart.forEach((track) => track.stop());
     _videoStream = null;
+    _videoEl?.remove();
     _videoEl = null;
+    _videoCanvas?.remove();
     _videoCanvas = null;
+    _personCanvas?.remove();
     _personCanvas = null;
     _cameraSurface = null;
     _cameraFormat = null;
@@ -614,9 +729,11 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> setCameraEnabledNative(bool enabled) async {
     if (!enabled) {
-      _videoStream?.getTracks().toDart.forEach((track) => track.stop());
-      _videoStream = null;
-      _cameraSurface = null;
+      final id = _selectedCameraId;
+      final format = _cameraFormat;
+      await stopCameraNative();
+      _selectedCameraId = id;
+      _cameraFormat = format;
     } else {
       await startCameraNative(
         cameraId: _selectedCameraId,
@@ -755,20 +872,18 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     if (video == null) {
       return;
     }
-    final parent = video.parentElement;
     var canvas = _videoCanvas;
     if (canvas == null) {
       canvas = web.HTMLCanvasElement()
         ..width = 1280
         ..height = 720;
       canvas.style
-        ..setProperty('width', '100%')
-        ..setProperty('height', '100%')
+        ..setProperty('position', 'fixed')
+        ..setProperty('z-index', '9')
         ..setProperty('object-fit', 'cover')
         ..setProperty('display', 'block')
-        ..setProperty('position', 'absolute')
-        ..setProperty('inset', '0');
-      parent?.append(canvas);
+        ..setProperty('pointer-events', 'none');
+      web.document.body!.append(canvas);
       _videoCanvas = canvas;
       _personCanvas = web.HTMLCanvasElement()
         ..width = 1280

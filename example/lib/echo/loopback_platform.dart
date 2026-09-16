@@ -86,9 +86,7 @@ final class LoopbackCommunicationsPlatform
   @override
   Future<MicrophonePermission> requestMicrophonePermission() async {
     try {
-      final permission = await inner.requestMicrophonePermission().timeout(
-        const Duration(seconds: 2),
-      );
+      final permission = await inner.requestMicrophonePermission();
       if (permission == MicrophonePermission.granted) {
         return permission;
       }
@@ -117,15 +115,13 @@ final class LoopbackCommunicationsPlatform
         : renderId;
     NativeGraphStart started = NativeGraphStart.unavailable;
     try {
-      started = await inner
-          .startNative(
-            captureId: innerCapture,
-            renderId: innerRender,
-            captureFormat: captureFormat,
-            playbackFormat: playbackFormat,
-            noiseCancelling: noiseCancelling,
-          )
-          .timeout(const Duration(seconds: 3));
+      started = await inner.startNative(
+        captureId: innerCapture,
+        renderId: innerRender,
+        captureFormat: captureFormat,
+        playbackFormat: playbackFormat,
+        noiseCancelling: noiseCancelling,
+      );
     } on Object {
       started = NativeGraphStart.failed;
     }

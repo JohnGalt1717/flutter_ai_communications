@@ -78,7 +78,9 @@ void _installAgentBindings() {
   hierarchicalLoggingEnabled = true;
   Logger.root.level = Level.INFO;
   Logger(PipelineLog.loggerName).level = Level.INFO;
-  FlutterSkillBinding.ensureInitialized();
+  // Web HtmlElementView + the skill overlay both use Overlay entries.
+  // Auto-indicators on web trip InheritedElement.deactivate during Session start.
+  FlutterSkillBinding.ensureInitialized(autoEnableIndicators: !kIsWeb);
 }
 
 enum _HarnessPhase { idle, lobby, meeting }
@@ -174,6 +176,8 @@ final class _SessionPageState extends State<SessionPage> {
   Coverage _coverage = const Coverage.ok();
   double _level = 0;
   final _levels = <double>[];
+  final _wave = ValueNotifier<int>(0);
+  var _waveScheduled = false;
   List<Endpoint> _endpoints = const [];
   List<CameraEndpoint> _cameras = const [];
   List<ScreenSource> _screenSources = const [];
@@ -205,9 +209,15 @@ final class _SessionPageState extends State<SessionPage> {
     });
     _catalogSub = _manager.endpointCatalog.listen((endpoints) {
       _catalogEpoch++;
-      if (mounted) {
-        setState(() => _endpoints = endpoints);
+      _endpoints = endpoints;
+      if (!mounted) {
+        return;
       }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
     });
     _draft = _store.endpoints;
     _bindStoredPreference();
@@ -266,6 +276,7 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
     unawaited(_session?.stop());
+    _wave.dispose();
     super.dispose();
   }
 
@@ -454,13 +465,22 @@ final class _SessionPageState extends State<SessionPage> {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _level = _rms(bytes);
-        _levels.add(_level);
-        if (_levels.length > 48) {
-          _levels.removeAt(0);
+      _level = _rms(bytes);
+      _levels.add(_level);
+      if (_levels.length > 48) {
+        _levels.removeAt(0);
+      }
+      _diagnostics = session.diagnostics;
+      if (_waveScheduled) {
+        return;
+      }
+      _waveScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _waveScheduled = false;
+        if (mounted) {
+          _wave.value++;
+          setState(() {});
         }
-        _diagnostics = session.diagnostics;
       });
     });
     setState(() {});
@@ -488,6 +508,7 @@ final class _SessionPageState extends State<SessionPage> {
         _pipeline.clear();
         _levels.clear();
         _level = 0;
+        _wave.value++;
         _indicatedScreenId = null;
         _screenStatus = null;
       });
@@ -756,13 +777,7 @@ final class _SessionPageState extends State<SessionPage> {
               onLeave: _stop,
               onProve: _prove,
             ),
-            SizedBox(
-              height: 56,
-              child: CustomPaint(
-                painter: _WavePainter(_levels, _level),
-                child: const SizedBox.expand(),
-              ),
-            ),
+            _waveStrip(height: 56),
             if (_proof != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -774,6 +789,69 @@ final class _SessionPageState extends State<SessionPage> {
                   key: const Key('echo-proof'),
                 ),
               ),
+          ],
+          if (_phase != _HarnessPhase.meeting) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: SizedBox(
+                height: 240,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: KeyedSubtree(
+                    key: const Key('self-view'),
+                    child: _selfView(session),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  FilledButton(
+                    key: const Key('lobby-enter'),
+                    onPressed: _phase == _HarnessPhase.idle
+                        ? _enterLobby
+                        : null,
+                    child: const Text('Enter lobby'),
+                  ),
+                  FilledButton(
+                    key: const Key('lobby-join'),
+                    onPressed: _phase == _HarnessPhase.lobby
+                        ? _joinMeeting
+                        : null,
+                    child: const Text('Join'),
+                  ),
+                  OutlinedButton(
+                    key: const Key('lobby-leave'),
+                    onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
+                    child: const Text('Leave'),
+                  ),
+                  FilledButton.tonal(
+                    key: const Key('mute'),
+                    onPressed: session == null
+                        ? null
+                        : () {
+                            if (session.isMuted) {
+                              session.unmute();
+                            } else {
+                              session.mute();
+                            }
+                            setState(() {});
+                          },
+                    child: Text(
+                      session?.isMuted == true ? 'Unmute' : 'Mute',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: _waveStrip(height: 56),
+            ),
           ],
           Expanded(
             child: ListView(
@@ -828,58 +906,6 @@ final class _SessionPageState extends State<SessionPage> {
           'Isolation ${(session.lastIsolation.state.name)}',
           key: const Key('isolation'),
         ),
-      const SizedBox(height: 16),
-      if (_phase != _HarnessPhase.meeting)
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            FilledButton(
-              key: const Key('lobby-enter'),
-              onPressed: _phase == _HarnessPhase.idle ? _enterLobby : null,
-              child: const Text('Enter lobby'),
-            ),
-            FilledButton(
-              key: const Key('lobby-join'),
-              onPressed: _phase == _HarnessPhase.lobby ? _joinMeeting : null,
-              child: const Text('Join'),
-            ),
-            OutlinedButton(
-              key: const Key('lobby-leave'),
-              onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
-              child: const Text('Leave'),
-            ),
-            FilledButton.tonal(
-              key: const Key('mute'),
-              onPressed: session == null
-                  ? null
-                  : () {
-                      if (session.isMuted) {
-                        session.unmute();
-                      } else {
-                        session.mute();
-                      }
-                      setState(() {});
-                    },
-              child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
-            ),
-          ],
-        ),
-      if (_phase != _HarnessPhase.meeting) ...[
-        const SizedBox(height: 16),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 280),
-          child: _selfView(session),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 72,
-          child: CustomPaint(
-            painter: _WavePainter(_levels, _level),
-            child: const SizedBox.expand(),
-          ),
-        ),
-      ],
       if (_phase != _HarnessPhase.meeting) ...[
         if (session != null) ...[
           const SizedBox(height: 24),
@@ -1126,11 +1152,25 @@ final class _SessionPageState extends State<SessionPage> {
     ];
   }
 
+  Widget _waveStrip({required double height}) {
+    return SizedBox(
+      height: height,
+      child: ValueListenableBuilder<int>(
+        valueListenable: _wave,
+        builder: (context, _, _) {
+          return CustomPaint(
+            painter: _WavePainter(List<double>.of(_levels), _level),
+            child: const SizedBox.expand(),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _selfView(Session? session) {
     final preview = _manager.cameraPreview;
     if (preview != null) {
       return VideoSurfaceView(
-        key: const Key('self-view'),
         surface: preview.surface,
         viewTypePrefix: 'fac-camera',
         followUiOrientation: true,
@@ -1149,7 +1189,6 @@ final class _SessionPageState extends State<SessionPage> {
           child: Center(
             child: Text(
               session?.videoUnavailableReason ?? 'Camera off',
-              key: const Key('self-view'),
               style: const TextStyle(color: Color(0xFFB0B0C0)),
             ),
           ),
@@ -1157,7 +1196,6 @@ final class _SessionPageState extends State<SessionPage> {
       );
     }
     return VideoSurfaceView(
-      key: const Key('self-view'),
       surface: surface,
       viewTypePrefix: 'fac-camera',
       followUiOrientation: true,

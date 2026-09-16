@@ -181,6 +181,20 @@ void main() {
     expect(proof.bytes, fixture.length);
   });
 
+  test('loopback startNative waits for a slow inner adapter', () async {
+    platform.startNativeDelay = const Duration(milliseconds: 3500);
+    final loopback = LoopbackCommunicationsPlatform(platform);
+    addTearDown(loopback.dispose);
+    expect(
+      await loopback.startNative(
+        captureId: LoopbackCommunicationsPlatform.captureId,
+        renderId: LoopbackCommunicationsPlatform.renderId,
+      ),
+      NativeGraphStart.started,
+    );
+    expect(platform.startNativeCompleted, isTrue);
+  });
+
   test('loopback wrapper forwards screen send to the inner adapter', () async {
     final loopback = LoopbackCommunicationsPlatform(platform);
     addTearDown(loopback.dispose);

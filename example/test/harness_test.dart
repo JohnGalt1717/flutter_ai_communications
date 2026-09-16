@@ -64,6 +64,20 @@ void main() {
     );
   });
 
+  testWidgets('lobby camera self-view is not inside ListView', (tester) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const Key('self-view')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.byKey(const Key('self-view')),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'Orchestration debug keys prove Desired/Applied/Observed and logs',
     (tester) async {
@@ -75,9 +89,15 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
 
       expect(
-        (find.byKey(const Key('isolation')).evaluate().single.widget as Text)
+        (find
+                    .byKey(const Key('isolation'), skipOffstage: false)
+                    .evaluate()
+                    .single
+                    .widget
+                as Text)
             .data,
         contains(IsolationState.required.name),
       );
@@ -135,7 +155,6 @@ void main() {
             .data,
         '0/0/0/0',
       );
-      await tester.scrollUntilVisible(find.byKey(const Key('lobby-join')), -80);
       expect(find.byKey(const Key('lobby-join')), findsOneWidget);
       await tester.tap(find.byKey(const Key('lobby-join')));
       await tester.pump();
