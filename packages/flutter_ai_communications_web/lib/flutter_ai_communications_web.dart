@@ -468,7 +468,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     } on Object {
       // Already closed.
     }
-    _warmAudioContext();
+    if (!dispose) {
+      _warmAudioContext();
+    }
   }
 
   void _emitObserved({WebSinkUnsupported? unsupported}) {
@@ -647,14 +649,20 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         slot.style
           ..setProperty('width', '100%')
           ..setProperty('height', '100%');
-        final token = _domVideoFrame;
+        final token = ++_domVideoFrame;
         void sync(num _) {
           if (token != _domVideoFrame || _videoEl != liveVideo) {
             return;
           }
           final rect = slot.getBoundingClientRect();
+          final trackLive = stream.getVideoTracks().toDart.any(
+            (track) => track.enabled,
+          );
           final visible =
-              slot.isConnected && rect.width > 1 && rect.height > 1;
+              slot.isConnected &&
+              rect.width > 1 &&
+              rect.height > 1 &&
+              trackLive;
           liveVideo.style.setProperty('display', visible ? 'block' : 'none');
           _videoCanvas?.style.setProperty(
             'display',
@@ -713,6 +721,9 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       }
       return NativeGraphStart.started;
     } on Object {
+      if (startGen != _cameraStartGen) {
+        return NativeGraphStart.unavailable;
+      }
       _cameraSurface = null;
       _cameraFormat = null;
       return NativeGraphStart.unavailable;

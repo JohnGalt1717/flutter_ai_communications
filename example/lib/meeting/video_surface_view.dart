@@ -50,10 +50,12 @@ final class VideoSurfaceView extends StatelessWidget {
     // HtmlElementView on web must sit in a tight pixel box. LayoutBuilder /
     // AspectRatio inside ListView asserts in the viewport during mount.
     if (surface.kind == VideoSurfaceKind.htmlElement) {
-      setCameraDomChrome(caption: caption, muted: showMuteBadge);
       return _HtmlCameraSlot(
         viewType: '$viewTypePrefix-${surface.handle}',
         aspectRatio: surface.aspectRatio,
+        caption: viewTypePrefix == 'fac-camera' ? caption : null,
+        showMuteBadge:
+            viewTypePrefix == 'fac-camera' ? showMuteBadge : false,
       );
     }
     // Texture fills its layout size and ignores FittedBox / RotatedBox.
@@ -96,10 +98,19 @@ final class VideoSurfaceView extends StatelessWidget {
 }
 
 final class _HtmlCameraSlot extends StatefulWidget {
-  const _HtmlCameraSlot({required this.viewType, required this.aspectRatio});
+  const _HtmlCameraSlot({
+    required this.viewType,
+    required this.aspectRatio,
+    this.caption,
+    this.showMuteBadge = false,
+  });
 
   final String viewType;
   final double aspectRatio;
+  final String? caption;
+  final bool showMuteBadge;
+
+  bool get _isCamera => viewType.startsWith('fac-camera-');
 
   @override
   State<_HtmlCameraSlot> createState() => _HtmlCameraSlotState();
@@ -107,9 +118,30 @@ final class _HtmlCameraSlot extends StatefulWidget {
 
 final class _HtmlCameraSlotState extends State<_HtmlCameraSlot> {
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _publishChrome();
+  }
+
+  @override
+  void didUpdateWidget(_HtmlCameraSlot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _publishChrome();
+  }
+
+  @override
   void dispose() {
-    setCameraDomChrome();
+    if (widget._isCamera) {
+      setCameraDomChrome();
+    }
     super.dispose();
+  }
+
+  void _publishChrome() {
+    if (!widget._isCamera) {
+      return;
+    }
+    setCameraDomChrome(caption: widget.caption, muted: widget.showMuteBadge);
   }
 
   @override

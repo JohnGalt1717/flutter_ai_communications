@@ -105,6 +105,9 @@ void main() {
     await tester.pumpWidget(ExampleApp(manager: manager));
     await tester.pump();
     await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
     expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('self-view')), findsOneWidget);
     expect(find.byKey(const Key('lobby-enter')), findsOneWidget);
