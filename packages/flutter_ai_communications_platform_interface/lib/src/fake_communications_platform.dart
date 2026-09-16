@@ -135,6 +135,13 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Optional error thrown from [startNative].
   Object? startNativeError;
 
+  /// Delay before [startNative] returns. Tests use this to catch wrapper
+  /// timeouts that return before the inner adapter finishes.
+  Duration startNativeDelay = Duration.zero;
+
+  /// True after [startNative] has fully completed, including [startNativeDelay].
+  var startNativeCompleted = false;
+
   /// Capture frames tests inject.
   final StreamController<Uint8List> captureController =
       StreamController<Uint8List>.broadcast();
@@ -279,6 +286,10 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   }) async {
     startNativeCalls++;
     nativeGeneration++;
+    if (startNativeDelay > Duration.zero) {
+      await Future<void>.delayed(startNativeDelay);
+    }
+    startNativeCompleted = true;
     final error = startNativeError;
     if (error != null) {
       throw error;
