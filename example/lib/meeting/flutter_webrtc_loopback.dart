@@ -81,10 +81,8 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
       if (event.streams.isNotEmpty) {
         _renderer.srcObject = event.streams.first;
       }
-      if (event.track != null || event.streams.isNotEmpty) {
-        _hasRemote = true;
-        _inboundChanged?.call();
-      }
+      _hasRemote = true;
+      _inboundChanged?.call();
     };
   }
 

@@ -50,13 +50,15 @@ From the workspace root, for packages touched by the diff:
 
 ```bash
 flutter pub get
+dart fix --apply
+dart analyze
 # For each changed Dart package with tests:
 (cd packages/<pkg> && flutter test)
 # iOS route policy when Swift policy/tests change:
 (cd packages/flutter_ai_communications_ios/ios/flutter_ai_communications_ios/IosRoutePolicy && swift test)
 ```
 
-Do not open a PR from obviously broken local state.
+`dart fix --apply` is required, not optional. CI fails leftover dart-fix suggestions. Do not open a PR from obviously broken local state.
 
 ### 3. Commit and push
 

@@ -178,22 +178,22 @@ final class WasapiDeviceWatch {
     return _refs;
   }
 
-  int _changed(VTablePointer _, Pointer<Utf16> __, int ___) {
+  int _changed(VTablePointer _, Pointer<Utf16> _, int _) {
     _signal();
     return 0;
   }
 
-  int _changedId(VTablePointer _, Pointer<Utf16> __) {
+  int _changedId(VTablePointer _, Pointer<Utf16> _) {
     _signal();
     return 0;
   }
 
-  int _changedDefault(VTablePointer _, int __, int ___, Pointer<Utf16> ____) {
+  int _changedDefault(VTablePointer _, int _, int _, Pointer<Utf16> _) {
     _signal();
     return 0;
   }
 
-  int _ignoreProperty(VTablePointer _, Pointer<Utf16> __, PROPERTYKEY ___) {
+  int _ignoreProperty(VTablePointer _, Pointer<Utf16> _, PROPERTYKEY _) {
     return 0;
   }
 

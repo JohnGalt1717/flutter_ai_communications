@@ -18,6 +18,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_ai_communications_shared: ^0.0.1
 
 flutter:
   plugin:

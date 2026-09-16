@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
 
 import 'video_surface_view.dart';

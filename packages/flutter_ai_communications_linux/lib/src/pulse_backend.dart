@@ -584,7 +584,12 @@ Future<void> _deviceWatchMain(SendPort send) async {
   final callable =
       NativeCallable<
         Void Function(Pointer<PaContext>, Uint32, Uint32, Pointer<Void>)
-      >.listener((context, type, index, userdata) {
+      >.listener((
+        Pointer<PaContext> context,
+        int type,
+        int index,
+        Pointer<Void> userdata,
+      ) {
         send.send(null);
       });
   async.contextSetSubscribeCallback(context, callable.nativeFunction, nullptr);
@@ -592,7 +597,7 @@ Future<void> _deviceWatchMain(SendPort send) async {
   final success =
       NativeCallable<
         Void Function(Pointer<PaContext>, Int32, Pointer<Void>)
-      >.listener((context, ok, userdata) {
+      >.listener((Pointer<PaContext> context, int ok, Pointer<Void> userdata) {
         subscribeOk = ok != 0;
       });
   final op = async.contextSubscribe(

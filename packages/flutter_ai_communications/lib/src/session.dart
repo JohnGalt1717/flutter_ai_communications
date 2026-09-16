@@ -24,14 +24,14 @@ final class Session {
     this.cameraSend = false,
     this.videoFormat = VideoFormat.defaultFormat,
     this.cameraPreference = const CameraPreference(),
-    VideoProcessor videoProcessor = const NoneVideoProcessor(),
-    String? cameraId,
-    bool cameraPreferenceControlled = true,
-    bool cameraEnabled = true,
-    bool videoMuted = false,
-    VideoSurface? videoSurface,
-    VideoFormat? nativeVideoFormat,
-    String? videoUnavailableReason,
+    this._videoProcessor = const NoneVideoProcessor(),
+    this._cameraId,
+    this._cameraPreferenceControlled = true,
+    this._cameraEnabled = true,
+    this._videoMuted = false,
+    this._videoSurface,
+    this._nativeVideoFormat,
+    this._videoUnavailableReason,
   }) : _platform = platform,
        _catalog = List<Endpoint>.of(catalog),
        _desired = desired,
@@ -47,15 +47,7 @@ final class Session {
        _captureController = StreamController<Uint8List>.broadcast(),
        _isolationController = StreamController<IsolationEvent>.broadcast(),
        _coverageController = StreamController<Coverage>.broadcast(),
-       _statusController = StreamController<SessionStatus>.broadcast(),
-       _videoProcessor = videoProcessor,
-       _cameraId = cameraId,
-       _cameraPreferenceControlled = cameraPreferenceControlled,
-       _cameraEnabled = cameraEnabled,
-       _videoMuted = videoMuted,
-       _videoSurface = videoSurface,
-       _nativeVideoFormat = nativeVideoFormat,
-       _videoUnavailableReason = videoUnavailableReason {
+       _statusController = StreamController<SessionStatus>.broadcast() {
     capture = _captureController.stream;
     isolation = _isolationController.stream;
     coverage = _coverageController.stream;
@@ -405,7 +397,6 @@ final class Session {
   String? _cameraId;
   late bool _cameraEnabled;
   late bool _cameraPreferenceControlled;
-  List<CameraEndpoint> _cameras = const [];
   late bool _videoMuted;
   VideoSurface? _videoSurface;
   VideoFormat? _nativeVideoFormat;
@@ -1180,7 +1171,6 @@ final class Session {
   }
 
   void _onCameraCatalog(List<CameraEndpoint> catalog) {
-    _cameras = List<CameraEndpoint>.of(catalog);
     unawaited(_enqueue(() => _applyCameraCatalog(catalog)));
   }
 

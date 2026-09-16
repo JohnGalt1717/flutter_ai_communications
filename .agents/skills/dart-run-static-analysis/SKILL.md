@@ -53,9 +53,9 @@ Use this workflow to resolve outdated API usages, apply quick fixes, and migrate
 - [ ] 1. Execute a dry run to preview proposed changes using the `dart_fix` MCP tool or CLI command `dart fix --dry-run`.
 - [ ] 2. Review the proposed fixes to ensure they align with the intended architecture.
 - [ ] 3. If additional fixes are required, verify that the corresponding linter rules are enabled in `analysis_options.yaml`.
-- [ ] 4. Apply the fixes using the `dart_fix` MCP tool or CLI command `dart fix --apply`.
+- [ ] 4. Apply the fixes using the `dart_fix` MCP tool or CLI command `dart fix --apply`. This step is required on every Dart change, not optional cleanup.
 - [ ] 5. Format the modified code using the `dart_format` MCP tool or CLI command `dart format .`.
-- [ ] 6. Run the static analysis workflow to verify all diagnostics are resolved.
+- [ ] 6. Run the static analysis workflow to verify all diagnostics are resolved. CI fails if `dart fix --dry-run` still reports proposed fixes.
 
 ## Examples
 

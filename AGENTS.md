@@ -61,7 +61,7 @@ Load the skill before the work it covers:
 | Tests | `tdd`, then `dart-add-unit-test` / `flutter-add-widget-test` / `flutter-add-integration-test` |
 | Native C / hooks / bindings | `dart-setup-ffi-assets`, `dart-use-ffigen` |
 | Dart 3 constructors / switches | `dart-use-primary-constructors`, `dart-use-pattern-matching` |
-| Analyze | Dart MCP / `mcp_dart_and_flut_analyze_files` — not routine `dart analyze` |
+| Analyze | `dart-run-static-analysis`: `dart fix --apply`, then analyze. CI fails leftover dart-fix suggestions. |
 | This file or a skill | `writing-for-agents` |
 | Grill / plan | `grill-with-docs` (`grilling` + `domain-modeling`) |
 | Attach/debug via flutter_agent_lens; Flutter UI via flutter-skill | `device-agent-lens` |

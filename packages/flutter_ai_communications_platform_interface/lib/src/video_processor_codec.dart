@@ -13,7 +13,7 @@ Map<String, Object?> videoProcessorToMap(VideoProcessor processor) =>
       ReplaceVideoProcessor(:final bytes, :final asset) => {
         'kind': 'replace',
         if (bytes != null) 'bytes': Uint8List.fromList(bytes),
-        if (asset != null) 'asset': asset,
+        'asset': ?asset,
       },
     };
 
