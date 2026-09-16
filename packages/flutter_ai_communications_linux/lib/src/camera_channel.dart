@@ -8,19 +8,16 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'camera_backend.dart';
 
 /// MethodChannel camera graph. Audio stays on Pulse FFI.
+/// Camera hotplug is `/dev/video*` inotify; Linux native has no EventChannel.
 final class MethodChannelCameraBackend implements CameraBackend {
   /// Creates a channel backend.
-  MethodChannelCameraBackend({MethodChannel? methods, EventChannel? events})
+  MethodChannelCameraBackend({MethodChannel? methods})
     : _methods =
-          methods ?? const MethodChannel('flutter_ai_communications/methods'),
-      _events =
-          events ?? const EventChannel('flutter_ai_communications/events');
+          methods ?? const MethodChannel('flutter_ai_communications/methods');
 
   final MethodChannel _methods;
-  final EventChannel _events;
   final StreamController<List<CameraEndpoint>> _catalogOut =
       StreamController<List<CameraEndpoint>>.broadcast();
-  StreamSubscription<dynamic>? _eventsSub;
   StreamSubscription<FileSystemEvent>? _devWatch;
   VideoSurface? _lastSurface;
   VideoFormat? _lastFormat;
@@ -47,11 +44,6 @@ final class MethodChannelCameraBackend implements CameraBackend {
   }
 
   void _ensureWatch() {
-    _eventsSub ??= _events.receiveBroadcastStream().listen((event) {
-      if (event is Map && event['type'] == 'cameraCatalog') {
-        _catalogOut.add(_readCameras(event['payload'] as List<dynamic>?));
-      }
-    });
     try {
       _devWatch ??= Directory('/dev').watch().listen((change) {
         if (change.path.contains('video')) {

@@ -74,6 +74,17 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     )
   }
 
+  func stopCatalogWatch() {
+    for observer in catalogObservers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    catalogObservers.removeAll()
+  }
+
+  deinit {
+    stopCatalogWatch()
+  }
+
   func emitCatalog() {
     onCatalog?(enumerate())
   }

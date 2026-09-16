@@ -167,6 +167,13 @@ class AndroidCameraGraph(
         manager.registerAvailabilityCallback(callback, main)
     }
 
+    fun stopCatalogWatch() {
+        val callback = availabilityCallback ?: return
+        val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        manager.unregisterAvailabilityCallback(callback)
+        availabilityCallback = null
+    }
+
     fun enumerate(): List<Map<String, Any>> {
         val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         return manager.cameraIdList.map { id ->

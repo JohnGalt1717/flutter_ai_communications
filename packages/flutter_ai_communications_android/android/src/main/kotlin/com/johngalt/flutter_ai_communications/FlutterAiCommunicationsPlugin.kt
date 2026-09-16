@@ -276,6 +276,7 @@ class FlutterAiCommunicationsPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         cameraGraph?.stop()
+        cameraGraph?.stopCatalogWatch()
         cameraGraph?.releaseDisplayWatch()
         stopNative()
         audioManager?.unregisterAudioDeviceCallback(deviceCallback)

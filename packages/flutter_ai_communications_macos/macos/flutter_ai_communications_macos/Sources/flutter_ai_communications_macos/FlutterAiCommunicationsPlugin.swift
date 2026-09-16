@@ -52,6 +52,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       .setStreamHandler(EventHandler(plugin: instance))
   }
 
+  public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
+    camera.stopCatalogWatch()
+  }
+
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "enumerateEndpoints":
