@@ -24,6 +24,8 @@ No VS Code debug session. No Marionette. No DebugMCP.
 
 ## Launch (no IDE debug)
 
+Workspace `dart analyze` must be clean before `flutter run` or flutter-skill `launch_app` (`dart-run-static-analysis`).
+
 Prefer Agent Lens / flutter-skill launch over `workbench.action.debug.*`.
 Do **not** use VS Code debug configurations.
 

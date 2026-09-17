@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "matcher": "create|edit|str_replace_editor|apply_patch",
+        "bash": "python3 tool/agent-hooks/dart_analyze_hook.py after-save",
+        "powershell": "python tool/agent-hooks/dart_analyze_hook.py after-save",
+        "cwd": ".",
+        "timeoutSec": 90
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell",
+        "bash": "python3 tool/agent-hooks/dart_analyze_hook.py before-run",
+        "powershell": "python tool/agent-hooks/dart_analyze_hook.py before-run",
+        "cwd": ".",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}

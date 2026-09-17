@@ -85,6 +85,7 @@ Copy and follow this checklist to implement and verify integration tests.
   - [ ] Write test cases using `WidgetTester` APIs.
   - [ ] Create `test_driver/integration_test.dart` with `integrationDriver()`.
 - [ ] **Task Progress: Execution & Feedback Loop**
+  - [ ] Workspace `dart analyze` must be clean (`dart-run-static-analysis`).
   - [ ] Run `flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart`.
   - [ ] **Feedback Loop**: Review test output -> If `PumpAndSettleTimedOutException` occurs, check for infinite animations -> If widget not found, add `scrollUntilVisible` -> Re-run test until passing.
 

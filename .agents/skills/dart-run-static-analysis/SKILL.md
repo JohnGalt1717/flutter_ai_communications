@@ -1,6 +1,6 @@
 ---
 name: dart-run-static-analysis
-description: Execute `dart analyze` to identify warnings and errors, and use `dart fix --apply` to automatically resolve mechanical lint issues. Use during development to ensure code quality and before committing changes.
+description: Run dart analyze and dart fix. Use after saving Dart, before flutter test / dart test / flutter run / flutter drive, when lints fail, or before committing.
 metadata:
   model: models/gemini-3.1-pro-preview
   last_modified: Fri, 24 Apr 2026 15:09:34 GMT
@@ -33,6 +33,27 @@ When a diagnostic (lint or warning) yields a false positive or applies to genera
 - **Line-level Suppression:** Add `// ignore: <diagnostic_code>` on the line directly above the offending code, or appended to the end of the offending line.
 - **Pubspec Suppression:** Add `# ignore: <diagnostic_code>` above the offending line in `pubspec.yaml` files (e.g., `# ignore: sort_pub_dependencies`).
 - **Plugin Diagnostics:** Prefix the diagnostic code with the plugin name when suppressing plugin-specific issues (e.g., `// ignore: some_plugin/some_code`).
+
+## After a Dart save
+
+Grok Build and GitHub Copilot hooks run `dart analyze` on the files just written (`tool/agent-hooks/dart_analyze_hook.py after-save`).
+
+- ERROR and WARNING in those files must be fixed on that save.
+- Diagnostics only in other files may wait while a multi-file refactor is still in flight.
+- `dart fix --apply` is required for mechanical fixes; then re-analyze.
+
+## Before tests or run
+
+Hooks deny `flutter test`, `dart test`, `flutter run`, `flutter drive`, and example launch until workspace `dart analyze` is clean (`tool/agent-hooks/dart_analyze_hook.py before-run`).
+
+Do this yourself as well — do not wait for the hook:
+
+1. `dart fix --apply`
+2. `dart analyze` at the workspace root
+3. Fix every ERROR and WARNING
+4. Then run tests or launch
+
+A failing test (red TDD) is allowed. An analyzer error that would keep the suite from compiling is not.
 
 ## Workflow: Executing Static Analysis
 
