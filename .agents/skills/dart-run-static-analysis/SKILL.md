@@ -36,7 +36,7 @@ When a diagnostic (lint or warning) yields a false positive or applies to genera
 
 ## After a Dart save
 
-Grok Build and GitHub Copilot hooks run `dart analyze` on the files just written (`tool/agent-hooks/dart_analyze_hook.py after-save`).
+Grok Build and GitHub Copilot hooks run `dart analyze` on the files just written (`dart tool/agent-hooks/dart_analyze_hook.dart after-save`).
 
 - ERROR and WARNING in those files must be fixed on that save.
 - Diagnostics only in other files may wait while a multi-file refactor is still in flight.
@@ -44,7 +44,7 @@ Grok Build and GitHub Copilot hooks run `dart analyze` on the files just written
 
 ## Before tests or run
 
-Hooks deny `flutter test`, `dart test`, `flutter run`, `flutter drive`, and example launch until workspace `dart analyze` is clean (`tool/agent-hooks/dart_analyze_hook.py before-run`).
+Hooks deny `flutter test`, `dart test`, `flutter run`, `flutter drive`, and example launch until workspace `dart analyze` is clean (`dart tool/agent-hooks/dart_analyze_hook.dart before-run`). Linux, macOS, and Windows share that Dart entrypoint.
 
 Do this yourself as well — do not wait for the hook:
 

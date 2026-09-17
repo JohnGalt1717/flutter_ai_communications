@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ../../tool/agent-hooks/dart_analyze_hook.py after-save",
+            "command": "dart \"$GROK_WORKSPACE_ROOT/tool/agent-hooks/dart_analyze_hook.dart\" after-save",
             "timeout": 90
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ../../tool/agent-hooks/dart_analyze_hook.py before-run",
+            "command": "dart \"$GROK_WORKSPACE_ROOT/tool/agent-hooks/dart_analyze_hook.dart\" before-run",
             "timeout": 120
           }
         ]

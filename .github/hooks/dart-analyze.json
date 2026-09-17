@@ -5,8 +5,9 @@
       {
         "type": "command",
         "matcher": "create|edit|str_replace_editor|apply_patch",
-        "bash": "python3 tool/agent-hooks/dart_analyze_hook.py after-save",
-        "powershell": "python tool/agent-hooks/dart_analyze_hook.py after-save",
+        "command": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
+        "bash": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
+        "powershell": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
         "cwd": ".",
         "timeoutSec": 90
       }
@@ -15,8 +16,9 @@
       {
         "type": "command",
         "matcher": "bash|powershell",
-        "bash": "python3 tool/agent-hooks/dart_analyze_hook.py before-run",
-        "powershell": "python tool/agent-hooks/dart_analyze_hook.py before-run",
+        "command": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
+        "bash": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
+        "powershell": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
         "cwd": ".",
         "timeoutSec": 120
       }
