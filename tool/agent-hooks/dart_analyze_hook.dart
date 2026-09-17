@@ -20,9 +20,8 @@ final _editTools = RegExp(
 );
 final _launchTools = RegExp('launch_app', caseSensitive: false);
 final _runCommand = RegExp(
-  r'(?:^|[;&|\n]|\b(?:then|do|if)\b)\s*&?\s*'
-  r'(?:flutter|dart)(?:\.bat|\.cmd|\.exe)?\s+'
-  r'(?:test|run|drive)\b',
+  r'(?:flutter|dart)(?:\.bat|\.cmd|\.exe)?(?:\s+\S+)*?\s+'
+  r'(?:test|run|drive)(?:\s|$)',
   caseSensitive: false,
 );
 final _analyzeSelf = RegExp(
@@ -174,8 +173,21 @@ void _pathsFrom(Object? node, List<String> found) {
   }
 }
 
+final _applyPatchHeader = RegExp(
+  r'^\*\*\*\s+(?:Add|Update|Delete) File:\s+(.+)$',
+  caseSensitive: false,
+);
+
 void _pathsFromPatch(String patch, List<String> found) {
   for (final line in patch.split('\n')) {
+    final apply = _applyPatchHeader.firstMatch(line);
+    if (apply != null) {
+      final path = apply.group(1)!.trim();
+      if (path.isNotEmpty) {
+        found.add(path);
+      }
+      continue;
+    }
     if (!line.startsWith('+++ ')) {
       continue;
     }
@@ -308,6 +320,11 @@ _AnalyzeResult _analyze(Directory root, List<File>? targets) {
       'code': code,
       'message': message,
     });
+  }
+  if (proc.exitCode != 0 && out.isEmpty) {
+    return _AnalyzeResult.failed(
+      'dart analyze exit ${proc.exitCode} with no ERROR/WARNING diagnostics',
+    );
   }
   return _AnalyzeResult.ok(out);
 }
