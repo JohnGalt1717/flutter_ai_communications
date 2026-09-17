@@ -387,8 +387,8 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         analyser.connect(mute);
         mute.connect(context.destination);
       }
-      final periodUs =
-          ((analyser.fftSize / context.sampleRate) * 1000000).round();
+      final periodUs = ((analyser.fftSize / context.sampleRate) * 1000000)
+          .round();
       _captureTimer = Timer.periodic(Duration(microseconds: periodUs), (_) {
         _pumpAnalyser();
       });
@@ -1041,13 +1041,10 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   }
 
   web.MediaStream? _screenStream;
-  web.HTMLVideoElement? _screenEl;
   var _screenFactoryRegistered = false;
   VideoSurface? _screenSurface;
   VideoFormat? _screenFormat;
   String? _screenUnavailableReason;
-  var _screenCursor = true;
-  var _screenMotion = false;
 
   @override
   VideoSurface? get lastScreenSurface => _screenSurface;
@@ -1093,8 +1090,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
     bool motion = false,
   }) async {
     await stopScreenShareNative();
-    _screenCursor = cursor;
-    _screenMotion = motion;
     try {
       final constraints = <String, Object>{
         'video': {'cursor': cursor ? 'always' : 'never'},
@@ -1122,7 +1117,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
             ..setProperty('height', '100%')
             ..setProperty('object-fit', 'contain')
             ..setProperty('display', 'block');
-          _screenEl = element;
           return element;
         });
         _screenFactoryRegistered = true;
@@ -1147,7 +1141,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
         'ended',
         (web.Event _) {
           _screenStream = null;
-          _screenEl = null;
           _screenSurface = null;
           _screenFormat = null;
           _screenUnavailableReason = 'gone';
@@ -1167,7 +1160,6 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
   Future<void> stopScreenShareNative() async {
     _screenStream?.getTracks().toDart.forEach((track) => track.stop());
     _screenStream = null;
-    _screenEl = null;
     _screenSurface = null;
     _screenFormat = null;
   }
@@ -1182,15 +1174,5 @@ final class FlutterAiCommunicationsWeb extends FlutterAiCommunicationsPlatform {
       track.enabled = enabled;
     }
     return enabled;
-  }
-
-  @override
-  Future<void> setScreenMotionNative(bool motion) async {
-    _screenMotion = motion;
-  }
-
-  @override
-  Future<void> setScreenCursorNative(bool cursor) async {
-    _screenCursor = cursor;
   }
 }

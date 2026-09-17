@@ -38,7 +38,7 @@ jobs:
           fi
 
       - name: Dart analyze
-        run: dart analyze --no-fatal-warnings
+        run: dart analyze
 
       - name: Test flutter_ai_communications
         working-directory: packages/flutter_ai_communications
