@@ -45,9 +45,13 @@ void main(List<String> args) {
       _beforeRun(event);
     }
   } catch (error, stack) {
-    stderr.writeln('dart_analyze_hook failed open: $error\n$stack');
+    stderr.writeln('dart_analyze_hook: $error\n$stack');
     if (args.first == 'before-run') {
-      _allow();
+      _deny(
+        'Could not complete workspace dart analyze. Fix the hook failure '
+        'before flutter test, dart test, flutter run, or launching the '
+        'example.\n$error',
+      );
     }
   }
 }
@@ -182,6 +186,25 @@ void _allow() {
   _emit(const {'decision': 'allow', 'permissionDecision': 'allow'});
 }
 
+void _deny(String msg) {
+  _emit({
+    'decision': 'deny',
+    'reason': msg,
+    'permissionDecision': 'deny',
+    'permissionDecisionReason': msg,
+  });
+}
+
+class _AnalyzeResult {
+  const _AnalyzeResult.ok(this.diags) : failed = false, error = '';
+
+  const _AnalyzeResult.failed(this.error) : diags = const [], failed = true;
+
+  final List<Map<String, String>> diags;
+  final bool failed;
+  final String error;
+}
+
 String _canon(String path) {
   final normalized = File(path).absolute.path.replaceAll(r'\', '/');
   if (Platform.isWindows) {
@@ -192,33 +215,47 @@ String _canon(String path) {
 
 bool _sameFile(String left, File right) => _canon(left) == _canon(right.path);
 
-List<Map<String, String>> _analyze(Directory root, List<File>? targets) {
+_AnalyzeResult _analyze(Directory root, List<File>? targets) {
   final args = <String>['analyze', '--format=json'];
   if (targets != null) {
     args.addAll(targets.map((file) => file.path));
   }
-  final proc = Process.runSync(
-    Platform.resolvedExecutable,
-    args,
-    workingDirectory: root.path,
-  );
+  final ProcessResult proc;
+  try {
+    proc = Process.runSync(
+      Platform.resolvedExecutable,
+      args,
+      workingDirectory: root.path,
+    );
+  } catch (error) {
+    return _AnalyzeResult.failed('$error');
+  }
   final blob = '${proc.stdout}${proc.stderr}';
   final start = blob.indexOf('{');
   if (start < 0) {
-    return const [];
+    if (proc.exitCode == 0) {
+      return const _AnalyzeResult.ok([]);
+    }
+    final detail = blob.trim();
+    return _AnalyzeResult.failed(
+      detail.isEmpty ? 'dart analyze exit ${proc.exitCode}' : detail,
+    );
   }
   Object? data;
   try {
     data = jsonDecode(blob.substring(start));
-  } catch (_) {
-    return const [];
+  } catch (error) {
+    return _AnalyzeResult.failed('dart analyze JSON: $error');
   }
   if (data is! Map) {
-    return const [];
+    return const _AnalyzeResult.failed('dart analyze JSON was not an object');
   }
   final diags = data['diagnostics'];
   if (diags is! List) {
-    return const [];
+    if (proc.exitCode == 0) {
+      return const _AnalyzeResult.ok([]);
+    }
+    return const _AnalyzeResult.failed('dart analyze omitted diagnostics');
   }
   final out = <Map<String, String>>[];
   for (final item in diags) {
@@ -250,7 +287,7 @@ List<Map<String, String>> _analyze(Directory root, List<File>? targets) {
       'message': message,
     });
   }
-  return out;
+  return _AnalyzeResult.ok(out);
 }
 
 String _formatDiags(List<Map<String, String>> diags, {int limit = 20}) {
@@ -305,8 +342,11 @@ void _afterSave(Map<String, Object?> event) {
   if (saved.isEmpty) {
     return;
   }
-  final diags = _analyze(root, saved);
-  final inSaved = diags
+  final result = _analyze(root, saved);
+  if (result.failed) {
+    return;
+  }
+  final inSaved = result.diags
       .where((item) => saved.any((path) => _sameFile(item['file'] ?? '', path)))
       .toList();
   if (inSaved.isEmpty) {
@@ -357,19 +397,22 @@ void _beforeRun(Map<String, Object?> event) {
     return;
   }
   final root = _workspace(event);
-  final diags = _analyze(root, null);
-  if (diags.isEmpty) {
+  final result = _analyze(root, null);
+  if (result.failed) {
+    _deny(
+      'Could not complete workspace dart analyze. Fix this before flutter '
+      'test, dart test, flutter run, or launching the example.\n'
+      '${result.error}',
+    );
+    return;
+  }
+  if (result.diags.isEmpty) {
     _allow();
     return;
   }
-  final msg =
-      'Workspace dart analyze is not clean. Fix every ERROR and WARNING '
-      'before flutter test, dart test, flutter run, or launching the '
-      'example.\n${_formatDiags(diags)}';
-  _emit({
-    'decision': 'deny',
-    'reason': msg,
-    'permissionDecision': 'deny',
-    'permissionDecisionReason': msg,
-  });
+  _deny(
+    'Workspace dart analyze is not clean. Fix every ERROR and WARNING '
+    'before flutter test, dart test, flutter run, or launching the '
+    'example.\n${_formatDiags(result.diags)}',
+  );
 }
