@@ -52,6 +52,7 @@ From the workspace root, for packages touched by the diff:
 flutter pub get
 dart fix --apply
 dart analyze
+# Analyzer must be clean before any flutter test / flutter run.
 # For each changed Dart package with tests:
 (cd packages/<pkg> && flutter test)
 # iOS route policy when Swift policy/tests change:

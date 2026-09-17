@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "matcher": "create|edit|str_replace_editor|apply_patch",
+        "command": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
+        "bash": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
+        "powershell": "dart tool/agent-hooks/dart_analyze_hook.dart after-save",
+        "cwd": ".",
+        "timeoutSec": 90
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell",
+        "command": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
+        "bash": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
+        "powershell": "dart tool/agent-hooks/dart_analyze_hook.dart before-run",
+        "cwd": ".",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}

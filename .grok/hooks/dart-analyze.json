@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "search_replace|write|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dart \"$GROK_WORKSPACE_ROOT/tool/agent-hooks/dart_analyze_hook.dart\" after-save",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_terminal_command|Bash|flutter-skill__launch_app",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dart \"$GROK_WORKSPACE_ROOT/tool/agent-hooks/dart_analyze_hook.dart\" before-run",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

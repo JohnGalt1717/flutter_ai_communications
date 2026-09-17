@@ -35,6 +35,7 @@ Utilize `package:test` as the standard testing library for Dart applications.
 ## Executing Tests
 Select the appropriate test runner based on the project type and test location.
 
+* Run workspace `dart analyze` first (`dart-run-static-analysis`). Fix every ERROR and WARNING before `dart test` / `flutter test`.
 * If working on a pure Dart project, execute tests using the `dart test` command.
 * If working on a Flutter project, execute tests using the `flutter test` command.
 * If running integration tests, explicitly specify the directory path, as the default runner ignores it: `dart test integration_test` or `flutter test integration_test`.

@@ -42,7 +42,7 @@ Copy the following checklist to track progress when implementing a new widget te
 - [ ] **Step 5: Simulate interactions.** Execute gestures or inputs (e.g., `await tester.tap(buttonFinder)`).
 - [ ] **Step 6: Rebuild the tree.** Call `await tester.pump()` or `await tester.pumpAndSettle()` to process state changes.
 - [ ] **Step 7: Verify updated state.** Use `expect()` to validate the UI after the interaction.
-- [ ] **Step 8: Run and validate.** Execute `flutter test test/your_test_file_test.dart`.
+- [ ] **Step 8: Analyze, then run.** Workspace `dart analyze` must be clean (`dart-run-static-analysis`). Then `flutter test test/your_test_file_test.dart`.
 - [ ] **Step 9: Feedback Loop.** Review test output -> identify failing matchers -> adjust widget logic or test assertions -> re-run until passing.
 
 ## Interaction & State Management
