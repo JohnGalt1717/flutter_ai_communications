@@ -166,6 +166,28 @@ void _pathsFrom(Object? node, List<String> found) {
       _pathsFrom(node[key], found);
     }
   }
+  for (final key in ['patch', 'diff']) {
+    final value = node[key];
+    if (value is String && value.isNotEmpty) {
+      _pathsFromPatch(value, found);
+    }
+  }
+}
+
+void _pathsFromPatch(String patch, List<String> found) {
+  for (final line in patch.split('\n')) {
+    if (!line.startsWith('+++ ')) {
+      continue;
+    }
+    var path = line.substring(4).trim();
+    if (path.startsWith('b/')) {
+      path = path.substring(2);
+    }
+    if (path.isEmpty || path == '/dev/null' || path == 'dev/null') {
+      continue;
+    }
+    found.add(path);
+  }
 }
 
 bool _isAnalyzeTarget(File path) {
@@ -342,13 +364,36 @@ void _afterSave(Map<String, Object?> event) {
   if (saved.isEmpty) {
     return;
   }
-  final result = _analyze(root, saved);
+  final configSave = saved.any((path) {
+    final name = path.uri.pathSegments.isEmpty
+        ? path.path
+        : path.uri.pathSegments.last;
+    return name == 'pubspec.yaml' || name == 'analysis_options.yaml';
+  });
+  final result = _analyze(root, configSave ? null : saved);
   if (result.failed) {
+    final msg =
+        'dart analyze could not complete after the save. Fix this before '
+        'continuing.\n${result.error}';
+    _emit({
+      'decision': 'block',
+      'reason': msg,
+      'additionalContext': msg,
+      'hookSpecificOutput': {
+        'hookEventName': 'PostToolUse',
+        'additionalContext': msg,
+      },
+    });
     return;
   }
-  final inSaved = result.diags
-      .where((item) => saved.any((path) => _sameFile(item['file'] ?? '', path)))
-      .toList();
+  final inSaved = configSave
+      ? result.diags
+      : result.diags
+            .where(
+              (item) =>
+                  saved.any((path) => _sameFile(item['file'] ?? '', path)),
+            )
+            .toList();
   if (inSaved.isEmpty) {
     return;
   }
@@ -399,7 +444,7 @@ void _beforeRun(Map<String, Object?> event) {
     _allow();
     return;
   }
-  if (command.isNotEmpty && _analyzeSelf.hasMatch(command)) {
+  if (!run && command.isNotEmpty && _analyzeSelf.hasMatch(command)) {
     _allow();
     return;
   }
