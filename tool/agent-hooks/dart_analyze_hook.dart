@@ -388,6 +388,13 @@ void _beforeRun(Map<String, Object?> event) {
   final command = _commandText(event);
   final launch = name.isNotEmpty && _launchTools.hasMatch(name);
   final run = command.isNotEmpty && _runCommand.hasMatch(command);
+  if (name.isEmpty && command.isEmpty) {
+    _deny(
+      'before-run hook received no tool name or command. Denying test/run '
+      'until the event can be parsed.',
+    );
+    return;
+  }
   if (!launch && !run) {
     _allow();
     return;
