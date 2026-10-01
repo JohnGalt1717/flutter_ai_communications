@@ -2,26 +2,50 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 import 'package:test/test.dart';
 
 void main() {
-  test('AirPods capture and render UIDs share one Pair identity', () {
+  test('HFP and A2DP UIDs share the hardware token', () {
     expect(
       applePairId(
         routeClass: RouteClass.bluetooth,
-        uid: 'AA-HFP-IN',
-        name: 'AirPods',
+        uid: 'AA:BB:CC:DD:EE:FF-tsco',
+        name: 'AirPods Microphone',
       ),
-      applePairId(
-        routeClass: RouteClass.bluetooth,
-        uid: 'AA-A2DP-OUT',
-        name: 'AirPods',
-      ),
+      'AA:BB:CC:DD:EE:FF',
     );
     expect(
       applePairId(
         routeClass: RouteClass.bluetooth,
-        uid: 'AA-HFP-IN',
-        name: 'AirPods Microphone',
+        uid: 'AA:BB:CC:DD:EE:FF-tacl',
+        name: 'AirPods',
       ),
-      'airpods',
+      'AA:BB:CC:DD:EE:FF',
+    );
+  });
+
+  test('different hardware tokens stay different with the same name', () {
+    expect(
+      applePairId(
+        routeClass: RouteClass.bluetooth,
+        uid: '11:11:11:11:11:11-tsco',
+        name: 'AirPods Pro',
+      ),
+      isNot(
+        applePairId(
+          routeClass: RouteClass.bluetooth,
+          uid: '22:22:22:22:22:22-tacl',
+          name: 'AirPods Pro',
+        ),
+      ),
+    );
+  });
+
+  test('uid without a profile suffix is returned unchanged', () {
+    expect(
+      applePairId(
+        routeClass: RouteClass.wired,
+        uid: 'AppleUSBAudioEngine:Generic:USB Audio:1141200:1',
+        name: 'USB Audio',
+      ),
+      'AppleUSBAudioEngine:Generic:USB Audio:1141200:1',
     );
   });
 

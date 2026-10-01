@@ -47,7 +47,7 @@ void main() {
     expect(MacosVoiceProcessingPolicy.wantsPlayback(null, 'usb-out'), isTrue);
   });
 
-  test('built-in speakers pair as speakerphone', () {
+  test('built-in speakers pair as speakerphone from transport bltn', () {
     expect(
       macosRouteClass(name: 'MacBook Pro Microphone', transport: 'bltn'),
       RouteClass.speakerphone,
@@ -55,27 +55,90 @@ void main() {
     expect(
       macosPairId(
         routeClass: RouteClass.speakerphone,
-        id: 'id',
-        name: 'Speakers',
+        id: 'BuiltInMicrophoneDevice',
+        name: 'MacBook Pro Microphone',
+        uid: 'BuiltInMicrophoneDevice',
+        transport: 'bltn',
+      ),
+      macosBuiltInPairId,
+    );
+    expect(
+      macosPairId(
+        routeClass: RouteClass.speakerphone,
+        id: 'BuiltInSpeakerDevice',
+        name: 'MacBook Pro Speakers',
+        uid: 'BuiltInSpeakerDevice',
+        transport: 'bltn',
       ),
       macosBuiltInPairId,
     );
   });
 
-  test('AirPods capture and render share one Pair identity', () {
+  test('USB name containing speaker stays wired, not built-in', () {
+    expect(
+      macosRouteClass(name: 'USB Audio Speakers', transport: 'usb '),
+      RouteClass.wired,
+    );
+    expect(
+      macosPairId(
+        routeClass: RouteClass.wired,
+        id: 'AppleUSBAudioEngine:Generic:USB Audio:1141200:1',
+        name: 'USB Audio Speakers',
+        uid: 'AppleUSBAudioEngine:Generic:USB Audio:1141200:1',
+        transport: 'usb ',
+        relatedUids: const [
+          'AppleUSBAudioEngine:Generic:USB Audio:1141200:1',
+          'AppleUSBAudioEngine:Generic:USB Audio:1141200:2',
+        ],
+      ),
+      'AppleUSBAudioEngine:Generic:USB Audio:1141200:1|'
+      'AppleUSBAudioEngine:Generic:USB Audio:1141200:2',
+    );
+  });
+
+  test('unrelated USB devices with the same name stay separate', () {
+    expect(
+      macosPairId(
+        routeClass: RouteClass.wired,
+        id: 'dock-a:3',
+        name: 'USB Audio',
+        uid: 'dock-a:3',
+        transport: 'usb ',
+        relatedUids: const ['dock-a:3', 'dock-a:4'],
+      ),
+      isNot(
+        macosPairId(
+          routeClass: RouteClass.wired,
+          id: 'dock-b:3',
+          name: 'USB Audio',
+          uid: 'dock-b:3',
+          transport: 'usb ',
+          relatedUids: const ['dock-b:3', 'dock-b:4'],
+        ),
+      ),
+    );
+  });
+
+  test('Bluetooth input and output UIDs share the address Pair identity', () {
     expect(
       macosPairId(
         routeClass: RouteClass.bluetooth,
-        id: 'HFP-UID',
+        id: 'F3-A2-14-A9-1D-F8:input',
         name: 'AirPods Microphone',
-        uid: 'HFP-UID',
+        uid: 'F3-A2-14-A9-1D-F8:input',
+        transport: 'blue',
       ),
+      'F3-A2-14-A9-1D-F8',
+    );
+    expect(
       macosPairId(
         routeClass: RouteClass.bluetooth,
-        id: 'A2DP-UID',
+        id: 'F3-A2-14-A9-1D-F8:output',
         name: 'AirPods',
-        uid: 'A2DP-UID',
+        uid: 'F3-A2-14-A9-1D-F8:output',
+        transport: 'blue',
       ),
+      'F3-A2-14-A9-1D-F8',
     );
   });
 

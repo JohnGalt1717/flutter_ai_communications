@@ -289,12 +289,14 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
     unawaited(_session?.stop());
+    unawaited(_manager.endCatalogObservation());
     _wave.dispose();
     super.dispose();
   }
 
   Future<void> _loadEndpoints() async {
     final epoch = _catalogEpoch;
+    await _manager.beginCatalogObservation();
     final endpoints = await _manager.endpoints();
     List<ScreenSource> screens = const [];
     try {
@@ -502,6 +504,7 @@ final class _SessionPageState extends State<SessionPage> {
     await _echo?.dispose();
     await _manager.cameraPreview?.stop();
     await _session?.stop();
+    await _manager.endCatalogObservation();
     if (mounted) {
       setState(() {
         _session = null;

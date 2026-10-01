@@ -117,4 +117,21 @@ public enum IosRoutePolicy {
     public static func formFactor(routeClass: String) -> String {
         routeClass == "handset" ? "handset" : "unknown"
     }
+
+    /// Input ports that may appear as capture Endpoints (issue #88).
+    public static func isCaptureCapableAccessory(portType: String) -> Bool {
+        switch portType {
+        case "BluetoothHFP", "BluetoothLE", "HeadsetMic":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Hardware pair token: strip trailing -tsco / -tacl from a port uid (issue #90/#88).
+    public static func hardwarePairToken(uid: String) -> String {
+        if uid.hasSuffix("-tsco") { return String(uid.dropLast(5)) }
+        if uid.hasSuffix("-tacl") { return String(uid.dropLast(5)) }
+        return uid
+    }
 }

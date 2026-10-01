@@ -2,7 +2,8 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 /// Maps macOS device metadata to a [RouteClass].
 ///
-/// Built-in speakers/mics are speakerphone. There is no handset on desktop.
+/// Built-in speakers/mics are speakerphone from transport `bltn` / `pci`.
+/// Do not classify speakerphone from display-name substrings (issue #90).
 RouteClass macosRouteClass({required String name, String transport = ''}) {
   final lowerName = name.toLowerCase();
   final lowerTransport = transport.toLowerCase();
@@ -15,12 +16,7 @@ RouteClass macosRouteClass({required String name, String transport = ''}) {
       lowerTransport.contains('usb')) {
     return RouteClass.wired;
   }
-  if (lowerName.contains('speaker') ||
-      lowerName.contains('microphone') ||
-      lowerName.contains('built-in') ||
-      lowerName.contains('macbook') ||
-      lowerTransport.contains('bltn') ||
-      lowerTransport.contains('pci')) {
+  if (lowerTransport.contains('bltn') || lowerTransport.contains('pci')) {
     return RouteClass.speakerphone;
   }
   return RouteClass.wired;
@@ -29,19 +25,40 @@ RouteClass macosRouteClass({required String name, String transport = ''}) {
 /// Pair key for built-in speakerphone Endpoints.
 const macosBuiltInPairId = 'built-in';
 
-/// Pair identity shared by a capture/render Endpoint.
+/// Pair identity from Core Audio hardware metadata (issue #90).
+///
+/// - Transport `bltn` → [macosBuiltInPairId]
+/// - Bluetooth (`blue` / LE): UID with trailing `:input` / `:output` stripped
+/// - Otherwise: RelatedDevices clique UIDs sorted and joined with `|`
 String macosPairId({
   required RouteClass routeClass,
   required String id,
   required String name,
   String uid = '',
+  String transport = '',
+  List<String> relatedUids = const [],
 }) {
-  if (routeClass == RouteClass.speakerphone) {
+  // [name] is display-only; the pair key is hardware metadata (issue #90).
+  final deviceUid = uid.isEmpty ? id : uid;
+  final lowerTransport = transport.toLowerCase();
+  if (lowerTransport.contains('bltn') ||
+      (lowerTransport.isEmpty && routeClass == RouteClass.speakerphone)) {
     return macosBuiltInPairId;
   }
-  return applePairId(
-    routeClass: routeClass,
-    uid: uid.isEmpty ? id : uid,
-    name: name,
-  );
+  if (lowerTransport.contains('blue')) {
+    return macosBluetoothPairKey(deviceUid);
+  }
+  final clique = <String>{deviceUid, ...relatedUids}.toList()..sort();
+  return clique.join('|');
+}
+
+/// Bluetooth device UID without a trailing `:input` / `:output` half-marker.
+String macosBluetoothPairKey(String uid) {
+  if (uid.endsWith(':input')) {
+    return uid.substring(0, uid.length - ':input'.length);
+  }
+  if (uid.endsWith(':output')) {
+    return uid.substring(0, uid.length - ':output'.length);
+  }
+  return uid;
 }

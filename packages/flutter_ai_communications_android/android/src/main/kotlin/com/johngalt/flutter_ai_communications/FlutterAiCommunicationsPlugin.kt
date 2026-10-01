@@ -152,6 +152,7 @@ class FlutterAiCommunicationsPlugin :
     ) {
         when (call.method) {
             "enumerateEndpoints" -> result.success(enumerate())
+            "beginCatalogObservation", "endCatalogObservation" -> result.success(null)
             "requestMicrophonePermission" -> requestPermission(result)
             "startNative" -> {
                 selectedCaptureId = call.argument("captureId")
@@ -182,7 +183,14 @@ class FlutterAiCommunicationsPlugin :
             "selectEndpoints" -> {
                 selectedCaptureId = call.argument("captureId") ?: selectedCaptureId
                 selectedRenderId = call.argument("renderId") ?: selectedRenderId
-                applyRoute()
+                if (!applyRoute()) {
+                    result.error(
+                        "route_failed",
+                        "communication device did not match selected render",
+                        null,
+                    )
+                    return
+                }
                 restartPlayback()
                 restartCapture()
                 result.success(startedFormatMap())
@@ -407,7 +415,9 @@ class FlutterAiCommunicationsPlugin :
         val manager = audioManager ?: return "failed"
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
         requestFocus(manager)
-        applyRoute()
+        if (!applyRoute()) {
+            return "failed"
+        }
         return try {
             captureGeneration++
             running.set(true)
@@ -607,7 +617,7 @@ class FlutterAiCommunicationsPlugin :
                 rate = AndroidCapturePolicy.nextSampleRate(requestedPlaybackRate, attempted)
                 continue
             }
-            applyPreferredRender(next)
+            noteAppliedRender()
             nativePlaybackRate = next.sampleRate.takeIf { it > 0 } ?: rate
             playbackFormatFailures =
                 AndroidCapturePolicy.failures(attempted, nativePlaybackRate)
@@ -638,22 +648,76 @@ class FlutterAiCommunicationsPlugin :
         startPlayback()
     }
 
-    private fun applyRoute() {
-        val manager = audioManager ?: return
+    private fun applyRoute(): Boolean {
+        val manager = audioManager ?: return false
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
         val plan = AndroidCapturePolicy.planApplyRoute(selectedRenderId)
+        // Samsung reads isSpeakerphoneOn when the communication route changes.
         @Suppress("DEPRECATION")
         manager.isSpeakerphoneOn = plan.speakerphoneOn
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && plan.clearCommunicationDevice) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true
+        }
+        val render = resolveRenderDevice() ?: return false
+        if (isBuiltinSpeakerType(render.type)) {
+            stopScoIfBluetoothCommunicationDevice(manager)
+        }
+        if (plan.clearCommunicationDevice) {
             manager.clearCommunicationDevice()
         }
-        val render = resolveRenderDevice()
-        if (render != null) {
-            appliedRenderId = catalogId(render, capture = false)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                manager.setCommunicationDevice(render)
-            }
+        if (!setCommunicationDeviceMatching(manager, render)) {
+            return false
         }
+        appliedRenderId = catalogId(render, capture = false)
+        return true
+    }
+
+    private fun isBuiltinSpeakerType(type: Int): Boolean =
+        type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER ||
+            type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE
+
+    private fun isBluetoothCommunicationType(type: Int): Boolean =
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+
+    /** Leaving a headset for the loudspeaker requires tearing SCO down first. */
+    private fun stopScoIfBluetoothCommunicationDevice(manager: AudioManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
+        }
+        val current = manager.communicationDevice ?: return
+        if (!isBluetoothCommunicationType(current.type)) {
+            return
+        }
+        @Suppress("DEPRECATION")
+        manager.stopBluetoothSco()
+        @Suppress("DEPRECATION")
+        manager.isBluetoothScoOn = false
+    }
+
+    /**
+     * `setCommunicationDevice` can return true while [AudioManager.communicationDevice] is
+     * still the prior headset. One retry is enough; do not loop.
+     */
+    private fun setCommunicationDeviceMatching(
+        manager: AudioManager,
+        target: AudioDeviceInfo,
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true
+        }
+        if (!manager.setCommunicationDevice(target)) {
+            return false
+        }
+        if (manager.communicationDevice?.id == target.id) {
+            return true
+        }
+        if (!manager.setCommunicationDevice(target)) {
+            return false
+        }
+        return manager.communicationDevice?.id == target.id
     }
 
     private fun requestBluetoothIdentity() {
@@ -933,12 +997,15 @@ class FlutterAiCommunicationsPlugin :
         }
     }
 
-    private fun applyPreferredRender(track: AudioTrack) {
+    /**
+     * Playback follows [AudioManager.setCommunicationDevice] / speakerphone only.
+     * Do not pin [AudioTrack.preferredDevice] — that kept speaker silent after leaving a
+     * Bluetooth headset on Samsung (issue #87). Capture may still pin
+     * [AudioRecord.preferredDevice].
+     */
+    private fun noteAppliedRender() {
         val device = resolveRenderDevice() ?: return
         appliedRenderId = catalogId(device, capture = false)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            track.preferredDevice = device
-        }
     }
 
     private fun observedCaptureDevice(): AudioDeviceInfo? {
@@ -956,11 +1023,7 @@ class FlutterAiCommunicationsPlugin :
         if (manager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             manager.communicationDevice?.let { return it }
         }
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            track?.preferredDevice ?: resolveRenderDevice()
-        } else {
-            resolveRenderDevice()
-        }
+        return resolveRenderDevice()
     }
 
     private fun captureMatchesSelection(device: AudioDeviceInfo?): Boolean {

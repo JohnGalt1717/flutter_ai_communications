@@ -50,5 +50,5 @@ String windowsPairId({
   if (containerId.isNotEmpty) {
     return containerId;
   }
-  return name.isEmpty ? id : name;
+  return id;
 }

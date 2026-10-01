@@ -59,7 +59,7 @@ String linuxPairId({
   if (card != 0xffffffff) {
     return 'card-$card';
   }
-  return name.isEmpty ? id : name;
+  return id;
 }
 
 /// Pulse `device.form_factor` to Endpoint form factor.

@@ -47,6 +47,26 @@ void main() {
     );
   });
 
+  test('missing card uses endpoint id', () {
+    expect(
+      linuxPairId(
+        routeClass: RouteClass.wired,
+        id: 'alsa_input.usb-Generic',
+        name: 'USB Audio',
+      ),
+      'alsa_input.usb-Generic',
+    );
+    expect(
+      linuxPairId(
+        routeClass: RouteClass.bluetooth,
+        id: 'bluez_sink.aa_bb',
+        name: 'WH-1000XM5',
+        card: 7,
+      ),
+      'card-7',
+    );
+  });
+
   test('Bluetooth and USB headsets keep their RouteClass', () {
     expect(
       linuxRouteClass(name: 'WH-1000XM5', bus: 'bluetooth'),
