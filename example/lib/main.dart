@@ -523,7 +523,7 @@ final class _SessionPageState extends State<SessionPage> {
     await _echo?.dispose();
     await _manager.cameraPreview?.stop();
     await _session?.stop();
-    await _releaseCatalogObservation();
+    // Keep catalog observation while the settings page stays mounted (#88).
     if (mounted) {
       setState(() {
         _session = null;

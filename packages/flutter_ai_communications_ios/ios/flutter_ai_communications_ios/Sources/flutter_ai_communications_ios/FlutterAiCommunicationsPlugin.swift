@@ -232,13 +232,21 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func stopNative() {
     running = false
-    // Settings may still be observing — keep the session and reclaim ownership (#88).
+    // Settings may still be observing — restore playAndRecord and reclaim ownership (#88).
     let keepForObservation = catalogObservationDepth > 0
     teardownEngine(keepSessionActive: keepForObservation)
     if keepForObservation {
-      catalogObservationOwnsSession = true
-      addCatalogRouteObserver(AVAudioSession.sharedInstance())
-      emitCatalog()
+      do {
+        try activateCatalogObservationSession()
+        catalogObservationOwnsSession = true
+        emitCatalog()
+      } catch {
+        catalogObservationOwnsSession = false
+        try? AVAudioSession.sharedInstance().setActive(
+          false,
+          options: .notifyOthersOnDeactivation
+        )
+      }
     }
   }
 

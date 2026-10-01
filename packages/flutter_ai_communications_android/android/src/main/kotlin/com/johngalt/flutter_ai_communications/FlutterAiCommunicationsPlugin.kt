@@ -18,6 +18,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -30,10 +31,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
 import io.flutter.view.TextureRegistry
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 
 class FlutterAiCommunicationsPlugin :
     FlutterPlugin,
@@ -78,9 +76,6 @@ class FlutterAiCommunicationsPlugin :
     private var appliedRenderId: String? = null
     private var noiseCancelling = true
     private var communicationDeviceListener: Any? = null
-    /** Target id awaited by [setCommunicationDeviceMatching]; 0 means idle. */
-    private val pendingCommunicationDeviceId = AtomicInteger(0)
-    private @Volatile var pendingCommunicationDeviceLatch: CountDownLatch? = null
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -705,7 +700,9 @@ class FlutterAiCommunicationsPlugin :
 
     /**
      * `setCommunicationDevice` can return true while the transition is still in flight.
-     * Arm the listener latch before the request, wait briefly, then one retry. Do not loop.
+     * Poll [AudioManager.communicationDevice] (the OS updates it without our listener);
+     * do not latch on the main-posted listener — MethodChannel also runs on main.
+     * One retry after the bounded wait. Do not loop.
      */
     private fun setCommunicationDeviceMatching(
         manager: AudioManager,
@@ -724,25 +721,23 @@ class FlutterAiCommunicationsPlugin :
         manager: AudioManager,
         target: AudioDeviceInfo,
     ): Boolean {
-        val latch = CountDownLatch(1)
-        pendingCommunicationDeviceLatch = latch
-        pendingCommunicationDeviceId.set(target.id)
-        try {
-            if (!manager.setCommunicationDevice(target)) {
-                return false
-            }
+        if (!manager.setCommunicationDevice(target)) {
+            return false
+        }
+        val deadline = SystemClock.elapsedRealtime() + 300
+        while (true) {
             if (manager.communicationDevice?.id == target.id) {
                 return true
             }
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                return false
+            }
             try {
-                latch.await(300, TimeUnit.MILLISECONDS)
+                Thread.sleep(20)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
+                return manager.communicationDevice?.id == target.id
             }
-            return manager.communicationDevice?.id == target.id
-        } finally {
-            pendingCommunicationDeviceId.set(0)
-            pendingCommunicationDeviceLatch = null
         }
     }
 
@@ -982,11 +977,7 @@ class FlutterAiCommunicationsPlugin :
         }
         val manager = audioManager ?: return
         val listener =
-            AudioManager.OnCommunicationDeviceChangedListener { device ->
-                val wanted = pendingCommunicationDeviceId.get()
-                if (wanted != 0 && device?.id == wanted) {
-                    pendingCommunicationDeviceLatch?.countDown()
-                }
+            AudioManager.OnCommunicationDeviceChangedListener {
                 emitRoute()
             }
         communicationDeviceListener = listener
