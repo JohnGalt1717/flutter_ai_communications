@@ -77,6 +77,7 @@ class FlutterAiCommunicationsPlugin :
     private var communicationDeviceListener: Any? = null
     private var routeWaitListener: AudioManager.OnCommunicationDeviceChangedListener? = null
     private var routeWaitTimeout: Runnable? = null
+    private var routeWaitOnDone: ((CommDeviceOutcome) -> Unit)? = null
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -428,6 +429,7 @@ class FlutterAiCommunicationsPlugin :
         requestFocus(manager)
         applyRouteAsync { routed ->
             if (!routed) {
+                abandonSessionAudio()
                 onDone("failed")
                 return@applyRouteAsync
             }
@@ -437,6 +439,7 @@ class FlutterAiCommunicationsPlugin :
                 paused.set(false)
                 if (wantCapture && !startCapture(captureGeneration)) {
                     running.set(false)
+                    abandonSessionAudio()
                     onDone("failed")
                     return@applyRouteAsync
                 }
@@ -452,13 +455,14 @@ class FlutterAiCommunicationsPlugin :
                 )
             } catch (_: Exception) {
                 running.set(false)
+                abandonSessionAudio()
                 onDone("failed")
             }
         }
     }
 
     private fun stopNative() {
-        cancelRouteWait()
+        cancelRouteWait(completePending = true)
         running.set(false)
         captureGeneration++
         captureThread?.join(1000)
@@ -469,19 +473,23 @@ class FlutterAiCommunicationsPlugin :
         track?.stop()
         track?.release()
         track = null
-        val manager = audioManager
-        if (manager != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                manager.clearCommunicationDevice()
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                focusRequest?.let { manager.abandonAudioFocusRequest(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                manager.abandonAudioFocus(null)
-            }
-            manager.mode = AudioManager.MODE_NORMAL
+        abandonSessionAudio()
+    }
+
+    /** Drop focus / mode / communication device after a failed start (no Session owns cleanup). */
+    private fun abandonSessionAudio() {
+        val manager = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            manager.clearCommunicationDevice()
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { manager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            manager.abandonAudioFocus(null)
+        }
+        focusRequest = null
+        manager.mode = AudioManager.MODE_NORMAL
     }
 
     private fun startCapture(generation: Int): Boolean {
@@ -754,14 +762,15 @@ class FlutterAiCommunicationsPlugin :
     /**
      * Requests [target] and finishes when the observed communication device matches,
      * the request is rejected, or the 300 ms bound elapses. Never sleeps on the
-     * MethodChannel / main thread.
+     * MethodChannel / main thread. A newer request fails any in-flight wait so its
+     * MethodChannel result still completes.
      */
     private fun requestCommunicationDeviceAsync(
         manager: AudioManager,
         target: AudioDeviceInfo,
         onDone: (CommDeviceOutcome) -> Unit,
     ) {
-        cancelRouteWait()
+        cancelRouteWait(completePending = true)
         if (!manager.setCommunicationDevice(target)) {
             onDone(CommDeviceOutcome.Rejected)
             return
@@ -776,7 +785,8 @@ class FlutterAiCommunicationsPlugin :
                 return
             }
             finished = true
-            cancelRouteWait()
+            routeWaitOnDone = null
+            cancelRouteWait(completePending = false)
             onDone(outcome)
         }
         val timeout =
@@ -799,17 +809,23 @@ class FlutterAiCommunicationsPlugin :
             }
         routeWaitListener = listener
         routeWaitTimeout = timeout
+        routeWaitOnDone = { outcome -> finish(outcome) }
         manager.addOnCommunicationDeviceChangedListener({ runnable -> main.post(runnable) }, listener)
         main.postDelayed(timeout, 300)
     }
 
-    private fun cancelRouteWait() {
+    private fun cancelRouteWait(completePending: Boolean = false) {
         routeWaitTimeout?.let { main.removeCallbacks(it) }
         routeWaitTimeout = null
         val listener = routeWaitListener
         routeWaitListener = null
         if (listener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             audioManager?.removeOnCommunicationDeviceChangedListener(listener)
+        }
+        val pending = routeWaitOnDone
+        routeWaitOnDone = null
+        if (completePending && pending != null) {
+            pending(CommDeviceOutcome.Rejected)
         }
     }
 
@@ -1057,7 +1073,7 @@ class FlutterAiCommunicationsPlugin :
     }
 
     private fun stopListeningForCommunicationDevice() {
-        cancelRouteWait()
+        cancelRouteWait(completePending = true)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return
         }
