@@ -187,6 +187,26 @@ void main() {
     );
   });
 
+  test('empty container id uses endpoint id', () {
+    expect(
+      windowsPairId(
+        routeClass: RouteClass.wired,
+        id: 'endpoint-in',
+        name: 'Microphone (USB Audio Device)',
+      ),
+      'endpoint-in',
+    );
+    expect(
+      windowsPairId(
+        routeClass: RouteClass.bluetooth,
+        id: 'bt-out',
+        name: 'AirPods',
+        containerId: '{a0b1c2d3-e4f5-6789-abcd-ef0123456789}',
+      ),
+      '{a0b1c2d3-e4f5-6789-abcd-ef0123456789}',
+    );
+  });
+
   test('start and select report Observed from bound native devices', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsWindows(backend: backend);

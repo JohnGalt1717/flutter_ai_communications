@@ -113,6 +113,13 @@ void main() {
     expect(calls.any((c) => c.method == 'openIsolationSettings'), isTrue);
   });
 
+  test('beginCatalogObservation and endCatalogObservation are forwarded', () async {
+    await platform.beginCatalogObservation();
+    await platform.endCatalogObservation();
+    expect(calls.any((c) => c.method == 'beginCatalogObservation'), isTrue);
+    expect(calls.any((c) => c.method == 'endCatalogObservation'), isTrue);
+  });
+
   test('startNative forwards noiseCancelling', () async {
     await platform.startNative(noiseCancelling: false);
     final call = calls.singleWhere((c) => c.method == 'startNative');

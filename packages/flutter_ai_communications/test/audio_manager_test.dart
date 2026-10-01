@@ -80,6 +80,24 @@ void main() {
     expect(manager.session, isNull);
   });
 
+  test('start begins catalog observation before enumerate', () async {
+    expect(await manager.start(), isA<StartReady>());
+    expect(platform.catalogObservationLog.take(2).toList(), [
+      'beginCatalogObservation',
+      'enumerateEndpoints',
+    ]);
+    expect(platform.catalogObservationLog.contains('endCatalogObservation'), isTrue);
+    expect(platform.beginCatalogObservationCalls, 1);
+    expect(platform.endCatalogObservationCalls, 1);
+  });
+
+  test('failed start still ends catalog observation', () async {
+    platform.nativeStart = NativeGraphStart.failed;
+    expect(await manager.start(), isA<StartFailed>());
+    expect(platform.beginCatalogObservationCalls, 1);
+    expect(platform.endCatalogObservationCalls, 1);
+  });
+
   test('one live Session; stop clears it so start can run again', () async {
     final first = await manager.start();
     final session = (first as StartReady).session;

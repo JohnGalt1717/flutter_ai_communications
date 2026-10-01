@@ -94,3 +94,32 @@ import Testing
     #expect(IosRoutePolicy.formFactor(routeClass: "handset") == "handset")
     #expect(IosRoutePolicy.formFactor(routeClass: "speakerphone") == "unknown")
 }
+
+@Test func hfpLeAndHeadsetMicAreCaptureCapable() {
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "BluetoothHFP"))
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "BluetoothLE"))
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "HeadsetMic"))
+}
+
+@Test func a2dpHeadphonesAndCarAudioAreNotCaptureCapable() {
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "BluetoothA2DP") == false)
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "Headphones") == false)
+    #expect(IosRoutePolicy.isCaptureCapableAccessory(portType: "CarAudio") == false)
+}
+
+@Test func hardwarePairTokenStripsTscoAndTaclSuffixes() {
+    let base = "AA:BB:CC:DD:EE:FF"
+    #expect(IosRoutePolicy.hardwarePairToken(uid: "\(base)-tsco") == base)
+    #expect(IosRoutePolicy.hardwarePairToken(uid: "\(base)-tacl") == base)
+    #expect(
+        IosRoutePolicy.hardwarePairToken(uid: "\(base)-tsco")
+            == IosRoutePolicy.hardwarePairToken(uid: "\(base)-tacl")
+    )
+}
+
+@Test func hardwarePairTokenKeepsDistinctAddressesApart() {
+    let left = IosRoutePolicy.hardwarePairToken(uid: "AA:BB:CC:DD:EE:FF-tsco")
+    let right = IosRoutePolicy.hardwarePairToken(uid: "11:22:33:44:55:66-tacl")
+    #expect(left != right)
+    #expect(IosRoutePolicy.hardwarePairToken(uid: "plain-uid") == "plain-uid")
+}

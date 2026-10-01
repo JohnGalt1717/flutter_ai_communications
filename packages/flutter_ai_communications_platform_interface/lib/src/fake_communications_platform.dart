@@ -212,6 +212,15 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// How many times [selectEndpoints] ran.
   int selectEndpointsCalls = 0;
 
+  /// How many times [beginCatalogObservation] ran.
+  int beginCatalogObservationCalls = 0;
+
+  /// How many times [endCatalogObservation] ran.
+  int endCatalogObservationCalls = 0;
+
+  /// Ordered method names for catalog-observation tests.
+  final List<String> catalogObservationLog = <String>[];
+
   /// Monotonic native graph generation.
   int nativeGeneration = 0;
 
@@ -255,8 +264,22 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   String get platformName => 'fake';
 
   @override
-  Future<List<Endpoint>> enumerateEndpoints() async =>
-      List<Endpoint>.of(catalog);
+  Future<List<Endpoint>> enumerateEndpoints() async {
+    catalogObservationLog.add('enumerateEndpoints');
+    return List<Endpoint>.of(catalog);
+  }
+
+  @override
+  Future<void> beginCatalogObservation() async {
+    beginCatalogObservationCalls++;
+    catalogObservationLog.add('beginCatalogObservation');
+  }
+
+  @override
+  Future<void> endCatalogObservation() async {
+    endCatalogObservationCalls++;
+    catalogObservationLog.add('endCatalogObservation');
+  }
 
   @override
   Stream<List<Endpoint>> get endpointCatalog => catalogController.stream;

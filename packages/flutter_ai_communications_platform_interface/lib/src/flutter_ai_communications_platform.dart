@@ -57,6 +57,13 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
     throw UnimplementedError('enumerateEndpoints() has not been implemented.');
   }
 
+  /// Holds an observation session so the Endpoint catalog includes voice ports.
+  /// Other platforms may no-op. Default implementation is a no-op.
+  Future<void> beginCatalogObservation() async {}
+
+  /// Ends catalog observation. Must not tear down a live Session. Default no-op.
+  Future<void> endCatalogObservation() async {}
+
   /// Live catalog updates. Defaults to a single [enumerateEndpoints] snapshot.
   Stream<List<Endpoint>> get endpointCatalog async* {
     yield await enumerateEndpoints();

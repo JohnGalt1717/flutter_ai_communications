@@ -79,6 +79,25 @@ class MethodChannelCommunicationsPlatform
   }
 
   @override
+  Future<void> beginCatalogObservation() async {
+    _ensureListening();
+    try {
+      await _methods.invokeMethod<void>('beginCatalogObservation');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
+  Future<void> endCatalogObservation() async {
+    try {
+      await _methods.invokeMethod<void>('endCatalogObservation');
+    } on MissingPluginException {
+      return;
+    }
+  }
+
+  @override
   Stream<List<Endpoint>> get endpointCatalog {
     _ensureListening();
     return _catalogOut.stream;

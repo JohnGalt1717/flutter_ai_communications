@@ -25,6 +25,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var textures: FlutterTextureRegistry?
   private let camera = IosCameraGraph()
   private let screen = IosScreenGraph()
+  /// Nested begin/end depth for settings + start() observation (issue #88).
+  private var catalogObservationDepth = 0
+  /// True when beginCatalogObservation activated the AVAudioSession (not a live call).
+  private var catalogObservationOwnsSession = false
+  private var catalogRouteObserverAdded = false
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
@@ -63,6 +68,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "enumerateEndpoints":
       result(enumerateEndpoints())
+    case "beginCatalogObservation":
+      beginCatalogObservation()
+      result(nil)
+    case "endCatalogObservation":
+      endCatalogObservation()
+      result(nil)
     case "requestMicrophonePermission":
       requestPermission(result: result)
     case "startNative":
@@ -206,6 +217,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       try configureSession()
       try startEngine()
       running = true
+      // Call session owns the category now; observation must not deactivate it.
+      catalogObservationOwnsSession = false
       paused = false
       emitCatalog()
       emitIsolation()
@@ -219,7 +232,93 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func stopNative() {
     running = false
-    teardownEngine(keepSessionActive: false)
+    // Settings may still be observing — restore playAndRecord and reclaim ownership (#88).
+    let keepForObservation = catalogObservationDepth > 0
+    teardownEngine(keepSessionActive: keepForObservation)
+    if keepForObservation {
+      do {
+        try activateCatalogObservationSession()
+        catalogObservationOwnsSession = true
+        emitCatalog()
+      } catch {
+        catalogObservationOwnsSession = false
+        try? AVAudioSession.sharedInstance().setActive(
+          false,
+          options: .notifyOthersOnDeactivation
+        )
+      }
+    }
+  }
+
+  /// Activates a playAndRecord observation session when idle so AirPods/CarPlay
+  /// appear in the catalog. No-ops category changes while a Session is running.
+  private func beginCatalogObservation() {
+    catalogObservationDepth += 1
+    if running {
+      return
+    }
+    if catalogObservationOwnsSession {
+      emitCatalog()
+      return
+    }
+    do {
+      try activateCatalogObservationSession()
+      catalogObservationOwnsSession = true
+      emitCatalog()
+    } catch {
+      // Leave depth incremented so a matching end is balanced; catalog stays builtin-only.
+    }
+  }
+
+  private func endCatalogObservation() {
+    if catalogObservationDepth > 0 {
+      catalogObservationDepth -= 1
+    }
+    if catalogObservationDepth > 0 || running {
+      return
+    }
+    guard catalogObservationOwnsSession else { return }
+    catalogObservationOwnsSession = false
+    removeCatalogRouteObserver()
+    try? AVAudioSession.sharedInstance().setActive(
+      false,
+      options: .notifyOthersOnDeactivation
+    )
+  }
+
+  private func activateCatalogObservationSession() throws {
+    let session = AVAudioSession.sharedInstance()
+    try session.setCategory(
+      .playAndRecord,
+      mode: .voiceChat,
+      options: [.allowBluetooth, .allowBluetoothA2DP]
+    )
+    try session.setPreferredSampleRate(24_000)
+    try session.setActive(true)
+    addCatalogRouteObserver(session)
+  }
+
+  private func addCatalogRouteObserver(_ session: AVAudioSession) {
+    guard !catalogRouteObserverAdded else { return }
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleRouteChange),
+      name: AVAudioSession.routeChangeNotification,
+      object: session
+    )
+    catalogRouteObserverAdded = true
+  }
+
+  private func removeCatalogRouteObserver() {
+    guard catalogRouteObserverAdded else { return }
+    // Only remove when a live Session is not using the same observer.
+    if running { return }
+    NotificationCenter.default.removeObserver(
+      self,
+      name: AVAudioSession.routeChangeNotification,
+      object: AVAudioSession.sharedInstance()
+    )
+    catalogRouteObserverAdded = false
   }
 
   private func configureSession() throws {
@@ -256,12 +355,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     )
     applyRoute()
     NotificationCenter.default.removeObserver(self)
+    catalogRouteObserverAdded = false
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(handleRouteChange),
       name: AVAudioSession.routeChangeNotification,
       object: session
     )
+    catalogRouteObserverAdded = true
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(handleInterruption),
@@ -653,16 +754,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         )
       )
     }
-    var seenPairs = Set(items.compactMap { $0["pairId"] as? String })
     for input in session.availableInputs ?? [] {
       appendAccessory(
         input.portType,
         input.portName,
         input.uid,
         &items,
-        &seenPairs,
-        osDefaultCapture: input.uid == currentIn?.uid,
-        osDefaultRender: false
+        asInput: true,
+        osDefault: input.uid == currentIn?.uid
       )
     }
     for output in session.currentRoute.outputs {
@@ -671,9 +770,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         output.portName,
         output.uid,
         &items,
-        &seenPairs,
-        osDefaultCapture: false,
-        osDefaultRender: output.uid == currentOut?.uid
+        asInput: false,
+        osDefault: output.uid == currentOut?.uid
       )
     }
     return items
@@ -699,38 +797,74 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     return false
   }
 
+  /// Capture rows only for HFP / LE / headsetMic inputs. A2DP and headphones
+  /// are render-only (issue #88). Pairing uses the uid hardware token (#90).
   private func appendAccessory(
     _ portType: AVAudioSession.Port,
     _ name: String,
     _ uid: String,
     _ items: inout [[String: Any]],
-    _ seenPairs: inout Set<String>,
-    osDefaultCapture: Bool,
-    osDefaultRender: Bool
+    asInput: Bool,
+    osDefault: Bool
   ) {
     let route = routeClass(for: portType)
     if route == "handset" || route == "speakerphone" { return }
     let pair = applePairId(route, name, uid)
-    if seenPairs.contains(pair) {
-      if let index = items.firstIndex(where: {
-        $0["pairId"] as? String == pair && $0["isCapture"] as? Bool == osDefaultCapture
-      }), osDefaultCapture || osDefaultRender {
+    let form = IosRoutePolicy.formFactor(portType: portType.rawValue)
+    if asInput {
+      guard isCaptureCapableAccessory(portType) else { return }
+      upsertAccessoryEndpoint(
+        id: "\(pair)-in",
+        name: name,
+        route: route,
+        capture: true,
+        pair: pair,
+        form: form,
+        osDefault: osDefault,
+        items: &items
+      )
+      return
+    }
+    upsertAccessoryEndpoint(
+      id: "\(pair)-out",
+      name: name,
+      route: route,
+      capture: false,
+      pair: pair,
+      form: form,
+      osDefault: osDefault,
+      items: &items
+    )
+  }
+
+  private func isCaptureCapableAccessory(_ portType: AVAudioSession.Port) -> Bool {
+    IosRoutePolicy.isCaptureCapableAccessory(portType: portType.rawValue)
+  }
+
+  private func upsertAccessoryEndpoint(
+    id: String,
+    name: String,
+    route: String,
+    capture: Bool,
+    pair: String,
+    form: String,
+    osDefault: Bool,
+    items: inout [[String: Any]]
+  ) {
+    if let index = items.firstIndex(where: {
+      $0["pairId"] as? String == pair && $0["isCapture"] as? Bool == capture
+    }) {
+      if osDefault {
         items[index]["osDefault"] = true
       }
-      if let index = items.firstIndex(where: {
-        $0["pairId"] as? String == pair && $0["isCapture"] as? Bool == false
-      }), osDefaultRender {
-        items[index]["osDefault"] = true
+      // Prefer a richer accessory name when the second half arrives.
+      if let existing = items[index]["name"] as? String, existing.count < name.count {
+        items[index]["name"] = name
       }
       return
     }
-    seenPairs.insert(pair)
-    let form = IosRoutePolicy.formFactor(portType: portType.rawValue)
     items.append(
-      endpoint("\(pair)-in", name, route, true, pair, form, osDefault: osDefaultCapture)
-    )
-    items.append(
-      endpoint("\(pair)-out", name, route, false, pair, form, osDefault: osDefaultRender)
+      endpoint(id, name, route, capture, pair, form, osDefault: osDefault)
     )
   }
 
@@ -774,6 +908,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     applePairId(routeClass(for: port.portType), port.portName, port.uid)
   }
 
+  /// Pair key is the port UID hardware token, not the display name (issue #90).
   private func applePairId(_ route: String, _ name: String, _ uid: String) -> String {
     switch route {
     case "handset":
@@ -781,13 +916,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     case "speakerphone":
       return "speakerphone"
     default:
-      var normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      for suffix in [" microphone", " mic", " speaker", " headphones", " headset"] {
-        if normalized.hasSuffix(suffix) {
-          normalized = String(normalized.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-      }
-      return normalized.isEmpty ? uid : normalized
+      return IosRoutePolicy.hardwarePairToken(uid: uid)
     }
   }
 

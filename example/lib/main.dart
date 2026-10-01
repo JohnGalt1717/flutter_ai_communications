@@ -289,12 +289,54 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
     unawaited(_session?.stop());
+    unawaited(_releaseCatalogObservation());
     _wave.dispose();
     super.dispose();
   }
 
+  /// Page-lifetime catalog observation — begin once, end on dispose (#88).
+  bool _catalogObserving = false;
+  Future<void>? _catalogBeginInFlight;
+
+  Future<void> _ensureCatalogObservation() async {
+    if (_catalogObserving) {
+      return;
+    }
+    final existing = _catalogBeginInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    late final Future<void> started;
+    started = () async {
+      await _manager.beginCatalogObservation();
+      _catalogObserving = true;
+    }();
+    _catalogBeginInFlight = started;
+    try {
+      await started;
+    } finally {
+      if (identical(_catalogBeginInFlight, started)) {
+        _catalogBeginInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _releaseCatalogObservation() async {
+    final pending = _catalogBeginInFlight;
+    if (pending != null) {
+      await pending;
+    }
+    if (!_catalogObserving) {
+      return;
+    }
+    _catalogObserving = false;
+    await _manager.endCatalogObservation();
+  }
+
   Future<void> _loadEndpoints() async {
     final epoch = _catalogEpoch;
+    await _ensureCatalogObservation();
     final endpoints = await _manager.endpoints();
     List<ScreenSource> screens = const [];
     try {
@@ -502,6 +544,7 @@ final class _SessionPageState extends State<SessionPage> {
     await _echo?.dispose();
     await _manager.cameraPreview?.stop();
     await _session?.stop();
+    // Keep catalog observation while the settings page stays mounted (#88).
     if (mounted) {
       setState(() {
         _session = null;

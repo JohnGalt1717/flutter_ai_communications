@@ -424,6 +424,7 @@ final class CoreAudioBackend
               (transportCode >> 8) & 0xff,
               transportCode & 0xff,
             ]);
+      final relatedUids = _relatedDeviceUids(id);
       final route = macosRouteClass(name: name, transport: transport);
       items.add(
         Endpoint(
@@ -431,11 +432,30 @@ final class CoreAudioBackend
           name: name,
           routeClass: route,
           isCapture: capture,
-          pairId: macosPairId(routeClass: route, id: uid, name: name, uid: uid),
+          pairId: macosPairId(
+            routeClass: route,
+            id: uid,
+            name: name,
+            uid: uid,
+            transport: transport,
+            relatedUids: relatedUids,
+          ),
         ),
       );
     }
     return items;
+  }
+
+  /// UIDs from `kAudioDevicePropertyRelatedDevices` (`akin`).
+  List<String> _relatedDeviceUids(int deviceId) {
+    final related = <String>[];
+    for (final relatedId in _audio.uint32Array(deviceId, fourCC('akin'))) {
+      final relatedUid = _audio.stringProperty(relatedId, fourCC('uid '));
+      if (relatedUid != null && relatedUid.isNotEmpty) {
+        related.add(relatedUid);
+      }
+    }
+    return related;
   }
 
   int? _defaultDeviceId({required bool capture}) {

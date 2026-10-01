@@ -52,6 +52,13 @@ final class CommunicationsManager {
   /// Idle or live Endpoint catalog from the platform adapter.
   Future<List<Endpoint>> endpoints() => _platform.enumerateEndpoints();
 
+  /// Holds an observation session so the Endpoint catalog includes voice ports.
+  Future<void> beginCatalogObservation() =>
+      _platform.beginCatalogObservation();
+
+  /// Ends catalog observation. Must not tear down a live Session.
+  Future<void> endCatalogObservation() => _platform.endCatalogObservation();
+
   /// Live catalog updates.
   Stream<List<Endpoint>> get endpointCatalog => _platform.endpointCatalog;
 
@@ -161,56 +168,68 @@ final class CommunicationsManager {
       _log(PipelineLog.permission, {'requested': false, 'result': 'skipped'});
     }
 
-    final catalog = await _platform.enumerateEndpoints();
-    _log(PipelineLog.catalog, {'count': catalog.length});
-    final resolvedPreference = preference.endpoints.isEmpty
-        ? _boundPreference
-        : preference.endpoints;
-    final resolution = _resolver.resolve(
-      catalog: catalog,
-      preference: resolvedPreference,
-      requireCapture: direction.hasCapture,
-      requireRender: direction.hasPlayback,
-      explicitCaptureId: preference.captureId,
-      explicitRenderId: preference.renderId,
-    );
-    _log(PipelineLog.preferenceResolved, {
-      'preferenceControlled': resolution.preferenceControlled,
-      'captureId': resolution.desired.captureId,
-      'renderId': resolution.desired.renderId,
-      'exhausted': resolution.exhausted,
-    });
-    if (resolution.exhausted &&
-        (direction.hasCapture || direction.hasPlayback)) {
-      return const StartUnavailable();
-    }
+    late final List<Endpoint> catalog;
+    late final EndpointPreference resolvedPreference;
+    late final PreferenceResolution resolution;
+    await _platform.beginCatalogObservation();
+    try {
+      catalog = await _platform.enumerateEndpoints();
+      _log(PipelineLog.catalog, {'count': catalog.length});
+      resolvedPreference = preference.endpoints.isEmpty
+          ? _boundPreference
+          : preference.endpoints;
+      resolution = _resolver.resolve(
+        catalog: catalog,
+        preference: resolvedPreference,
+        requireCapture: direction.hasCapture,
+        requireRender: direction.hasPlayback,
+        explicitCaptureId: preference.captureId,
+        explicitRenderId: preference.renderId,
+      );
+      _log(PipelineLog.preferenceResolved, {
+        'preferenceControlled': resolution.preferenceControlled,
+        'captureId': resolution.desired.captureId,
+        'renderId': resolution.desired.renderId,
+        'exhausted': resolution.exhausted,
+      });
+      if (resolution.exhausted &&
+          (direction.hasCapture || direction.hasPlayback)) {
+        return const StartUnavailable();
+      }
 
-    if (direction.hasCapture || direction.hasPlayback) {
-      final NativeGraphStart native;
-      try {
-        native = await _platform.startNative(
-          captureId: direction.hasCapture ? resolution.desired.captureId : null,
-          renderId: direction.hasPlayback ? resolution.desired.renderId : null,
-          captureFormat: capture,
-          playbackFormat: playback,
-          noiseCancelling: preference.noiseCancelling,
-        );
-      } catch (error, stack) {
-        _logger.warning(
-          PipelineLog.line(PipelineLog.nativeStart, {'result': 'failed'}),
-          error,
-          stack,
-        );
-        return StartFailed(error);
+      if (direction.hasCapture || direction.hasPlayback) {
+        final NativeGraphStart native;
+        try {
+          native = await _platform.startNative(
+            captureId: direction.hasCapture
+                ? resolution.desired.captureId
+                : null,
+            renderId: direction.hasPlayback
+                ? resolution.desired.renderId
+                : null,
+            captureFormat: capture,
+            playbackFormat: playback,
+            noiseCancelling: preference.noiseCancelling,
+          );
+        } catch (error, stack) {
+          _logger.warning(
+            PipelineLog.line(PipelineLog.nativeStart, {'result': 'failed'}),
+            error,
+            stack,
+          );
+          return StartFailed(error);
+        }
+        _log(PipelineLog.nativeStart, {'result': native.name});
+        if (native != NativeGraphStart.started) {
+          return switch (native) {
+            NativeGraphStart.unavailable => const StartUnavailable(),
+            NativeGraphStart.failed => const StartFailed(),
+            NativeGraphStart.started => const StartFailed(),
+          };
+        }
       }
-      _log(PipelineLog.nativeStart, {'result': native.name});
-      if (native != NativeGraphStart.started) {
-        return switch (native) {
-          NativeGraphStart.unavailable => const StartUnavailable(),
-          NativeGraphStart.failed => const StartFailed(),
-          NativeGraphStart.started => const StartFailed(),
-        };
-      }
+    } finally {
+      await _platform.endCatalogObservation();
     }
 
     var resolvedCameraId = cameraId;

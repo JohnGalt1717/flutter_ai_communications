@@ -81,6 +81,12 @@ final class LoopbackCommunicationsPlatform
   ];
 
   @override
+  Future<void> beginCatalogObservation() => inner.beginCatalogObservation();
+
+  @override
+  Future<void> endCatalogObservation() => inner.endCatalogObservation();
+
+  @override
   Stream<List<Endpoint>> get endpointCatalog => _catalog.stream;
 
   @override
