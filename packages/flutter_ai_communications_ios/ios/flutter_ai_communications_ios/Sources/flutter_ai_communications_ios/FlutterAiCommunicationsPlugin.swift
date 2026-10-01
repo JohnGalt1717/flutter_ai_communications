@@ -232,7 +232,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   private func stopNative() {
     running = false
-    teardownEngine(keepSessionActive: false)
+    // Settings may still be observing — keep the session and reclaim ownership (#88).
+    let keepForObservation = catalogObservationDepth > 0
+    teardownEngine(keepSessionActive: keepForObservation)
+    if keepForObservation {
+      catalogObservationOwnsSession = true
+      addCatalogRouteObserver(AVAudioSession.sharedInstance())
+      emitCatalog()
+    }
   }
 
   /// Activates a playAndRecord observation session when idle so AirPods/CarPlay

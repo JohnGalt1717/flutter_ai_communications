@@ -756,7 +756,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private func routeClass(name: String, transport: String) -> String {
     let n = name.lowercased()
     let t = transport.lowercased()
-    if t.contains("blue") || n.contains("bluetooth") {
+    if t.contains("blue") || t.contains("blea") || n.contains("bluetooth") {
       return "bluetooth"
     }
     if n.contains("headset") ||
@@ -779,7 +779,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     if t.contains("bltn") || (t.isEmpty && route == "speakerphone") {
       return "built-in"
     }
-    if t.contains("blue") {
+    if t.contains("blue") || t.contains("blea") {
       if uid.hasSuffix(":input") {
         return String(uid.dropLast(":input".count))
       }

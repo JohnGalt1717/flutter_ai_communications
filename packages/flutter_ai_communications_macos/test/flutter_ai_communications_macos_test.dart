@@ -148,6 +148,20 @@ void main() {
       RouteClass.bluetooth,
     );
     expect(
+      macosRouteClass(name: 'AirPods', transport: 'blea'),
+      RouteClass.bluetooth,
+    );
+    expect(
+      macosPairId(
+        routeClass: RouteClass.bluetooth,
+        id: 'AA:BB:input',
+        name: 'AirPods',
+        uid: 'F3-A2-14-A9-1D-F8:input',
+        transport: 'blea',
+      ),
+      'F3-A2-14-A9-1D-F8',
+    );
+    expect(
       macosRouteClass(name: 'USB Headset', transport: 'usb'),
       RouteClass.wired,
     );

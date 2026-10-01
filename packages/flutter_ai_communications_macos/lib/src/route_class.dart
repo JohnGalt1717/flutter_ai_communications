@@ -7,7 +7,9 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 RouteClass macosRouteClass({required String name, String transport = ''}) {
   final lowerName = name.toLowerCase();
   final lowerTransport = transport.toLowerCase();
-  if (lowerTransport.contains('blue') || lowerName.contains('bluetooth')) {
+  if (lowerTransport.contains('blue') ||
+      lowerTransport.contains('blea') ||
+      lowerName.contains('bluetooth')) {
     return RouteClass.bluetooth;
   }
   if (lowerName.contains('headset') ||
@@ -45,7 +47,7 @@ String macosPairId({
       (lowerTransport.isEmpty && routeClass == RouteClass.speakerphone)) {
     return macosBuiltInPairId;
   }
-  if (lowerTransport.contains('blue')) {
+  if (lowerTransport.contains('blue') || lowerTransport.contains('blea')) {
     return macosBluetoothPairKey(deviceUid);
   }
   final clique = <String>{deviceUid, ...relatedUids}.toList()..sort();

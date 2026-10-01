@@ -30,7 +30,10 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
 import io.flutter.view.TextureRegistry
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class FlutterAiCommunicationsPlugin :
     FlutterPlugin,
@@ -75,6 +78,9 @@ class FlutterAiCommunicationsPlugin :
     private var appliedRenderId: String? = null
     private var noiseCancelling = true
     private var communicationDeviceListener: Any? = null
+    /** Target id awaited by [setCommunicationDeviceMatching]; 0 means idle. */
+    private val pendingCommunicationDeviceId = AtomicInteger(0)
+    private @Volatile var pendingCommunicationDeviceLatch: CountDownLatch? = null
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -698,8 +704,8 @@ class FlutterAiCommunicationsPlugin :
     }
 
     /**
-     * `setCommunicationDevice` can return true while [AudioManager.communicationDevice] is
-     * still the prior headset. One retry is enough; do not loop.
+     * `setCommunicationDevice` can return true while the transition is still in flight.
+     * Arm the listener latch before the request, wait briefly, then one retry. Do not loop.
      */
     private fun setCommunicationDeviceMatching(
         manager: AudioManager,
@@ -708,16 +714,36 @@ class FlutterAiCommunicationsPlugin :
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return true
         }
-        if (!manager.setCommunicationDevice(target)) {
-            return false
-        }
-        if (manager.communicationDevice?.id == target.id) {
+        if (requestAndAwaitCommunicationDevice(manager, target)) {
             return true
         }
-        if (!manager.setCommunicationDevice(target)) {
-            return false
+        return requestAndAwaitCommunicationDevice(manager, target)
+    }
+
+    private fun requestAndAwaitCommunicationDevice(
+        manager: AudioManager,
+        target: AudioDeviceInfo,
+    ): Boolean {
+        val latch = CountDownLatch(1)
+        pendingCommunicationDeviceLatch = latch
+        pendingCommunicationDeviceId.set(target.id)
+        try {
+            if (!manager.setCommunicationDevice(target)) {
+                return false
+            }
+            if (manager.communicationDevice?.id == target.id) {
+                return true
+            }
+            try {
+                latch.await(300, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            return manager.communicationDevice?.id == target.id
+        } finally {
+            pendingCommunicationDeviceId.set(0)
+            pendingCommunicationDeviceLatch = null
         }
-        return manager.communicationDevice?.id == target.id
     }
 
     private fun requestBluetoothIdentity() {
@@ -864,9 +890,11 @@ class FlutterAiCommunicationsPlugin :
     private fun routeClass(type: Int): String =
         when (type) {
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE, AudioDeviceInfo.TYPE_BUILTIN_MIC -> "handset"
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speakerphone"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+            -> "speakerphone"
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER,
             -> "bluetooth"
             AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE,
@@ -954,7 +982,11 @@ class FlutterAiCommunicationsPlugin :
         }
         val manager = audioManager ?: return
         val listener =
-            AudioManager.OnCommunicationDeviceChangedListener {
+            AudioManager.OnCommunicationDeviceChangedListener { device ->
+                val wanted = pendingCommunicationDeviceId.get()
+                if (wanted != 0 && device?.id == wanted) {
+                    pendingCommunicationDeviceLatch?.countDown()
+                }
                 emitRoute()
             }
         communicationDeviceListener = listener
@@ -990,7 +1022,7 @@ class FlutterAiCommunicationsPlugin :
         val speaker = AndroidCapturePolicy.isSpeakerRender(selected)
         return sinks.firstOrNull {
             if (speaker) {
-                it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                isBuiltinSpeakerType(it.type)
             } else {
                 it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
             }
@@ -1037,7 +1069,7 @@ class FlutterAiCommunicationsPlugin :
     private fun renderMatchesSelection(device: AudioDeviceInfo?): Boolean {
         val selected = selectedRenderId ?: return device != null
         if (AndroidCapturePolicy.isSpeakerRender(selected)) {
-            return device?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            return device != null && isBuiltinSpeakerType(device.type)
         }
         if (selected == "handset-out") {
             return device?.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
