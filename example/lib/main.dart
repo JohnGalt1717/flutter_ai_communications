@@ -294,23 +294,44 @@ final class _SessionPageState extends State<SessionPage> {
     super.dispose();
   }
 
-  /// Page-lifetime catalog observation — begin once, end on stop/dispose (#88).
+  /// Page-lifetime catalog observation — begin once, end on dispose (#88).
   bool _catalogObserving = false;
+  Future<void>? _catalogBeginInFlight;
 
   Future<void> _ensureCatalogObservation() async {
     if (_catalogObserving) {
       return;
     }
-    await _manager.beginCatalogObservation();
-    _catalogObserving = true;
+    final existing = _catalogBeginInFlight;
+    if (existing != null) {
+      await existing;
+      return;
+    }
+    late final Future<void> started;
+    started = () async {
+      await _manager.beginCatalogObservation();
+      _catalogObserving = true;
+    }();
+    _catalogBeginInFlight = started;
+    try {
+      await started;
+    } finally {
+      if (identical(_catalogBeginInFlight, started)) {
+        _catalogBeginInFlight = null;
+      }
+    }
   }
 
   Future<void> _releaseCatalogObservation() async {
+    final pending = _catalogBeginInFlight;
+    if (pending != null) {
+      await pending;
+    }
     if (!_catalogObserving) {
       return;
     }
-    await _manager.endCatalogObservation();
     _catalogObserving = false;
+    await _manager.endCatalogObservation();
   }
 
   Future<void> _loadEndpoints() async {

@@ -18,7 +18,6 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -76,6 +75,8 @@ class FlutterAiCommunicationsPlugin :
     private var appliedRenderId: String? = null
     private var noiseCancelling = true
     private var communicationDeviceListener: Any? = null
+    private var routeWaitListener: AudioManager.OnCommunicationDeviceChangedListener? = null
+    private var routeWaitTimeout: Runnable? = null
 
     private val deviceCallback =
         object : AudioDeviceCallback() {
@@ -163,7 +164,7 @@ class FlutterAiCommunicationsPlugin :
                 requestedPlaybackRate =
                     AndroidCapturePolicy.requestedSampleRate(call.argument("playbackFormat"))
                 noiseCancelling = call.argument<Boolean>("noiseCancelling") ?: true
-                result.success(startNative())
+                startNativeAsync { outcome -> result.success(outcome) }
             }
             "stopNative" -> {
                 stopNative()
@@ -184,17 +185,19 @@ class FlutterAiCommunicationsPlugin :
             "selectEndpoints" -> {
                 selectedCaptureId = call.argument("captureId") ?: selectedCaptureId
                 selectedRenderId = call.argument("renderId") ?: selectedRenderId
-                if (!applyRoute()) {
-                    result.error(
-                        "route_failed",
-                        "communication device did not match selected render",
-                        null,
-                    )
-                    return
+                applyRouteAsync { routed ->
+                    if (!routed) {
+                        result.error(
+                            "route_failed",
+                            "communication device did not match selected render",
+                            null,
+                        )
+                        return@applyRouteAsync
+                    }
+                    restartPlayback()
+                    restartCapture()
+                    result.success(startedFormatMap())
                 }
-                restartPlayback()
-                restartCapture()
-                result.success(startedFormatMap())
             }
             "openIsolationSettings" -> {
                 emit("isolation", "unavailable")
@@ -401,8 +404,11 @@ class FlutterAiCommunicationsPlugin :
         )
     }
 
-    private fun startNative(): Any {
-        val context = appContext ?: return "failed"
+    private fun startNativeAsync(onDone: (Any) -> Unit) {
+        val context = appContext ?: run {
+            onDone("failed")
+            return
+        }
         val wantCapture =
             AndroidCapturePolicy.wantsCapture(selectedCaptureId, selectedRenderId)
         val wantPlayback =
@@ -411,37 +417,48 @@ class FlutterAiCommunicationsPlugin :
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            return "failed"
+            onDone("failed")
+            return
         }
-        val manager = audioManager ?: return "failed"
+        val manager = audioManager ?: run {
+            onDone("failed")
+            return
+        }
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
         requestFocus(manager)
-        if (!applyRoute()) {
-            return "failed"
-        }
-        return try {
-            captureGeneration++
-            running.set(true)
-            paused.set(false)
-            if (wantCapture && !startCapture(captureGeneration)) {
+        applyRouteAsync { routed ->
+            if (!routed) {
+                onDone("failed")
+                return@applyRouteAsync
+            }
+            try {
+                captureGeneration++
+                running.set(true)
+                paused.set(false)
+                if (wantCapture && !startCapture(captureGeneration)) {
+                    running.set(false)
+                    onDone("failed")
+                    return@applyRouteAsync
+                }
+                if (wantPlayback) {
+                    startPlayback()
+                }
+                emitCatalog()
+                emitRoute()
+                emit("isolation", "unavailable")
+                requestBluetoothIdentity()
+                onDone(
+                    startedFormatMap(wantCapture = wantCapture, wantPlayback = wantPlayback),
+                )
+            } catch (_: Exception) {
                 running.set(false)
-                return "failed"
+                onDone("failed")
             }
-            if (wantPlayback) {
-                startPlayback()
-            }
-            emitCatalog()
-            emitRoute()
-            emit("isolation", "unavailable")
-            requestBluetoothIdentity()
-            startedFormatMap(wantCapture = wantCapture, wantPlayback = wantPlayback)
-        } catch (_: Exception) {
-            running.set(false)
-            "failed"
         }
     }
 
     private fun stopNative() {
+        cancelRouteWait()
         running.set(false)
         captureGeneration++
         captureThread?.join(1000)
@@ -649,28 +666,41 @@ class FlutterAiCommunicationsPlugin :
         startPlayback()
     }
 
-    private fun applyRoute(): Boolean {
-        val manager = audioManager ?: return false
+    /**
+     * Applies the selected render route without blocking the MethodChannel thread.
+     * Communication-device transitions complete via [OnCommunicationDeviceChangedListener]
+     * plus a 300 ms timeout; rejected requests fail immediately; one retry only after timeout.
+     */
+    private fun applyRouteAsync(onDone: (Boolean) -> Unit) {
+        val manager = audioManager ?: run {
+            onDone(false)
+            return
+        }
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
         val plan = AndroidCapturePolicy.planApplyRoute(selectedRenderId)
         // Samsung reads isSpeakerphoneOn when the communication route changes.
         @Suppress("DEPRECATION")
         manager.isSpeakerphoneOn = plan.speakerphoneOn
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return true
+            onDone(true)
+            return
         }
-        val render = resolveRenderDevice() ?: return false
+        val render = resolveRenderDevice() ?: run {
+            onDone(false)
+            return
+        }
         if (isBuiltinSpeakerType(render.type)) {
             stopScoIfBluetoothCommunicationDevice(manager)
         }
         if (plan.clearCommunicationDevice) {
             manager.clearCommunicationDevice()
         }
-        if (!setCommunicationDeviceMatching(manager, render)) {
-            return false
+        setCommunicationDeviceMatchingAsync(manager, render) { matched ->
+            if (matched) {
+                appliedRenderId = catalogId(render, capture = false)
+            }
+            onDone(matched)
         }
-        appliedRenderId = catalogId(render, capture = false)
-        return true
     }
 
     private fun isBuiltinSpeakerType(type: Int): Boolean =
@@ -698,46 +728,88 @@ class FlutterAiCommunicationsPlugin :
         manager.isBluetoothScoOn = false
     }
 
-    /**
-     * `setCommunicationDevice` can return true while the transition is still in flight.
-     * Poll [AudioManager.communicationDevice] (the OS updates it without our listener);
-     * do not latch on the main-posted listener — MethodChannel also runs on main.
-     * One retry after the bounded wait. Do not loop.
-     */
-    private fun setCommunicationDeviceMatching(
-        manager: AudioManager,
-        target: AudioDeviceInfo,
-    ): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return true
-        }
-        if (requestAndAwaitCommunicationDevice(manager, target)) {
-            return true
-        }
-        return requestAndAwaitCommunicationDevice(manager, target)
+    private enum class CommDeviceOutcome {
+        Matched,
+        Rejected,
+        TimedOut,
     }
 
-    private fun requestAndAwaitCommunicationDevice(
+    private fun setCommunicationDeviceMatchingAsync(
         manager: AudioManager,
         target: AudioDeviceInfo,
-    ): Boolean {
-        if (!manager.setCommunicationDevice(target)) {
-            return false
+        onDone: (Boolean) -> Unit,
+    ) {
+        requestCommunicationDeviceAsync(manager, target) { first ->
+            when (first) {
+                CommDeviceOutcome.Matched -> onDone(true)
+                CommDeviceOutcome.Rejected -> onDone(false)
+                CommDeviceOutcome.TimedOut ->
+                    requestCommunicationDeviceAsync(manager, target) { second ->
+                        onDone(second == CommDeviceOutcome.Matched)
+                    }
+            }
         }
-        val deadline = SystemClock.elapsedRealtime() + 300
-        while (true) {
-            if (manager.communicationDevice?.id == target.id) {
-                return true
+    }
+
+    /**
+     * Requests [target] and finishes when the observed communication device matches,
+     * the request is rejected, or the 300 ms bound elapses. Never sleeps on the
+     * MethodChannel / main thread.
+     */
+    private fun requestCommunicationDeviceAsync(
+        manager: AudioManager,
+        target: AudioDeviceInfo,
+        onDone: (CommDeviceOutcome) -> Unit,
+    ) {
+        cancelRouteWait()
+        if (!manager.setCommunicationDevice(target)) {
+            onDone(CommDeviceOutcome.Rejected)
+            return
+        }
+        if (manager.communicationDevice?.id == target.id) {
+            onDone(CommDeviceOutcome.Matched)
+            return
+        }
+        var finished = false
+        fun finish(outcome: CommDeviceOutcome) {
+            if (finished) {
+                return
             }
-            if (SystemClock.elapsedRealtime() >= deadline) {
-                return false
+            finished = true
+            cancelRouteWait()
+            onDone(outcome)
+        }
+        val timeout =
+            Runnable {
+                val matched = manager.communicationDevice?.id == target.id
+                finish(
+                    if (matched) {
+                        CommDeviceOutcome.Matched
+                    } else {
+                        CommDeviceOutcome.TimedOut
+                    },
+                )
             }
-            try {
-                Thread.sleep(20)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return manager.communicationDevice?.id == target.id
+        val listener =
+            AudioManager.OnCommunicationDeviceChangedListener { device ->
+                val id = device?.id ?: manager.communicationDevice?.id
+                if (id == target.id) {
+                    finish(CommDeviceOutcome.Matched)
+                }
             }
+        routeWaitListener = listener
+        routeWaitTimeout = timeout
+        manager.addOnCommunicationDeviceChangedListener({ runnable -> main.post(runnable) }, listener)
+        main.postDelayed(timeout, 300)
+    }
+
+    private fun cancelRouteWait() {
+        routeWaitTimeout?.let { main.removeCallbacks(it) }
+        routeWaitTimeout = null
+        val listener = routeWaitListener
+        routeWaitListener = null
+        if (listener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager?.removeOnCommunicationDeviceChangedListener(listener)
         }
     }
 
@@ -985,6 +1057,7 @@ class FlutterAiCommunicationsPlugin :
     }
 
     private fun stopListeningForCommunicationDevice() {
+        cancelRouteWait()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             return
         }
