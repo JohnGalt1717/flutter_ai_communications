@@ -74,6 +74,33 @@ void main() {
     );
   });
 
+  test('built-in speakers pair as speakerphone from transport pci (#96 #97)', () {
+    expect(
+      macosRouteClass(name: 'Built-in Microphone', transport: 'pci'),
+      RouteClass.speakerphone,
+    );
+    expect(
+      macosPairId(
+        routeClass: RouteClass.speakerphone,
+        id: 'AppleHDAEngineInput:1',
+        name: 'Built-in Microphone',
+        uid: 'AppleHDAEngineInput:1',
+        transport: 'pci',
+      ),
+      macosBuiltInPairId,
+    );
+    expect(
+      macosPairId(
+        routeClass: RouteClass.speakerphone,
+        id: 'AppleHDAEngineOutput:1',
+        name: 'Built-in Output',
+        uid: 'AppleHDAEngineOutput:1',
+        transport: 'pci',
+      ),
+      macosBuiltInPairId,
+    );
+  });
+
   test('USB name containing speaker stays wired, not built-in', () {
     expect(
       macosRouteClass(name: 'USB Audio Speakers', transport: 'usb '),

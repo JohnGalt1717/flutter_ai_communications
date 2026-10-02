@@ -29,7 +29,7 @@ const macosBuiltInPairId = 'built-in';
 
 /// Pair identity from Core Audio hardware metadata (issue #90).
 ///
-/// - Transport `bltn` → [macosBuiltInPairId]
+/// - Transport `bltn` / `pci` → [macosBuiltInPairId]
 /// - Bluetooth (`blue` / LE): UID with trailing `:input` / `:output` stripped
 /// - Otherwise: RelatedDevices clique UIDs sorted and joined with `|`
 String macosPairId({
@@ -44,6 +44,7 @@ String macosPairId({
   final deviceUid = uid.isEmpty ? id : uid;
   final lowerTransport = transport.toLowerCase();
   if (lowerTransport.contains('bltn') ||
+      lowerTransport.contains('pci') ||
       (lowerTransport.isEmpty && routeClass == RouteClass.speakerphone)) {
     return macosBuiltInPairId;
   }
