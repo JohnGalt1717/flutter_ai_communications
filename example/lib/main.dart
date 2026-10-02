@@ -243,7 +243,10 @@ final class _SessionPageState extends State<SessionPage> {
       return;
     }
     setState(() {
-      _replaceStill = data.buffer.asUint8List();
+      _replaceStill = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
     });
   }
 

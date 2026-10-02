@@ -4,10 +4,21 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.Segmentation
+import com.google.mlkit.vision.segmentation.SegmentationMask
 import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
 import java.nio.ByteBuffer
-import java.util.concurrent.TimeUnit
+import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 
+/**
+ * ML Kit selfie segmentation for blur / replace on the Production video path.
+ *
+ * [SegmentationMask.getBuffer] holds floats in \[0, 1\] (not bytes). Masks are
+ * requested asynchronously; [process] composites with the last successful mask
+ * so the camera thread never blocks on [Tasks.await].
+ */
 internal class AndroidVideoProcessor {
     sealed class Mode {
         data object None : Mode()
@@ -19,8 +30,18 @@ internal class AndroidVideoProcessor {
         data object Replace : Mode()
     }
 
+    private data class MaskSnapshot(
+        val buffer: ByteBuffer,
+        val width: Int,
+        val height: Int,
+    )
+
     var mode: Mode = Mode.None
     var still: Bitmap? = null
+
+    /** Fired once when runtime segmentation fails and the processor falls back to none. */
+    var onUnavailable: (() -> Unit)? = null
+
     private val segmenter =
         try {
             Segmentation.getClient(
@@ -33,9 +54,24 @@ internal class AndroidVideoProcessor {
             null
         }
 
+    private val maskInFlight = AtomicBoolean(false)
+    private val generation = AtomicInteger(0)
+    private var consecutiveFailures = 0
+
+    @Volatile
+    private var lastMask: MaskSnapshot? = null
+
     val available: Boolean get() = segmenter != null
 
+    /** Drop cached masks (camera switch / apply). In-flight callbacks are ignored. */
+    fun invalidateMask() {
+        generation.incrementAndGet()
+        consecutiveFailures = 0
+        lastMask = null
+    }
+
     fun apply(args: Map<String, Any?>): String {
+        invalidateMask()
         when (args["kind"] as? String ?: "none") {
             "none" -> {
                 mode = Mode.None
@@ -80,14 +116,21 @@ internal class AndroidVideoProcessor {
         if (current is Mode.None) {
             return bitmap
         }
-        val mask = personMask(bitmap) ?: return bitmap
+        requestMaskAsync(bitmap)
+        val snapshot = lastMask ?: return bitmap
         val background =
             when (current) {
                 is Mode.Blur -> blur(bitmap, current.intensity)
                 is Mode.Replace -> scaledStill(bitmap.width, bitmap.height)
                 is Mode.None -> bitmap
             } ?: return bitmap
-        return composite(bitmap, background, mask)
+        return AndroidVideoMask.composite(
+            person = bitmap,
+            background = background,
+            mask = snapshot.buffer,
+            maskWidth = snapshot.width,
+            maskHeight = snapshot.height,
+        )
     }
 
     private fun bytesOf(value: Any?): ByteArray? =
@@ -97,15 +140,82 @@ internal class AndroidVideoProcessor {
             else -> null
         }
 
-    private fun personMask(bitmap: Bitmap): ByteBuffer? {
-        val client = segmenter ?: return null
-        return try {
-            val task = client.process(InputImage.fromBitmap(bitmap, 0))
-            val result = com.google.android.gms.tasks.Tasks.await(task, 80, TimeUnit.MILLISECONDS)
-            result.buffer
-        } catch (_: Throwable) {
-            null
+    private fun requestMaskAsync(bitmap: Bitmap) {
+        val client = segmenter ?: return
+        if (!maskInFlight.compareAndSet(false, true)) {
+            return
         }
+        val requestGeneration = generation.get()
+        val copy =
+            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: run {
+                maskInFlight.set(false)
+                if (requestGeneration == generation.get()) {
+                    noteInferenceFailure()
+                }
+                return
+            }
+        try {
+            client
+                .process(InputImage.fromBitmap(copy, 0))
+                .addOnSuccessListener { result ->
+                    try {
+                        if (requestGeneration != generation.get()) {
+                            return@addOnSuccessListener
+                        }
+                        consecutiveFailures = 0
+                        lastMask = snapshotOf(result)
+                    } finally {
+                        copy.recycle()
+                        maskInFlight.set(false)
+                    }
+                }.addOnFailureListener {
+                    try {
+                        if (requestGeneration != generation.get()) {
+                            return@addOnFailureListener
+                        }
+                        noteInferenceFailure()
+                    } finally {
+                        copy.recycle()
+                        maskInFlight.set(false)
+                    }
+                }
+        } catch (_: Throwable) {
+            copy.recycle()
+            maskInFlight.set(false)
+            if (requestGeneration == generation.get()) {
+                noteInferenceFailure()
+            }
+        }
+    }
+
+    private fun noteInferenceFailure() {
+        consecutiveFailures += 1
+        if (consecutiveFailures < FAILURE_LIMIT) {
+            return
+        }
+        if (mode is Mode.None) {
+            return
+        }
+        generation.incrementAndGet()
+        mode = Mode.None
+        still = null
+        lastMask = null
+        consecutiveFailures = 0
+        onUnavailable?.invoke()
+    }
+
+    private fun snapshotOf(result: SegmentationMask): MaskSnapshot {
+        val source = result.buffer
+        source.rewind()
+        source.order(ByteOrder.nativeOrder())
+        val owned = ByteBuffer.allocateDirect(source.capacity()).order(ByteOrder.nativeOrder())
+        owned.put(source)
+        owned.rewind()
+        return MaskSnapshot(
+            buffer = owned,
+            width = result.width,
+            height = result.height,
+        )
     }
 
     private fun blur(
@@ -127,27 +237,114 @@ internal class AndroidVideoProcessor {
         return Bitmap.createScaledBitmap(source, width, height, true)
     }
 
-    private fun composite(
+    companion object {
+        private const val FAILURE_LIMIT = 5
+    }
+}
+
+/** Pure mask composite helpers — JVM-testable without ML Kit or Bitmap. */
+internal object AndroidVideoMask {
+    const val PERSON_THRESHOLD = 0.5f
+
+    /**
+     * ML Kit mask floats are in \[0, 1\]. Sample nearest mask texel when
+     * mask dimensions differ from the frame size. [outPixels] must already
+     * hold the background; person pixels are written in place.
+     */
+    fun compositeInto(
+        personPixels: IntArray,
+        outPixels: IntArray,
+        width: Int,
+        height: Int,
+        mask: ByteBuffer,
+        maskWidth: Int,
+        maskHeight: Int,
+    ) {
+        require(personPixels.size == width * height)
+        require(outPixels.size == width * height)
+        val ordered = mask.duplicate().order(ByteOrder.nativeOrder())
+        ordered.clear()
+        val floats = ordered.asFloatBuffer()
+        val floatCount = floats.remaining()
+        for (y in 0 until height) {
+            val my = nearestMaskIndex(y, height, maskHeight)
+            for (x in 0 until width) {
+                val mx = nearestMaskIndex(x, width, maskWidth)
+                val index = my * maskWidth + mx
+                if (index < 0 || index >= floatCount) {
+                    continue
+                }
+                val confidence = floats.get(index)
+                if (confidence > PERSON_THRESHOLD) {
+                    outPixels[y * width + x] = personPixels[y * width + x]
+                }
+            }
+        }
+    }
+
+    /**
+     * Nearest mask sample for a frame coordinate. Same-size maps 1:1; otherwise
+     * rounds along the inclusive endpoint mapping so a 4→2 scale yields [0,0,1,1].
+     */
+    fun nearestMaskIndex(
+        frameIndex: Int,
+        frameSize: Int,
+        maskSize: Int,
+    ): Int {
+        if (maskSize <= 1) {
+            return 0
+        }
+        if (frameSize == maskSize) {
+            return frameIndex.coerceIn(0, maskSize - 1)
+        }
+        if (frameSize <= 1) {
+            return 0
+        }
+        return (frameIndex.toDouble() * (maskSize - 1) / (frameSize - 1))
+            .roundToInt()
+            .coerceIn(0, maskSize - 1)
+    }
+
+    fun composite(
         person: Bitmap,
         background: Bitmap,
         mask: ByteBuffer,
+        maskWidth: Int,
+        maskHeight: Int,
     ): Bitmap {
         val width = person.width
         val height = person.height
-        val out = background.copy(Bitmap.Config.ARGB_8888, true)
         val personPixels = IntArray(width * height)
         val outPixels = IntArray(width * height)
         person.getPixels(personPixels, 0, width, 0, 0, width, height)
-        out.getPixels(outPixels, 0, width, 0, 0, width, height)
-        mask.rewind()
-        val count = minOf(personPixels.size, mask.remaining())
-        for (i in 0 until count) {
-            val alpha = mask.get().toInt() and 0xFF
-            if (alpha > 128) {
-                outPixels[i] = personPixels[i]
-            }
-        }
+        background.getPixels(outPixels, 0, width, 0, 0, width, height)
+        compositeInto(
+            personPixels = personPixels,
+            outPixels = outPixels,
+            width = width,
+            height = height,
+            mask = mask,
+            maskWidth = maskWidth,
+            maskHeight = maskHeight,
+        )
+        val out = background.copy(Bitmap.Config.ARGB_8888, true)
         out.setPixels(outPixels, 0, width, 0, 0, width, height)
         return out
+    }
+
+    /** Builds a float mask buffer for tests (native byte order). */
+    fun floatMask(
+        width: Int,
+        height: Int,
+        confidence: (x: Int, y: Int) -> Float,
+    ): ByteBuffer {
+        val buffer = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                buffer.putFloat(confidence(x, y))
+            }
+        }
+        buffer.rewind()
+        return buffer
     }
 }

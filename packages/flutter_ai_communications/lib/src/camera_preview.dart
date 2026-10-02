@@ -8,7 +8,11 @@ final class CameraPreview {
     required this._cameraId,
     required this._onStopped,
     this._videoProcessor = const NoneVideoProcessor(),
-  });
+  }) {
+    _processorUnavailableSub = _platform.processorUnavailable.listen(
+      (_) => _onProcessorUnavailable(),
+    );
+  }
 
   final FlutterAiCommunicationsPlatform _platform;
   final void Function() _onStopped;
@@ -16,6 +20,7 @@ final class CameraPreview {
   var _stopped = false;
   String _cameraId;
   VideoProcessor _videoProcessor;
+  StreamSubscription<void>? _processorUnavailableSub;
 
   /// Local Video surface. Size follows live [lastVideoSurface] when present.
   VideoSurface get surface => _platform.lastVideoSurface ?? _surface;
@@ -63,8 +68,17 @@ final class CameraPreview {
       return;
     }
     _stopped = true;
+    unawaited(_processorUnavailableSub?.cancel());
+    _processorUnavailableSub = null;
     await _platform.stopCameraNative();
     _onStopped();
+  }
+
+  void _onProcessorUnavailable() {
+    if (_stopped) {
+      return;
+    }
+    _videoProcessor = const NoneVideoProcessor();
   }
 }
 
@@ -91,7 +105,7 @@ Future<VideoProcessor?> _readyProcessor(VideoProcessor processor) async {
   try {
     final data = await rootBundle.load(asset);
     return ReplaceVideoProcessor(
-      bytes: data.buffer.asUint8List(),
+      bytes: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       asset: asset,
     );
   } on Object {

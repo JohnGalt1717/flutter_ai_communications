@@ -276,6 +276,20 @@ void main() {
     expect(session.isStopped, isFalse);
   });
 
+  test('runtime processor unavailable event clears processor with warning', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    final result = await session.setVideoProcessor(
+      const BlurVideoProcessor(intensity: 50),
+    );
+    expect(result, isA<ProcessorReady>());
+    platform.processorUnavailableController.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(session.videoProcessor, const NoneVideoProcessor());
+    expect(session.status.code, SessionStatusCode.processorUnavailable);
+    expect(session.isStopped, isFalse);
+  });
+
   test('Camera preview inherits the Session Video processor', () async {
     final session =
         ((await manager.start(cameraSend: true)) as StartReady).session;
@@ -325,4 +339,17 @@ void main() {
       );
     },
   );
+
+  test('runtime processor unavailable clears CameraPreview processor', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    await session.setCameraEnabled(false);
+    final preview =
+        ((await manager.startCameraPreview()) as PreviewReady).preview;
+    await preview.setVideoProcessor(const BlurVideoProcessor(intensity: 50));
+    platform.processorUnavailableController.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(preview.videoProcessor, const NoneVideoProcessor());
+    expect(session.videoProcessor, const NoneVideoProcessor());
+  });
 }

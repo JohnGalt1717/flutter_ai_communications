@@ -150,6 +150,10 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   final StreamController<IsolationEvent> isolationController =
       StreamController<IsolationEvent>.broadcast();
 
+  /// Runtime processor-unavailable events tests inject.
+  final StreamController<void> processorUnavailableController =
+      StreamController<void>.broadcast();
+
   /// Catalog updates tests inject.
   final StreamController<List<Endpoint>> catalogController =
       StreamController<List<Endpoint>>.broadcast();
@@ -478,6 +482,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   @override
   Stream<IsolationEvent> get isolation => isolationController.stream;
+
+  @override
+  Stream<void> get processorUnavailable => processorUnavailableController.stream;
 
   @override
   Future<void> openIsolationSettings() async {
@@ -934,6 +941,7 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   Future<void> dispose() async {
     await captureController.close();
     await isolationController.close();
+    await processorUnavailableController.close();
     await catalogController.close();
     await pathCoverageController.close();
     await audioFocusController.close();
