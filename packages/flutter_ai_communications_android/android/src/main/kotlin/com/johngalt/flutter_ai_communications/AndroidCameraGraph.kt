@@ -358,6 +358,7 @@ class AndroidCameraGraph(
     fun select(cameraId: String) {
         // Keep the SurfaceProducer so Session/CameraPreview keep a live texture
         // id. selectCameraNative is void and cameraFormat only updates size.
+        processor.invalidateMask()
         start(
             cameraId,
             1280,

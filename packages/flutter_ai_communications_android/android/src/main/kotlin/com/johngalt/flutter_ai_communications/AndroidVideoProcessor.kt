@@ -63,15 +63,19 @@ internal class AndroidVideoProcessor {
 
     val available: Boolean get() = segmenter != null
 
-    fun apply(args: Map<String, Any?>): String {
-        // Invalidate in-flight inference so a stale callback cannot repopulate lastMask.
+    /** Drop cached masks (camera switch / apply). In-flight callbacks are ignored. */
+    fun invalidateMask() {
         generation.incrementAndGet()
         consecutiveFailures = 0
+        lastMask = null
+    }
+
+    fun apply(args: Map<String, Any?>): String {
+        invalidateMask()
         when (args["kind"] as? String ?: "none") {
             "none" -> {
                 mode = Mode.None
                 still = null
-                lastMask = null
                 return "ready"
             }
             "blur" -> {
@@ -82,7 +86,6 @@ internal class AndroidVideoProcessor {
                 if (intensity !in 0..100) {
                     return "invalid"
                 }
-                lastMask = null
                 mode = Mode.Blur(intensity)
                 return "ready"
             }
@@ -101,7 +104,6 @@ internal class AndroidVideoProcessor {
                     return "invalid"
                 }
                 still = bitmap
-                lastMask = null
                 mode = Mode.Replace
                 return "ready"
             }
@@ -147,6 +149,9 @@ internal class AndroidVideoProcessor {
         val copy =
             bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: run {
                 maskInFlight.set(false)
+                if (requestGeneration == generation.get()) {
+                    noteInferenceFailure()
+                }
                 return
             }
         try {
