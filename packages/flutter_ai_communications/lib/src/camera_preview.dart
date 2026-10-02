@@ -91,7 +91,7 @@ Future<VideoProcessor?> _readyProcessor(VideoProcessor processor) async {
   try {
     final data = await rootBundle.load(asset);
     return ReplaceVideoProcessor(
-      bytes: data.buffer.asUint8List(),
+      bytes: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       asset: asset,
     );
   } on Object {

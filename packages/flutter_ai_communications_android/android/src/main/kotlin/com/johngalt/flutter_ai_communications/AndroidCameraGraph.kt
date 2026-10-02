@@ -456,7 +456,9 @@ class AndroidCameraGraph(
         try {
             frameCount.incrementAndGet()
             val bitmap = yuvToBitmap(image) ?: return
-            val processed = rotateUpright(processor.process(bitmap))
+            // Segment upright pixels; selfie models expect a standing person.
+            val upright = rotateUpright(bitmap)
+            val processed = processor.process(upright)
             val destProducer = producer ?: return
             if (processed.width != lastWidth || processed.height != lastHeight) {
                 lastWidth = processed.width
