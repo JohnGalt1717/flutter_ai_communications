@@ -776,7 +776,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   /// Pair key from Core Audio hardware metadata (issue #90).
   private func pairIdentity(route: String, uid: String, name _: String, transport: String, deviceID: AudioDeviceID) -> String {
     let t = transport.lowercased()
-    if t.contains("bltn") || (t.isEmpty && route == "speakerphone") {
+    if t.contains("bltn") || t.contains("pci") || (t.isEmpty && route == "speakerphone") {
       return "built-in"
     }
     if t.contains("blue") || t.contains("blea") {
