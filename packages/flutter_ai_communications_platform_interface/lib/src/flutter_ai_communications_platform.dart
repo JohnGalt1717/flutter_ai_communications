@@ -147,6 +147,12 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
     throw UnimplementedError('isolation has not been implemented.');
   }
 
+  /// Runtime Video processor fallback to none (model/inference failure).
+  ///
+  /// Apply-time unavailable still returns [NativeProcessorResult.unavailable].
+  /// This stream covers failures after a successful apply (ADR-0017).
+  Stream<void> get processorUnavailable => const Stream.empty();
+
   /// Last Isolation event. Session replays this when it attaches.
   IsolationEvent get lastIsolation =>
       const IsolationEvent(IsolationState.unknown);

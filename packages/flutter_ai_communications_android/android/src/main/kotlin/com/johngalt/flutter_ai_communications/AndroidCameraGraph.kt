@@ -41,6 +41,8 @@ class AndroidCameraGraph(
     private var lastWidth = 1280
     private var lastHeight = 720
     var cameraEnabled = true
+    /** Fired when runtime segmentation fails and the processor falls back to none. */
+    var onProcessorUnavailable: (() -> Unit)? = null
     var videoMuted = false
     private val startId = AtomicInteger(0)
     private val main = Handler(Looper.getMainLooper())
@@ -389,11 +391,10 @@ class AndroidCameraGraph(
     }
 
     fun setProcessor(args: Map<String, Any?>): String {
-        val status = processor.apply(args)
-        if (status != "ready") {
-            return status
+        processor.onUnavailable = {
+            onProcessorUnavailable?.invoke()
         }
-        return status
+        return processor.apply(args)
     }
 
     fun setMuted(muted: Boolean) {

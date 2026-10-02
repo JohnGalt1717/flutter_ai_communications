@@ -10,21 +10,20 @@ class AndroidVideoProcessorTest {
         val width = 4
         val height = 2
         val person = IntArray(width * height) { 0xFFFF0000.toInt() }
-        val background = IntArray(width * height) { 0xFF0000FF.toInt() }
+        val out = IntArray(width * height) { 0xFF0000FF.toInt() }
         val mask =
             AndroidVideoMask.floatMask(width, height) { x, _ ->
                 if (x < width / 2) 0.9f else 0.1f
             }
-        val out =
-            AndroidVideoMask.compositePixels(
-                personPixels = person,
-                backgroundPixels = background,
-                width = width,
-                height = height,
-                mask = mask,
-                maskWidth = width,
-                maskHeight = height,
-            )
+        AndroidVideoMask.compositeInto(
+            personPixels = person,
+            outPixels = out,
+            width = width,
+            height = height,
+            mask = mask,
+            maskWidth = width,
+            maskHeight = height,
+        )
         assertEquals(0xFFFF0000.toInt(), out[0])
         assertEquals(0xFFFF0000.toInt(), out[1])
         assertEquals(0xFF0000FF.toInt(), out[2])
@@ -51,26 +50,31 @@ class AndroidVideoProcessorTest {
     }
 
     @Test
-    fun floatMaskScalesWhenMaskResolutionDiffers() {
+    fun floatMaskScalesWithNearestNeighborBoundary() {
         val width = 4
         val height = 4
         val person = IntArray(width * height) { 0xFF00FF00.toInt() }
-        val background = IntArray(width * height) { 0xFF000000.toInt() }
+        val out = IntArray(width * height) { 0xFF000000.toInt() }
+        // 2x2 mask: left column person, right column background.
         val mask =
-            AndroidVideoMask.floatMask(2, 2) { x, y ->
-                if (x == 0 && y == 0) 1f else 0f
+            AndroidVideoMask.floatMask(2, 2) { x, _ ->
+                if (x == 0) 1f else 0f
             }
-        val out =
-            AndroidVideoMask.compositePixels(
-                personPixels = person,
-                backgroundPixels = background,
-                width = width,
-                height = height,
-                mask = mask,
-                maskWidth = 2,
-                maskHeight = 2,
-            )
+        AndroidVideoMask.compositeInto(
+            personPixels = person,
+            outPixels = out,
+            width = width,
+            height = height,
+            mask = mask,
+            maskWidth = 2,
+            maskHeight = 2,
+        )
+        // Nearest mapping for 4→2: indices [0,0,1,1] — half and half.
+        assertEquals(listOf(0, 0, 1, 1), (0 until 4).map { AndroidVideoMask.nearestMaskIndex(it, 4, 2) })
         assertEquals(0xFF00FF00.toInt(), out[0])
+        assertEquals(0xFF00FF00.toInt(), out[1])
+        assertEquals(0xFF000000.toInt(), out[2])
+        assertEquals(0xFF000000.toInt(), out[3])
         assertEquals(0xFF000000.toInt(), out[width * height - 1])
     }
 
@@ -78,7 +82,6 @@ class AndroidVideoProcessorTest {
     fun applyReplaceRejectsEmptyBytes() {
         val processor = AndroidVideoProcessor()
         if (!processor.available) {
-            // JVM unit tests may lack Play Services; skip apply path.
             return
         }
         assertEquals("invalid", processor.apply(mapOf("kind" to "replace")))

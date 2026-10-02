@@ -106,6 +106,7 @@ class FlutterAiCommunicationsPlugin :
             )
         }
         cameraGraph?.onCatalog = { cameras -> emit("cameraCatalog", cameras) }
+        cameraGraph?.onProcessorUnavailable = { emit("processor", "unavailable") }
         cameraGraph?.startCatalogWatch()
         screenGraph =
             AndroidScreenGraph(binding.applicationContext, binding.textureRegistry) {

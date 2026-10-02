@@ -51,6 +51,8 @@ class MethodChannelCommunicationsPlatform
       StreamController<List<Endpoint>>.broadcast();
   final StreamController<IsolationEvent> _isolationOut =
       StreamController<IsolationEvent>.broadcast();
+  final StreamController<void> _processorUnavailableOut =
+      StreamController<void>.broadcast();
   final StreamController<CoverageHint> _pathOut =
       StreamController<CoverageHint>.broadcast();
   final StreamController<AudioFocusState> _focusOut =
@@ -65,6 +67,9 @@ class MethodChannelCommunicationsPlatform
 
   @override
   IsolationEvent get lastIsolation => _lastIsolation;
+
+  @override
+  Stream<void> get processorUnavailable => _processorUnavailableOut.stream;
 
   @override
   PairingSnapshot get lastObservedRoute => _lastObserved;
@@ -833,6 +838,10 @@ class MethodChannelCommunicationsPlatform
           _isolationState(payload as String? ?? 'unknown'),
         );
         _isolationOut.add(_lastIsolation);
+      case 'processor':
+        if (payload == 'unavailable') {
+          _processorUnavailableOut.add(null);
+        }
       case 'path':
         if (payload is Map) {
           final alive = payload['alive'] == true;

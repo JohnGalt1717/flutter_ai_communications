@@ -60,6 +60,9 @@ final class Session {
       _onIsolation,
       onError: _isolationController.addError,
     );
+    _processorUnavailableSub = platform.processorUnavailable.listen(
+      (_) => _onProcessorUnavailable(),
+    );
     _coverageSub = coverageSource.coverage.listen(
       _onHostCoverage,
       onError: _coverageController.addError,
@@ -131,6 +134,7 @@ final class Session {
 
   StreamSubscription<Uint8List>? _captureSub;
   StreamSubscription<IsolationEvent>? _isolationSub;
+  StreamSubscription<void>? _processorUnavailableSub;
   StreamSubscription<Coverage>? _coverageSub;
   StreamSubscription<List<Endpoint>>? _catalogSub;
   StreamSubscription<CoverageHint>? _pathSub;
@@ -944,6 +948,7 @@ final class Session {
       // on a Timer, which never fires under FakeAsync unless time is pumped.
       unawaited(_captureSub?.cancel());
       unawaited(_isolationSub?.cancel());
+      unawaited(_processorUnavailableSub?.cancel());
       unawaited(_coverageSub?.cancel());
       unawaited(_catalogSub?.cancel());
       unawaited(_cameraCatalogSub?.cancel());
@@ -954,6 +959,7 @@ final class Session {
       unawaited(_videoSurfaceSub?.cancel());
       _captureSub = null;
       _isolationSub = null;
+      _processorUnavailableSub = null;
       _coverageSub = null;
       _catalogSub = null;
       _cameraCatalogSub = null;
@@ -1132,6 +1138,15 @@ final class Session {
       'state': presented.state.name,
       'missing': _isolationMissing,
     });
+  }
+
+  void _onProcessorUnavailable() {
+    if (_stopped) {
+      return;
+    }
+    _videoProcessor = const NoneVideoProcessor();
+    _notifyVideoSinks();
+    _publishStatus(SessionStatus.processorUnavailable(purpose: purpose));
   }
 
   void _onHostCoverage(Coverage next) {
