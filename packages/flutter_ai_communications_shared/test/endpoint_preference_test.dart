@@ -102,6 +102,132 @@ void main() {
     },
   );
 
+  test('empty preference display order puts OS default first', () {
+    final catalog = [
+      Endpoint(
+        id: 'usb-out',
+        name: 'USB Audio',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+      ),
+      Endpoint(
+        id: 'hdmi-out',
+        name: 'DELL',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+        osDefault: true,
+      ),
+      Endpoint(
+        id: 'built-in-out',
+        name: 'Speakers',
+        routeClass: RouteClass.speakerphone,
+        isCapture: false,
+      ),
+    ];
+    expect(
+      const EndpointPreference()
+          .orderedForDisplay(catalog, capture: false)
+          .map((e) => e.id),
+      ['hdmi-out', 'usb-out', 'built-in-out'],
+    );
+  });
+
+  test('host preference display order keeps listed available ids', () {
+    final catalog = [
+      Endpoint(
+        id: 'usb-out',
+        name: 'USB Audio',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+        osDefault: true,
+      ),
+      Endpoint(
+        id: 'hdmi-out',
+        name: 'DELL',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+      ),
+      Endpoint(
+        id: 'missing-out',
+        name: 'Gone',
+        routeClass: RouteClass.wired,
+        isCapture: false,
+      ),
+    ];
+    final listed = catalog.where((item) => item.id != 'missing-out').toList();
+    final preference = EndpointPreference(
+      entries: [
+        const EndpointPreferenceEntry(renderId: 'hdmi-out'),
+        const EndpointPreferenceEntry(renderId: 'missing-out'),
+        const EndpointPreferenceEntry(renderId: 'usb-out'),
+      ],
+    );
+    expect(
+      preference.orderedForDisplay(listed, capture: false).map((e) => e.id),
+      ['hdmi-out', 'usb-out'],
+    );
+  });
+
+  test(
+    'host preference display order appends unlisted available endpoints',
+    () {
+      final catalog = [
+        Endpoint(
+          id: 'usb-out',
+          name: 'USB Audio',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+          osDefault: true,
+        ),
+        Endpoint(
+          id: 'hdmi-out',
+          name: 'DELL',
+          routeClass: RouteClass.wired,
+          isCapture: false,
+        ),
+        Endpoint(
+          id: 'built-in-out',
+          name: 'Speakers',
+          routeClass: RouteClass.speakerphone,
+          isCapture: false,
+        ),
+      ];
+      const preference = EndpointPreference(
+        entries: [
+          EndpointPreferenceEntry(renderId: 'hdmi-out'),
+          EndpointPreferenceEntry(renderId: 'gone-out'),
+          EndpointPreferenceEntry(renderId: 'usb-out', enabled: false),
+        ],
+      );
+      expect(
+        preference.orderedForDisplay(catalog, capture: false).map((e) => e.id),
+        ['hdmi-out', 'usb-out', 'built-in-out'],
+      );
+    },
+  );
+
+  test('host preference display order walks capture slots then remainder', () {
+    const preference = EndpointPreference(
+      entries: [
+        EndpointPreferenceEntry(
+          renderId: 'speaker-out',
+          captures: [
+            EndpointPreferenceCapture(id: 'missing-in'),
+            EndpointPreferenceCapture(id: 'speaker-in'),
+          ],
+        ),
+        EndpointPreferenceEntry(
+          renderId: 'handset-out',
+          captures: [EndpointPreferenceCapture(id: 'handset-in')],
+        ),
+      ],
+    );
+    expect(
+      preference.orderedForDisplay(catalog, capture: true).map((e) => e.id),
+      ['speaker-in', 'handset-in', 'airpods-in', 'car-in'],
+    );
+  });
+
   test(
     'platform default puts OS default render and capture first across Pairs',
     () {

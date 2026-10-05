@@ -98,9 +98,10 @@ void main() {
   ) async {
     await pumpMeeting(tester);
 
-    await tester.tap(find.byKey(const Key('processor-pick')));
+    await tester.tap(find.byKey(const Key('camera-pick')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('processor-pick')), findsOneWidget);
     await tester.tap(find.byKey(const Key('processor-blur-50')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -108,6 +109,74 @@ void main() {
     expect(
       manager.session?.videoProcessor,
       const BlurVideoProcessor(intensity: 50),
+    );
+  });
+
+  testWidgets('audio picker dismisses when tapping outside', (tester) async {
+    await pumpMeeting(tester);
+    await tester.tap(find.byKey(const Key('audio-pick')));
+    await tester.pump();
+    expect(find.byKey(const Key('audio-panel')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('flyout-dismiss')));
+    await tester.pump();
+    expect(find.byKey(const Key('audio-panel')), findsNothing);
+  });
+
+  testWidgets('camera-none turns the live Session Camera-off', (tester) async {
+    await pumpMeeting(tester);
+    expect(manager.session?.isCameraEnabled, isTrue);
+
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('camera-none')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(manager.session?.isCameraEnabled, isFalse);
+  });
+
+  testWidgets('audio-pick speaker row auto-selects the hardware Pair capture', (
+    tester,
+  ) async {
+    await pumpMeeting(tester);
+
+    await tester.tap(find.byKey(const Key('audio-pick')));
+    await tester.pump();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('endpoint-handset-out')),
+      80,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('audio-panel-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('endpoint-handset-out')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(manager.session?.selectedCaptureId, 'handset-in');
+    expect(manager.session?.selectedRenderId, 'handset-out');
+  });
+
+  testWidgets('Share picker shows screens as tiles and apps as a list', (
+    tester,
+  ) async {
+    await pumpMeeting(tester);
+    await tester.tap(find.byKey(const Key('screen-share')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Screens'), findsOneWidget);
+    expect(find.text('Apps'), findsOneWidget);
+    expect(find.text('Display 1'), findsOneWidget);
+    expect(
+      tester.widget(find.byKey(const Key('screen-source-display-0'))),
+      isA<InkWell>(),
+    );
+    expect(
+      tester.widget(find.byKey(const Key('screen-source-window-notepad'))),
+      isA<ListTile>(),
     );
   });
 }

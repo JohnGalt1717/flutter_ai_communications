@@ -103,9 +103,52 @@ void main() {
     await echo.dispose();
   });
 
+  test(
+    'Echo Transport does not replay host loopback capture into play',
+    () async {
+      final loopback = LoopbackCommunicationsPlatform(
+        platform,
+        includeInCatalog: true,
+      );
+      addTearDown(loopback.dispose);
+      FlutterAiCommunicationsPlatform.instance = loopback;
+      manager = CommunicationsManager(platform: loopback);
+      final session = await ready();
+      await session.select(
+        captureId: LoopbackCommunicationsPlatform.captureId,
+        renderId: LoopbackCommunicationsPlatform.renderId,
+      );
+      final echo = EchoTransport(session);
+      await echo.attach();
+      final fixture = FixturePcm.voiceBand24k();
+      await session.play(fixture);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(echo.received, isNotEmpty);
+      expect(platform.played, hasLength(1));
+      expect(_joined(platform.played), fixture);
+      await echo.dispose();
+    },
+  );
+
+  test('host loopback Pair stays out of the Endpoint catalog', () async {
+    final loopback = LoopbackCommunicationsPlatform(platform);
+    addTearDown(loopback.dispose);
+    final catalog = await loopback.enumerateEndpoints();
+    expect(
+      catalog.map((endpoint) => endpoint.id),
+      isNot(contains(LoopbackCommunicationsPlatform.captureId)),
+    );
+    expect(
+      catalog.map((endpoint) => endpoint.id),
+      isNot(contains(LoopbackCommunicationsPlatform.renderId)),
+    );
+  });
+
   test('loopback Pair echoes play back on capture byte for byte', () async {
     FlutterAiCommunicationsPlatform.instance = LoopbackCommunicationsPlatform(
       platform,
+      includeInCatalog: true,
     );
     manager = CommunicationsManager();
     final session = await ready(
@@ -132,6 +175,7 @@ void main() {
   test('loopback still matches after selecting another Endpoint', () async {
     FlutterAiCommunicationsPlatform.instance = LoopbackCommunicationsPlatform(
       platform,
+      includeInCatalog: true,
     );
     manager = CommunicationsManager();
     final session = await ready(
@@ -194,6 +238,29 @@ void main() {
     );
     expect(platform.startNativeCompleted, isTrue);
   });
+
+  test(
+    'loopback wrapper forwards inner Native Formats to the Session',
+    () async {
+      platform.nativeCaptureFormat = AudioFormat.pcm16le24k;
+      platform.nativePlaybackFormat = AudioFormat.pcm16le24k;
+      final loopback = LoopbackCommunicationsPlatform(platform);
+      addTearDown(loopback.dispose);
+      FlutterAiCommunicationsPlatform.instance = loopback;
+      manager = CommunicationsManager(platform: loopback);
+      const edge16k = AudioFormat.pcm16le(sampleRate: 16000);
+      final result = await manager.start(
+        captureFormat: edge16k,
+        playbackFormat: edge16k,
+        preference: const SessionPreference(soundFloor: 0.0),
+      );
+      final session = (result as StartReady).session;
+      expect(loopback.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+      expect(session.diagnostics.nativeCaptureFormat, AudioFormat.pcm16le24k);
+      expect(session.diagnostics.edgeCaptureFormat, edge16k);
+      expect(session.diagnostics.captureConversionPath, ConversionPath.dart);
+    },
+  );
 
   test('loopback wrapper forwards screen send to the inner adapter', () async {
     final loopback = LoopbackCommunicationsPlatform(platform);

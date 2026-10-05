@@ -613,7 +613,13 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
       frames = []
     }
     for frame in frames where frame.width > 2 && frame.height > 2 {
-      overlayWindows.append(ShareFrameWindow(frame: frame))
+      let cocoa = Self.cocoaRect(fromQuartz: frame)
+      NSLog(
+        "fac.screen share-frame quartz=%@ cocoa=%@",
+        NSStringFromRect(frame),
+        NSStringFromRect(cocoa)
+      )
+      overlayWindows.append(ShareFrameWindow(frame: cocoa))
     }
     followTimer?.invalidate()
     followTimer = nil
@@ -632,7 +638,22 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     else {
       return
     }
-    overlay.setFrame(window.frame, display: true)
+    overlay.setFrame(Self.cocoaRect(fromQuartz: window.frame), display: true)
+  }
+
+  /// ScreenCaptureKit and CGWindow bounds are Quartz global (origin at the
+  /// top-left of the primary display, Y down). NSWindow frames are Cocoa
+  /// global (origin at the bottom-left of the primary display, Y up).
+  static func cocoaRect(fromQuartz quartz: CGRect) -> CGRect {
+    let primary =
+      NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first
+    let height = primary?.frame.height ?? 0
+    return CGRect(
+      x: quartz.origin.x,
+      y: height - quartz.origin.y - quartz.height,
+      width: quartz.width,
+      height: quartz.height
+    )
   }
 
   private func hideFrame() {
@@ -831,7 +852,9 @@ private final class ShareFrameWindow: NSWindow {
     sharingType = .none
     isExcludedFromWindowsMenu = true
     title = ""
-    contentView = ShareFrameView(frame: NSRect(origin: .zero, size: frame.size))
+    let view = ShareFrameView(frame: NSRect(origin: .zero, size: frame.size))
+    view.autoresizingMask = [.width, .height]
+    contentView = view
     setFrame(frame, display: true)
     orderFrontRegardless()
   }

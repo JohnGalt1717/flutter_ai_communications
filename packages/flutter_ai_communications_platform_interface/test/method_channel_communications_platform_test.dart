@@ -50,6 +50,14 @@ void main() {
               'carConnected': false,
             },
           },
+          {
+            'id': 'usb-in',
+            'name': 'USB Mic',
+            'routeClass': 'wired',
+            'isCapture': 1,
+            'pairId': 'usb',
+            'osDefault': 1,
+          },
         ],
         'requestMicrophonePermission' => 'denied',
         'startNative' => 'started',
@@ -71,6 +79,8 @@ void main() {
     expect(catalog.any((e) => e.routeClass == RouteClass.speakerphone), isTrue);
     expect(catalog.firstWhere((e) => e.id == 'speaker-out').osDefault, isTrue);
     expect(catalog.firstWhere((e) => e.id == 'handset-in').osDefault, isFalse);
+    expect(catalog.firstWhere((e) => e.id == 'usb-in').osDefault, isTrue);
+    expect(catalog.firstWhere((e) => e.id == 'usb-in').isCapture, isTrue);
   });
 
   test(
@@ -125,6 +135,41 @@ void main() {
     final call = calls.singleWhere((c) => c.method == 'startNative');
     expect((call.arguments as Map)['noiseCancelling'], isFalse);
   });
+
+  test(
+    'startNative keeps a 24 kHz Native Format when the edge is 16 kHz',
+    () async {
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        calls.add(call);
+        if (call.method == 'startNative') {
+          return {
+            'status': 'started',
+            'nativeCaptureFormat': {
+              'encoding': 'pcm16le',
+              'sampleRate': 24000.0,
+              'channels': 1.0,
+            },
+            'nativePlaybackFormat': {
+              'encoding': 'pcm16le',
+              'sampleRate': 24000.0,
+              'channels': 1.0,
+            },
+          };
+        }
+        return null;
+      });
+      const edge16k = AudioFormat.pcm16le(sampleRate: 16000);
+      expect(
+        await platform.startNative(
+          captureFormat: edge16k,
+          playbackFormat: edge16k,
+        ),
+        NativeGraphStart.started,
+      );
+      expect(platform.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+      expect(platform.lastNativeFormats.playback, AudioFormat.pcm16le24k);
+    },
+  );
 
   test(
     'startNative map reports Native Formats, not the requested edge',
@@ -487,44 +532,47 @@ void main() {
     expect(catalog[2].applicationName, 'TextEdit');
   });
 
-  test('cameraCatalog yields the enumerate snapshot then live updates', () async {
-    await platform.dispose();
-    const events = EventChannel('flutter_ai_communications/events');
-    late MockStreamHandlerEventSink sink;
-    messenger.setMockStreamHandler(
-      events,
-      MockStreamHandler.inline(
-        onListen: (args, eventSink) {
-          sink = eventSink;
-        },
-      ),
-    );
-    messenger.setMockMethodCallHandler(methods, (call) async {
-      if (call.method == 'enumerateCameras') {
-        return [
+  test(
+    'cameraCatalog yields the enumerate snapshot then live updates',
+    () async {
+      await platform.dispose();
+      const events = EventChannel('flutter_ai_communications/events');
+      late MockStreamHandlerEventSink sink;
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (args, eventSink) {
+            sink = eventSink;
+          },
+        ),
+      );
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        if (call.method == 'enumerateCameras') {
+          return [
+            {'id': 'front', 'name': 'Front', 'facing': 'user'},
+          ];
+        }
+        return null;
+      });
+      platform = MethodChannelCommunicationsPlatform(platformName: 'android');
+      final seen = <List<CameraEndpoint>>[];
+      final sub = platform.cameraCatalog.listen(seen.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, isNotEmpty);
+      expect(seen.first.single.id, 'front');
+      sink.success({
+        'type': 'cameraCatalog',
+        'payload': [
           {'id': 'front', 'name': 'Front', 'facing': 'user'},
-        ];
-      }
-      return null;
-    });
-    platform = MethodChannelCommunicationsPlatform(platformName: 'android');
-    final seen = <List<CameraEndpoint>>[];
-    final sub = platform.cameraCatalog.listen(seen.add);
-    await Future<void>.delayed(Duration.zero);
-    expect(seen, isNotEmpty);
-    expect(seen.first.single.id, 'front');
-    sink.success({
-      'type': 'cameraCatalog',
-      'payload': [
-        {'id': 'front', 'name': 'Front', 'facing': 'user'},
-        {'id': 'usb', 'name': 'USB', 'facing': 'external'},
-      ],
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(seen.last.map((camera) => camera.id), ['front', 'usb']);
-    await sub.cancel();
-    messenger.setMockStreamHandler(events, null);
-  });
+          {'id': 'usb', 'name': 'USB', 'facing': 'external'},
+        ],
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.last.map((camera) => camera.id), ['front', 'usb']);
+      await sub.cancel();
+      messenger.setMockStreamHandler(events, null);
+    },
+  );
 
   test('screenSourceCatalog yields the enumerate snapshot first', () async {
     messenger.setMockMethodCallHandler(methods, (call) async {

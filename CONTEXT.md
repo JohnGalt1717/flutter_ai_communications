@@ -13,7 +13,7 @@ The public module that creates and drives at most one Session and at most one Ca
 _Avoid_: Audio manager, engine, plugin (the manager is not a plugin), recorder
 
 **Endpoint**:
-One capture or render audio device the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; the catalog does not shrink to a lowest-common-denominator record.
+One capture or render audio device the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; the catalog does not shrink to a lowest-common-denominator record. Software virtual and aggregate devices (Core Audio `virt` / `grup` / `auto`, including Teams Audio and CADDefaultDeviceAggregate; Android telephony, remote-submix, echo-reference, HDMI, and the phone's own USB-gadget ports named after the device model) are omitted.
 _Avoid_: device (alone), route (alone), input, output (as the type name), camera (that is Camera Endpoint)
 
 **Pair**:

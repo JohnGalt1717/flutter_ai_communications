@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -142,12 +143,16 @@ class MethodChannelCommunicationsPlatform
       'playbackFormat': _formatMap(playbackFormat),
       'noiseCancelling': noiseCancelling,
     });
-    return switch (value) {
-      'unavailable' => NativeGraphStart.unavailable,
-      'failed' => NativeGraphStart.failed,
-      final Map<Object?, Object?> map => _startedFromMap(map),
-      _ => _startedFromEdges(captureFormat, playbackFormat),
-    };
+    if (value == 'unavailable') {
+      return NativeGraphStart.unavailable;
+    }
+    if (value == 'failed') {
+      return NativeGraphStart.failed;
+    }
+    if (value is Map) {
+      return _startedFromMap(Map<Object?, Object?>.from(value));
+    }
+    return _startedFromEdges(captureFormat, playbackFormat);
   }
 
   NativeGraphStart _startedFromEdges(
@@ -176,11 +181,11 @@ class MethodChannelCommunicationsPlatform
   void _adoptReport(Map<Object?, Object?> map) {
     _lastNativeFormats = NativeFormatReport(
       capture:
-          _formatFrom(map['captureFormat']) ??
-          _formatFrom(map['nativeCaptureFormat']),
+          _formatFrom(map['nativeCaptureFormat']) ??
+          _formatFrom(map['captureFormat']),
       playback:
-          _formatFrom(map['playbackFormat']) ??
-          _formatFrom(map['nativePlaybackFormat']),
+          _formatFrom(map['nativePlaybackFormat']) ??
+          _formatFrom(map['playbackFormat']),
       failures: _failuresFrom(map['formatFailures']),
     );
   }
@@ -215,8 +220,20 @@ class MethodChannelCommunicationsPlatform
     if (value is! Map) {
       return null;
     }
-    final encodingName = value['encoding'] as String?;
-    final sampleRate = value['sampleRate'] as int?;
+    String? encodingName;
+    Object? sampleRateRaw;
+    Object? channelsRaw;
+    value.forEach((key, item) {
+      switch (key.toString()) {
+        case 'encoding':
+          encodingName = item?.toString();
+        case 'sampleRate':
+          sampleRateRaw = item;
+        case 'channels':
+          channelsRaw = item;
+      }
+    });
+    final sampleRate = _asInt(sampleRateRaw);
     if (encodingName == null || sampleRate == null) {
       return null;
     }
@@ -227,7 +244,7 @@ class MethodChannelCommunicationsPlatform
     return AudioFormat(
       encoding: encoding.first,
       sampleRate: sampleRate,
-      channels: value['channels'] as int? ?? 1,
+      channels: _asInt(channelsRaw) ?? 1,
     );
   }
 
@@ -265,8 +282,8 @@ class MethodChannelCommunicationsPlatform
       'captureId': captureId,
       'renderId': renderId,
     });
-    if (value is Map<Object?, Object?>) {
-      _adoptReport(value);
+    if (value is Map) {
+      _adoptReport(Map<Object?, Object?>.from(value));
     }
   }
 
@@ -792,10 +809,21 @@ class MethodChannelCommunicationsPlatform
   }
 
   void _onCaptureEvent(dynamic event) {
-    if (event is Uint8List) {
-      _captureOut.add(event);
-    } else if (event is ByteData) {
-      _captureOut.add(event.buffer.asUint8List());
+    final bytes = switch (event) {
+      Uint8List data => data,
+      ByteData data => data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      ),
+      TypedData data => Uint8List.view(
+        data.buffer,
+        data.offsetInBytes,
+        data.lengthInBytes,
+      ),
+      _ => null,
+    };
+    if (bytes != null) {
+      _captureOut.add(bytes);
     }
   }
 
@@ -887,11 +915,11 @@ class MethodChannelCommunicationsPlatform
       id: map['id'] as String,
       name: map['name'] as String,
       routeClass: _routeClass(map['routeClass'] as String?),
-      isCapture: map['isCapture'] == true,
+      isCapture: _asBool(map['isCapture']),
       pairId: map['pairId'] as String?,
       identityHints: _strings(map['identityHints']),
       capabilities: _capabilities(map['capabilities']),
-      osDefault: map['osDefault'] == true,
+      osDefault: _asBool(map['osDefault']),
     );
   }
 
@@ -960,8 +988,17 @@ class MethodChannelCommunicationsPlatform
 
 int? _asInt(Object? value) {
   return switch (value) {
-    int n => n,
-    num n => n.toInt(),
+    final int n => n,
+    final num n => n.round(),
+    final String s => int.tryParse(s),
     _ => null,
+  };
+}
+
+bool _asBool(Object? value) {
+  return switch (value) {
+    true => true,
+    1 => true,
+    _ => false,
   };
 }

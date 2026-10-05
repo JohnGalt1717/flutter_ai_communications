@@ -1,5 +1,7 @@
 package com.johngalt.flutter_ai_communications
 
+import android.media.AudioDeviceInfo
+
 /** Capture-thread and Format-retry policy for the Android adapter. */
 internal object AndroidCapturePolicy {
     /** HAL/read status that requires a verified alternative Native Format. */
@@ -77,6 +79,102 @@ internal object AndroidCapturePolicy {
 
     /** Tablets have a speaker and a mic, not an earpiece. */
     fun shouldAdvertiseHandset(hasEarpiece: Boolean): Boolean = hasEarpiece
+
+    /** Fieldist [isSelectableInput]: builtin mic plus real external capture ports. */
+    fun isSelectableInput(type: Int): Boolean =
+        when (type) {
+            AudioDeviceInfo.TYPE_BUILTIN_MIC,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BUS,
+            -> true
+            else -> false
+        }
+
+    /** Fieldist [isSelectableOutput]: builtin speaker/earpiece plus real external render ports. */
+    fun isSelectableOutput(type: Int): Boolean =
+        when (type) {
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_BUS,
+            -> true
+            else -> false
+        }
+
+    /** Covered by the synthetic handset and speakerphone rows. */
+    fun isSyntheticType(type: Int): Boolean =
+        when (type) {
+            AudioDeviceInfo.TYPE_BUILTIN_MIC,
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE,
+            -> true
+            else -> false
+        }
+
+    fun isBluetoothVoiceType(type: Int): Boolean =
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET
+
+    fun isBluetoothMediaTwinType(type: Int): Boolean =
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+
+    fun keepBluetoothOutput(
+        type: Int,
+        collapseKey: String,
+        voiceKeys: Set<String>,
+    ): Boolean = !(isBluetoothMediaTwinType(type) && collapseKey in voiceKeys)
+
+    /**
+     * Phone-as-USB-gadget rows use the device model as [productName]. A real
+     * USB headset keeps its own product name.
+     */
+    fun isSelfNamedUsb(
+        type: Int,
+        productName: String?,
+        model: String,
+    ): Boolean {
+        if (type != AudioDeviceInfo.TYPE_USB_DEVICE &&
+            type != AudioDeviceInfo.TYPE_USB_HEADSET
+        ) {
+            return false
+        }
+        val name = productName?.trim().orEmpty()
+        val phone = model.trim()
+        if (name.isEmpty() || phone.isEmpty()) {
+            return false
+        }
+        return name.equals(phone, ignoreCase = true) ||
+            name.replace(" ", "").equals(phone.replace("-", ""), ignoreCase = true)
+    }
+
+    /**
+     * Synthetic pair that carries [osDefault] when [communicationType] is the
+     * builtin speaker, earpiece, or unset. Headset/car types leave the flag
+     * on the physical catalog row instead.
+     */
+    fun syntheticOsDefault(communicationType: Int?): String? {
+        if (communicationType != null &&
+            !isSyntheticType(communicationType) &&
+            (isSelectableInput(communicationType) || isSelectableOutput(communicationType))
+        ) {
+            return null
+        }
+        return "speakerphone"
+    }
 
     fun planApplyRoute(selectedRenderId: String?): RouteApplyPlan {
         val speaker = isSpeakerRender(selectedRenderId)

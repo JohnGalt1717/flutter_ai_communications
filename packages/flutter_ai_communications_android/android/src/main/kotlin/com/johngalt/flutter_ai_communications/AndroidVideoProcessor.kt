@@ -10,6 +10,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -31,12 +33,19 @@ internal class AndroidVideoProcessor {
     }
 
     private data class MaskSnapshot(
-        val buffer: ByteBuffer,
+        val floats: FloatArray,
         val width: Int,
         val height: Int,
     )
 
-    var mode: Mode = Mode.None
+    private val modeRef = AtomicReference<Mode>(Mode.None)
+    var mode: Mode
+        get() = modeRef.get()
+        set(value) {
+            modeRef.set(value)
+        }
+
+    @Volatile
     var still: Bitmap? = null
 
     /** Fired once when runtime segmentation fails and the processor falls back to none. */
@@ -57,7 +66,6 @@ internal class AndroidVideoProcessor {
     private val maskInFlight = AtomicBoolean(false)
     private val generation = AtomicInteger(0)
     private var consecutiveFailures = 0
-
     @Volatile
     private var lastMask: MaskSnapshot? = null
 
@@ -72,7 +80,8 @@ internal class AndroidVideoProcessor {
 
     fun apply(args: Map<String, Any?>): String {
         invalidateMask()
-        when (args["kind"] as? String ?: "none") {
+        val kind = args["kind"] as? String ?: "none"
+        when (kind) {
             "none" -> {
                 mode = Mode.None
                 still = null
@@ -117,20 +126,32 @@ internal class AndroidVideoProcessor {
             return bitmap
         }
         requestMaskAsync(bitmap)
-        val snapshot = lastMask ?: return bitmap
         val background =
             when (current) {
                 is Mode.Blur -> blur(bitmap, current.intensity)
                 is Mode.Replace -> scaledStill(bitmap.width, bitmap.height)
                 is Mode.None -> bitmap
             } ?: return bitmap
-        return AndroidVideoMask.composite(
-            person = bitmap,
-            background = background,
-            mask = snapshot.buffer,
-            maskWidth = snapshot.width,
-            maskHeight = snapshot.height,
+        val snapshot = lastMask ?: return background
+        val width = bitmap.width
+        val height = bitmap.height
+        val personPixels = IntArray(width * height)
+        val outPixels = IntArray(width * height)
+        bitmap.getPixels(personPixels, 0, width, 0, 0, width, height)
+        background.getPixels(outPixels, 0, width, 0, 0, width, height)
+        PersonMask.composite(
+            personPixels,
+            outPixels,
+            snapshot.floats,
+            snapshot.width,
+            snapshot.height,
+            width,
+            height,
+            outPixels,
         )
+        val out = background.copy(Bitmap.Config.ARGB_8888, true)
+        out.setPixels(outPixels, 0, width, 0, 0, width, height)
+        return out
     }
 
     private fun bytesOf(value: Any?): ByteArray? =
@@ -147,7 +168,7 @@ internal class AndroidVideoProcessor {
         }
         val requestGeneration = generation.get()
         val copy =
-            bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: run {
+            inferenceBitmap(bitmap) ?: run {
                 maskInFlight.set(false)
                 if (requestGeneration == generation.get()) {
                     noteInferenceFailure()
@@ -163,9 +184,14 @@ internal class AndroidVideoProcessor {
                             return@addOnSuccessListener
                         }
                         consecutiveFailures = 0
-                        lastMask = snapshotOf(result)
+                        val snapshot = snapshotOf(result)
+                        if (snapshot != null) {
+                            lastMask = snapshot
+                        }
                     } finally {
-                        copy.recycle()
+                        if (!copy.isRecycled) {
+                            copy.recycle()
+                        }
                         maskInFlight.set(false)
                     }
                 }.addOnFailureListener {
@@ -175,17 +201,70 @@ internal class AndroidVideoProcessor {
                         }
                         noteInferenceFailure()
                     } finally {
-                        copy.recycle()
+                        if (!copy.isRecycled) {
+                            copy.recycle()
+                        }
                         maskInFlight.set(false)
                     }
                 }
         } catch (_: Throwable) {
-            copy.recycle()
+            if (!copy.isRecycled) {
+                copy.recycle()
+            }
             maskInFlight.set(false)
             if (requestGeneration == generation.get()) {
                 noteInferenceFailure()
             }
         }
+    }
+
+    private fun inferenceBitmap(bitmap: Bitmap): Bitmap? {
+        val longSide = max(bitmap.width, bitmap.height)
+        if (longSide <= INFERENCE_MAX_SIDE) {
+            return bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        }
+        val scale = INFERENCE_MAX_SIDE / longSide.toFloat()
+        val width = (bitmap.width * scale).toInt().coerceAtLeast(8)
+        val height = (bitmap.height * scale).toInt().coerceAtLeast(8)
+        return Bitmap.createScaledBitmap(bitmap, width, height, true)
+    }
+
+    private fun snapshotOf(result: SegmentationMask): MaskSnapshot? {
+        val floats = floatsFrom(result) ?: return null
+        val prepared = PersonMask.prepare(floats, result.width, result.height)
+        return MaskSnapshot(
+            floats = prepared,
+            width = result.width,
+            height = result.height,
+        )
+    }
+
+    private fun floatsFrom(result: SegmentationMask): FloatArray? {
+        val width = result.width
+        val height = result.height
+        val count = width * height
+        if (count <= 0) {
+            return null
+        }
+        val buffer = result.buffer
+        buffer.rewind()
+        val remaining = buffer.remaining()
+        val floats = FloatArray(count)
+        when (remaining) {
+            count * 4 -> {
+                buffer.order(ByteOrder.nativeOrder())
+                buffer.asFloatBuffer().get(floats)
+            }
+            count -> {
+                for (i in 0 until count) {
+                    floats[i] = (buffer.get().toInt() and 0xFF) / 255f
+                }
+            }
+            else -> {
+                return null
+            }
+        }
+        return floats
     }
 
     private fun noteInferenceFailure() {
@@ -204,29 +283,26 @@ internal class AndroidVideoProcessor {
         onUnavailable?.invoke()
     }
 
-    private fun snapshotOf(result: SegmentationMask): MaskSnapshot {
-        val source = result.buffer
-        source.rewind()
-        source.order(ByteOrder.nativeOrder())
-        val owned = ByteBuffer.allocateDirect(source.capacity()).order(ByteOrder.nativeOrder())
-        owned.put(source)
-        owned.rewind()
-        return MaskSnapshot(
-            buffer = owned,
-            width = result.width,
-            height = result.height,
-        )
-    }
-
     private fun blur(
         bitmap: Bitmap,
         intensity: Int,
     ): Bitmap {
-        val factor = (1f - intensity / 100f).coerceIn(0.12f, 1f)
-        val width = (bitmap.width * factor).toInt().coerceAtLeast(8)
-        val height = (bitmap.height * factor).toInt().coerceAtLeast(8)
+        val scale = DownscaleBlur.scale(intensity)
+        val width = (bitmap.width * scale).toInt().coerceAtLeast(8)
+        val height = (bitmap.height * scale).toInt().coerceAtLeast(8)
         val small = Bitmap.createScaledBitmap(bitmap, width, height, true)
-        return Bitmap.createScaledBitmap(small, bitmap.width, bitmap.height, true)
+        val tinyScale = DownscaleBlur.tinyScale(intensity)
+        val tinyWidth = (width * tinyScale).toInt().coerceAtLeast(4)
+        val tinyHeight = (height * tinyScale).toInt().coerceAtLeast(4)
+        val tiny = Bitmap.createScaledBitmap(small, tinyWidth, tinyHeight, true)
+        if (small != bitmap && !small.isRecycled) {
+            small.recycle()
+        }
+        val out = Bitmap.createScaledBitmap(tiny, bitmap.width, bitmap.height, true)
+        if (tiny != bitmap && !tiny.isRecycled) {
+            tiny.recycle()
+        }
+        return out
     }
 
     private fun scaledStill(
@@ -239,6 +315,7 @@ internal class AndroidVideoProcessor {
 
     companion object {
         private const val FAILURE_LIMIT = 5
+        private const val INFERENCE_MAX_SIDE = 384
     }
 }
 

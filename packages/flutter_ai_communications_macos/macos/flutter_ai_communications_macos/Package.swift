@@ -15,10 +15,15 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "FacExceptionCatch",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "flutter_ai_communications_macos",
             dependencies: [
                 .product(name: "FlutterFramework", package: "FlutterFramework"),
+                "FacExceptionCatch",
             ]
-        )
+        ),
     ]
 )

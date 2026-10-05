@@ -24,6 +24,45 @@ RouteClass macosRouteClass({required String name, String transport = ''}) {
   return RouteClass.wired;
 }
 
+/// Whether a Core Audio device belongs in the Endpoint catalog.
+///
+/// Virtual (`virt`), aggregate (`grup`), and auto-aggregate (`auto`)
+/// transports are software devices. Hidden devices are omitted the same way.
+bool macosIsCatalogEndpoint({
+  required String name,
+  String transport = '',
+  bool hidden = false,
+}) {
+  if (hidden) {
+    return false;
+  }
+  final lowerTransport = transport.toLowerCase().trim();
+  if (lowerTransport == 'virt' ||
+      lowerTransport == 'grup' ||
+      lowerTransport == 'auto') {
+    return false;
+  }
+  final lowerName = name.toLowerCase();
+  const blocked = [
+    'microsoft teams audio',
+    'caddefaultdeviceaggregate',
+    'zoomaudio',
+    'blackhole',
+    'soundflower',
+    'vb-audio',
+    'multi-output device',
+  ];
+  for (final needle in blocked) {
+    if (lowerName.contains(needle)) {
+      return false;
+    }
+  }
+  if (lowerName.contains('loopback')) {
+    return false;
+  }
+  return true;
+}
+
 /// Pair key for built-in speakerphone Endpoints.
 const macosBuiltInPairId = 'built-in';
 

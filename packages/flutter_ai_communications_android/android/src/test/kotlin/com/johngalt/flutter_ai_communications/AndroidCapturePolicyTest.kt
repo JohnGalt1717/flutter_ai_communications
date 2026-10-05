@@ -144,6 +144,75 @@ class AndroidCapturePolicyTest {
     }
 
     @Test
+    fun telephonySubmixAndHdmiStayOutOfTheCatalog() {
+        assertFalse(AndroidCapturePolicy.isSelectableInput(18))
+        assertFalse(AndroidCapturePolicy.isSelectableOutput(18))
+        assertFalse(AndroidCapturePolicy.isSelectableInput(25))
+        assertFalse(AndroidCapturePolicy.isSelectableOutput(25))
+        assertFalse(AndroidCapturePolicy.isSelectableInput(28))
+        assertFalse(AndroidCapturePolicy.isSelectableOutput(9))
+        assertFalse(AndroidCapturePolicy.isSelectableInput(19))
+        assertFalse(AndroidCapturePolicy.isSelectableOutput(19))
+    }
+
+    @Test
+    fun headsetBluetoothUsbAndCarStaySelectable() {
+        assertTrue(AndroidCapturePolicy.isSelectableInput(7))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(8))
+        assertTrue(AndroidCapturePolicy.isSelectableInput(3))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(4))
+        assertTrue(AndroidCapturePolicy.isSelectableInput(11))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(11))
+        assertTrue(AndroidCapturePolicy.isSelectableInput(22))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(22))
+        assertTrue(AndroidCapturePolicy.isSelectableInput(26))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(21))
+        assertTrue(AndroidCapturePolicy.isSelectableInput(15))
+        assertTrue(AndroidCapturePolicy.isSelectableOutput(2))
+        assertTrue(AndroidCapturePolicy.isSyntheticType(15))
+        assertTrue(AndroidCapturePolicy.isSyntheticType(1))
+        assertTrue(AndroidCapturePolicy.isSyntheticType(2))
+        assertFalse(AndroidCapturePolicy.isSyntheticType(22))
+    }
+
+    @Test
+    fun phoneModelUsbRowsStayOutOfTheCatalog() {
+        assertTrue(AndroidCapturePolicy.isSelfNamedUsb(11, "SM-A176U1", "SM-A176U1"))
+        assertTrue(AndroidCapturePolicy.isSelfNamedUsb(22, "SM A176U1", "SM-A176U1"))
+        assertFalse(AndroidCapturePolicy.isSelfNamedUsb(11, "USB-C Headset", "SM-A176U1"))
+        assertFalse(AndroidCapturePolicy.isSelfNamedUsb(3, "SM-A176U1", "SM-A176U1"))
+    }
+
+    @Test
+    fun a2dpTwinDropsWhenScoExists() {
+        assertFalse(
+            AndroidCapturePolicy.keepBluetoothOutput(8, "aa:bb", setOf("aa:bb")),
+        )
+        assertTrue(
+            AndroidCapturePolicy.keepBluetoothOutput(8, "aa:bb", setOf("cc:dd")),
+        )
+        assertTrue(
+            AndroidCapturePolicy.keepBluetoothOutput(7, "aa:bb", setOf("aa:bb")),
+        )
+    }
+
+    @Test
+    fun builtinCommunicationMarksSpeakerphoneOsDefault() {
+        assertEquals("speakerphone", AndroidCapturePolicy.syntheticOsDefault(null))
+        assertEquals("speakerphone", AndroidCapturePolicy.syntheticOsDefault(1))
+        assertEquals("speakerphone", AndroidCapturePolicy.syntheticOsDefault(2))
+        assertEquals("speakerphone", AndroidCapturePolicy.syntheticOsDefault(18))
+    }
+
+    @Test
+    fun headsetCommunicationLeavesSyntheticOsDefaultUnset() {
+        assertNull(AndroidCapturePolicy.syntheticOsDefault(7))
+        assertNull(AndroidCapturePolicy.syntheticOsDefault(22))
+        assertNull(AndroidCapturePolicy.syntheticOsDefault(3))
+        assertNull(AndroidCapturePolicy.syntheticOsDefault(21))
+    }
+
+    @Test
     fun observedRenderKeepsHandsetWhenSpeakerphoneClears() {
         assertEquals(
             "handset-out",

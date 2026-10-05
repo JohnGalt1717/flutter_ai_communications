@@ -225,6 +225,19 @@ void main() {
     expect(peak, greaterThan(neighbor * 8));
   });
 
+  test('PCM16 24 kHz converts down to 16 kHz sample count', () {
+    const seconds = 0.05;
+    final input = _sinePcm(sampleRate: 24000, hz: 440, seconds: seconds);
+    final out = transcoder.transcode(
+      input,
+      const AudioFormat.pcm16le(sampleRate: 24000),
+      const AudioFormat.pcm16le(sampleRate: 16000),
+      end: true,
+    );
+    expect(out.length ~/ 2, closeTo(16000 * seconds, 8));
+    expect(_rms(out), greaterThan(_rms(input) * 0.5));
+  });
+
   test('content above the target Nyquist is attenuated', () {
     final input = _sinePcm(sampleRate: 24000, hz: 9000, seconds: 0.12);
     final out = transcoder.transcode(

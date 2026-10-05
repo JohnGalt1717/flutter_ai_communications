@@ -194,6 +194,52 @@ void main() {
     );
   });
 
+  test('virtual and aggregate Core Audio devices stay out of the catalog', () {
+    expect(
+      macosIsCatalogEndpoint(name: 'Microsoft Teams Audio', transport: 'virt'),
+      isFalse,
+    );
+    expect(
+      macosIsCatalogEndpoint(
+        name: 'CADDefaultDeviceAggregate',
+        transport: 'grup',
+      ),
+      isFalse,
+    );
+    expect(
+      macosIsCatalogEndpoint(name: 'Device Aggregate', transport: 'auto'),
+      isFalse,
+    );
+    expect(
+      macosIsCatalogEndpoint(name: 'Microsoft Teams Audio', transport: ''),
+      isFalse,
+    );
+    expect(
+      macosIsCatalogEndpoint(name: 'CADDefaultDeviceAggregate', transport: ''),
+      isFalse,
+    );
+    expect(
+      macosIsCatalogEndpoint(name: 'MacBook Pro Speakers', hidden: true),
+      isFalse,
+    );
+  });
+
+  test('physical Core Audio devices stay in the catalog', () {
+    expect(
+      macosIsCatalogEndpoint(name: 'MacBook Pro Speakers', transport: 'bltn'),
+      isTrue,
+    );
+    expect(
+      macosIsCatalogEndpoint(name: 'Realtek USB2.0 Audio', transport: 'usb'),
+      isTrue,
+    );
+    expect(macosIsCatalogEndpoint(name: 'AirPods', transport: 'blue'), isTrue);
+    expect(
+      macosIsCatalogEndpoint(name: 'DELL U3219Q', transport: 'dprt'),
+      isTrue,
+    );
+  });
+
   test('start and select report Observed from bound native devices', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsMacos(backend: backend);
@@ -272,9 +318,7 @@ void main() {
   });
 }
 
-final class _RecordingBackend
-    with DeviceWatchSupport
-    implements AudioBackend {
+final class _RecordingBackend with DeviceWatchSupport implements AudioBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var failBind = false;
 

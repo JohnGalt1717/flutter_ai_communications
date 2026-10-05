@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
+import 'loopback_platform.dart';
+
 /// Host Transport that echoes Session capture back through [Session.play].
 ///
 /// The library does not own Transport. This is the Orchestration / e2e
@@ -60,7 +62,8 @@ final class EchoTransport {
         _received.add(Uint8List.sublistView(bytes, 0, room));
       }
     }
-    if (replay) {
+    if (replay &&
+        session.selectedCaptureId != LoopbackCommunicationsPlatform.captureId) {
       unawaited(session.play(bytes));
     }
   }

@@ -7,16 +7,19 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
-import 'package:flutter_ai_communications_example/camera_facing_caption.dart';
 import 'package:flutter_ai_communications_example/echo/echo_transport.dart';
 import 'package:flutter_ai_communications_example/host_preference_store.dart';
 import 'package:flutter_ai_communications_example/meeting/flutter_webrtc_loopback.dart';
 import 'package:flutter_ai_communications_example/meeting/host_webrtc_loopback.dart';
 import 'package:flutter_ai_communications_example/preference_editor.dart';
-import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_platform.dart';
 import 'package:flutter_ai_communications_example/echo/loopback_probe.dart';
+import 'package:flutter_ai_communications_example/meeting/audio_device_panel.dart';
+import 'package:flutter_ai_communications_example/meeting/camera_device_panel.dart';
+import 'package:flutter_ai_communications_example/meeting/chrome.dart';
+import 'package:flutter_ai_communications_example/meeting/lobby_stage.dart';
 import 'package:flutter_ai_communications_example/meeting/loopback_meeting.dart';
+import 'package:flutter_ai_communications_example/meeting/share_picker.dart';
 import 'package:flutter_ai_communications_example/meeting/video_surface_view.dart';
 import 'package:flutter_skill/flutter_skill.dart';
 import 'package:logging/logging.dart';
@@ -194,6 +197,15 @@ final class _SessionPageState extends State<SessionPage> {
   Uint8List? _replaceStill;
   var _catalogEpoch = 0;
   EndpointPreference _draft = const EndpointPreference();
+  var _audioOpen = false;
+  var _cameraOpen = false;
+  static const _pcm16le16k = AudioFormat.pcm16le(sampleRate: 16000);
+  AudioFormat _edgeFormat = AudioFormat.pcm16le24k;
+  var _formatSwitching = false;
+  var _lastCaptureFrameBytes = 0;
+  var _captureBytesPerSecond = 0;
+  var _captureByteWindow = 0;
+  DateTime? _captureWindowStart;
 
   CommunicationsManager get _manager => widget.manager;
 
@@ -235,6 +247,11 @@ final class _SessionPageState extends State<SessionPage> {
     _bindStoredPreference();
     _loadEndpoints();
     unawaited(_loadReplaceStill());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _phase == _HarnessPhase.idle) {
+        unawaited(_enterLobby());
+      }
+    });
   }
 
   Future<void> _loadReplaceStill() async {
@@ -365,6 +382,7 @@ final class _SessionPageState extends State<SessionPage> {
       return;
     }
     setState(() => _status = 'preference-bound');
+    await _enterLobby();
   }
 
   Future<void> _useCurrent() async {
@@ -381,11 +399,70 @@ final class _SessionPageState extends State<SessionPage> {
     }
   }
 
-  Future<void> _enterLobby() async {
-    await _applyStart(
-      await _manager.start(purpose: 'lobby', cameraSend: true),
-      meeting: false,
+  Future<StartResult> _startForPhase({required bool meeting}) {
+    return _manager.start(
+      purpose: meeting ? 'meeting' : 'lobby',
+      cameraSend: true,
+      captureFormat: _edgeFormat,
+      playbackFormat: _edgeFormat,
     );
+  }
+
+  void _resetCaptureMeter() {
+    _lastCaptureFrameBytes = 0;
+    _captureBytesPerSecond = 0;
+    _captureByteWindow = 0;
+    _captureWindowStart = null;
+  }
+
+  Future<void> _applyEdgeFormat(AudioFormat format) async {
+    debugPrint(
+      '[fac-edge] apply requested=$format current=$_edgeFormat '
+      'switching=$_formatSwitching session=${_session != null}',
+    );
+    if (_formatSwitching) {
+      return;
+    }
+    if (_edgeFormat == format && _session != null) {
+      return;
+    }
+    final meeting = _phase == _HarnessPhase.meeting;
+    final muted = _session?.isMuted ?? false;
+    _formatSwitching = true;
+    _edgeFormat = format;
+    _resetCaptureMeter();
+    if (mounted) {
+      setState(() => _status = 'edge-format');
+    }
+    try {
+      await _echo?.dispose();
+      _echo = null;
+      await _manager.cameraPreview?.stop();
+      await _session?.stop();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _session = null;
+        _phase = _HarnessPhase.idle;
+      });
+      await _applyStart(
+        await _startForPhase(meeting: meeting),
+        meeting: meeting,
+      );
+      if (muted) {
+        _session?.mute();
+      }
+    } finally {
+      _formatSwitching = false;
+    }
+  }
+
+  Future<void> _enterLobby() async {
+    if (_phase != _HarnessPhase.idle) {
+      return;
+    }
+    await _applyStart(await _startForPhase(meeting: false), meeting: false);
   }
 
   Future<void> _joinMeeting() async {
@@ -404,7 +481,12 @@ final class _SessionPageState extends State<SessionPage> {
     }
     try {
       await _applyStart(
-        await _manager.start(settings: settings, purpose: 'meeting'),
+        await _manager.start(
+          settings: settings,
+          purpose: 'meeting',
+          captureFormat: _edgeFormat,
+          playbackFormat: _edgeFormat,
+        ),
         meeting: true,
       );
     } catch (error) {
@@ -462,11 +544,13 @@ final class _SessionPageState extends State<SessionPage> {
   void _bind(Session session, {required bool meeting}) {
     _session = session;
     _phase = meeting ? _HarnessPhase.meeting : _HarnessPhase.lobby;
+    _audioOpen = false;
+    _cameraOpen = false;
     _status = session.status.code.name;
     _isolation = session.lastIsolation;
     _diagnostics = session.diagnostics;
     if (meeting) {
-      final echo = EchoTransport(session, replay: false);
+      final echo = EchoTransport(session);
       _echo = echo;
       unawaited(echo.attach());
       final webrtc = WebrtcVideoSink();
@@ -522,6 +606,22 @@ final class _SessionPageState extends State<SessionPage> {
         _levels.removeAt(0);
       }
       _diagnostics = session.diagnostics;
+      _lastCaptureFrameBytes = bytes.length;
+      final now = DateTime.now();
+      _captureWindowStart ??= now;
+      _captureByteWindow += bytes.length;
+      final elapsed = now.difference(_captureWindowStart!).inMilliseconds;
+      if (elapsed >= 1000) {
+        _captureBytesPerSecond = (_captureByteWindow * 1000 / elapsed).round();
+        debugPrint(
+          '[fac-edge] bps=$_captureBytesPerSecond last=${bytes.length} '
+          'edge=${session.captureFormat} '
+          'native=${session.diagnostics.nativeCaptureFormat} '
+          'path=${session.diagnostics.captureConversionPath.name}',
+        );
+        _captureByteWindow = 0;
+        _captureWindowStart = now;
+      }
       if (_waveScheduled) {
         return;
       }
@@ -563,7 +663,10 @@ final class _SessionPageState extends State<SessionPage> {
         _wave.value++;
         _indicatedScreenId = null;
         _screenStatus = null;
+        _audioOpen = false;
+        _cameraOpen = false;
       });
+      _resetCaptureMeter();
     }
   }
 
@@ -575,10 +678,7 @@ final class _SessionPageState extends State<SessionPage> {
     if (_phase != _HarnessPhase.idle) {
       return;
     }
-    await _applyStart(
-      await _manager.start(purpose: 'meeting', cameraSend: true),
-      meeting: true,
-    );
+    await _applyStart(await _startForPhase(meeting: true), meeting: true);
   }
 
   Future<void> _openSharePicker(Session session) async {
@@ -592,71 +692,38 @@ final class _SessionPageState extends State<SessionPage> {
     }
     await showDialog<void>(
       context: context,
+      barrierDismissible: true,
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              key: const Key('share-picker'),
               title: const Text('Share'),
-              content: SizedBox(
-                width: 480,
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        FilterChip(
-                          key: const Key('screen-sound'),
-                          label: const Text('Include sound'),
-                          selected: _includeSound,
-                          onSelected: (value) {
-                            setState(() => _includeSound = value);
-                            setDialogState(() {});
-                          },
-                        ),
-                        FilterChip(
-                          key: const Key('screen-motion'),
-                          label: const Text('Optimize'),
-                          selected: _screenMotion,
-                          onSelected: (value) {
-                            setState(() => _screenMotion = value);
-                            setDialogState(() {});
-                          },
-                        ),
-                        FilterChip(
-                          key: const Key('screen-cursor'),
-                          label: const Text('Cursor'),
-                          selected: _screenCursor,
-                          onSelected: (value) {
-                            setState(() => _screenCursor = value);
-                            setDialogState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    for (final source in _screenSources)
-                      if (source.kind != ScreenSourceKind.systemPicker)
-                        ListTile(
-                          key: Key('screen-source-${source.id}'),
-                          title: Text(source.name),
-                          subtitle: Text(
-                            '${source.kind.name}'
-                            '${source.width != null ? ' · ${source.width}x${source.height}' : ''}',
-                          ),
-                          selected: source.id == _indicatedScreenId,
-                          trailing: _screenPreviewThumb(session, source),
-                          onTap: () {
-                            Navigator.of(dialogContext).pop();
-                            unawaited(
-                              _shareScreen(session, sourceId: source.id),
-                            );
-                          },
-                        ),
-                  ],
-                ),
+              content: SharePicker(
+                sources: [
+                  for (final source in _screenSources)
+                    if (source.kind != ScreenSourceKind.systemPicker) source,
+                ],
+                includeSound: _includeSound,
+                motion: _screenMotion,
+                cursor: _screenCursor,
+                indicatedId: _indicatedScreenId,
+                onIncludeSound: (value) {
+                  setState(() => _includeSound = value);
+                  setDialogState(() {});
+                },
+                onMotion: (value) {
+                  setState(() => _screenMotion = value);
+                  setDialogState(() {});
+                },
+                onCursor: (value) {
+                  setState(() => _screenCursor = value);
+                  setDialogState(() {});
+                },
+                previewBuilder: (source) => screenPreviewThumb(session, source),
+                onPick: (id) {
+                  Navigator.of(dialogContext).pop();
+                  unawaited(_shareScreen(session, sourceId: id));
+                },
               ),
               actions: [
                 TextButton(
@@ -726,15 +793,258 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _setProcessor(VideoProcessor processor) async {
+    debugPrint('[fac-processor] set $processor');
+    final session = _session;
     final preview = _manager.cameraPreview;
+    ProcessorSetResult? result;
+    if (session != null) {
+      result = await session.setVideoProcessor(processor);
+    }
     if (preview != null) {
-      await preview.setVideoProcessor(processor);
+      final previewResult = await preview.setVideoProcessor(processor);
+      result ??= previewResult;
+    }
+    debugPrint(
+      '[fac-processor] result=$result session=${session != null} '
+      'preview=${preview != null} processor=$processor',
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _toggleAudio() {
+    setState(() {
+      _audioOpen = !_audioOpen;
+      if (_audioOpen) {
+        _cameraOpen = false;
+      }
+    });
+  }
+
+  void _toggleCamera() {
+    setState(() {
+      _cameraOpen = !_cameraOpen;
+      if (_cameraOpen) {
+        _audioOpen = false;
+      }
+    });
+  }
+
+  void _closeFlyouts() {
+    if (!_audioOpen && !_cameraOpen) {
+      return;
+    }
+    setState(() {
+      _audioOpen = false;
+      _cameraOpen = false;
+    });
+  }
+
+  void _toggleMute() {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+    if (session.isMuted) {
+      session.unmute();
     } else {
-      await _session?.setVideoProcessor(processor);
+      session.mute();
+    }
+    setState(() {});
+  }
+
+  Future<void> _toggleCameraEnabled() async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+    final enable = !session.isCameraEnabled;
+    if (enable) {
+      await _manager.cameraPreview?.stop();
+    }
+    await session.setCameraEnabled(enable);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _toggleMuteVideo() async {
+    final session = _session;
+    if (session == null) {
+      return;
+    }
+    if (session.isVideoMuted) {
+      await session.unmuteVideo();
+    } else {
+      await session.muteVideo();
     }
     if (mounted) {
       setState(() {});
     }
+  }
+
+  Future<void> _selectEndpoint(Endpoint endpoint) async {
+    final session = _session;
+    if (session == null) {
+      _store.preferEndpoint(endpoint, _endpoints);
+      _draft = _store.endpoints;
+      await _manager.bindPreference(_store.endpoints);
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    try {
+      await session.select(
+        captureId: endpoint.isCapture ? endpoint.id : null,
+        renderId: endpoint.isCapture ? null : endpoint.id,
+      );
+    } on Object {
+      // Platform select can fail; keep the live diagnostics.
+    }
+    if (mounted) {
+      setState(() => _diagnostics = session.diagnostics);
+    }
+  }
+
+  Future<void> _pickCamera(String? id) async {
+    final session = _session;
+    if (id == null) {
+      if (session != null) {
+        await session.setCameraEnabled(false);
+      }
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    if (session == null) {
+      _store.preferCamera(id);
+      _manager.bindCameraPreference(_store.cameras);
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    final preview = _manager.cameraPreview;
+    if (preview != null) {
+      await preview.selectCamera(id);
+      if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    if (!session.isCameraEnabled) {
+      await session.setCameraEnabled(true);
+    }
+    await session.selectCamera(id);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _startCameraPreview() async {
+    _manager.bindCameraPreference(_store.cameras);
+    final cameras = await _manager.cameras();
+    await _manager.startCameraPreview(
+      cameraId: _store.cameras.resolve(cameras)?.id,
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  String? _idleSelectedId({required bool capture}) {
+    for (final endpoint in _endpoints) {
+      if (endpoint.isCapture == capture && _idlePreferredEndpoint(endpoint)) {
+        return endpoint.id;
+      }
+    }
+    return null;
+  }
+
+  String? get _selectedCameraId {
+    final session = _session;
+    if (session == null) {
+      return _store.cameras.resolve(_cameras)?.id;
+    }
+    return _manager.cameraPreview?.selectedCameraId ?? session.selectedCameraId;
+  }
+
+  bool get _cameraEnabled {
+    final session = _session;
+    if (_manager.cameraPreview != null) {
+      return true;
+    }
+    return session != null && session.isCameraEnabled;
+  }
+
+  Widget _audioPanel() {
+    final session = _session;
+    return AudioDevicePanel(
+      catalog: _endpoints,
+      preference: _store.endpoints,
+      selectedCaptureId:
+          session?.selectedCaptureId ?? _idleSelectedId(capture: true),
+      selectedRenderId:
+          session?.selectedRenderId ?? _idleSelectedId(capture: false),
+      onSelectEndpoint: _selectEndpoint,
+    );
+  }
+
+  Widget _cameraPanel() {
+    final session = _session;
+    final processor =
+        session?.videoProcessor ?? _manager.cameraPreview?.videoProcessor;
+    return CameraDevicePanel(
+      cameras: _cameras,
+      selectedCameraId: _selectedCameraId,
+      cameraEnabled: _cameraEnabled,
+      videoMuted: session?.isVideoMuted ?? false,
+      onSelectCamera: _pickCamera,
+      processor: processor,
+      onProcessor: session != null || _manager.cameraPreview != null
+          ? _setProcessor
+          : null,
+      replaceStill: _replaceStill ?? const [],
+      onMuteVideo: _phase == _HarnessPhase.meeting ? _toggleMuteVideo : null,
+      onCameraPreview: session != null && !session.isCameraEnabled
+          ? _startCameraPreview
+          : null,
+    );
+  }
+
+  Widget _audioSplit() {
+    final session = _session;
+    return SplitCallButton(
+      actionKey: const Key('mute'),
+      menuKey: const Key('audio-pick'),
+      icon: session?.isMuted == true ? Icons.mic_off : Icons.mic,
+      tooltip: session?.isMuted == true ? 'Unmute' : 'Mute',
+      menuTooltip: 'Choose microphone and speaker',
+      active: session?.isMuted == true,
+      menuOpen: _audioOpen,
+      enabled: session != null,
+      onAction: session == null ? null : _toggleMute,
+      onMenu: _toggleAudio,
+    );
+  }
+
+  Widget _cameraSplit() {
+    final enabled = _cameraEnabled;
+    return SplitCallButton(
+      actionKey: const Key('camera-off'),
+      menuKey: const Key('camera-pick'),
+      icon: enabled ? Icons.videocam : Icons.videocam_off,
+      tooltip: enabled ? 'Camera off' : 'Camera on',
+      menuTooltip: 'Choose camera and background',
+      active: !enabled,
+      menuOpen: _cameraOpen,
+      enabled: _session != null,
+      onAction: _session == null ? null : _toggleCameraEnabled,
+      onMenu: _toggleCamera,
+    );
   }
 
   Future<void> _prove() async {
@@ -742,11 +1052,7 @@ final class _SessionPageState extends State<SessionPage> {
     if (session == null) {
       return;
     }
-    final fixture = FixturePcm.voiceBand24k();
-    final proof = await const LoopbackProbe().echo(
-      session: session,
-      fixture: fixture,
-    );
+    final proof = await const LoopbackProbe().live(session: session);
     if (mounted) {
       setState(() => _proof = proof);
     }
@@ -778,44 +1084,37 @@ final class _SessionPageState extends State<SessionPage> {
           if (_phase == _HarnessPhase.meeting && session != null) ...[
             Expanded(
               flex: 3,
-              child: LoopbackMeetingStage(
-                key: const Key('meeting'),
-                session: session,
-                webrtcTrackId: _webrtc?.localVideo?.id ?? 'none',
-                inbound: _webRtcLoopback.inboundView(),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: LoopbackMeetingStage(
+                      key: const Key('meeting'),
+                      session: session,
+                      webrtcTrackId: _webrtc?.localVideo?.id ?? 'none',
+                      inbound: _webRtcLoopback.inboundView(),
+                    ),
+                  ),
+                  if (_audioOpen || _cameraOpen)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        key: const Key('flyout-dismiss'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _closeFlyouts,
+                      ),
+                    ),
+                  if (_audioOpen) MeetingChrome.overlaySheet(_audioPanel()),
+                  if (_cameraOpen) MeetingChrome.overlaySheet(_cameraPanel()),
+                ],
               ),
             ),
             MeetingBar(
               session: session,
-              cameras: _cameras,
-              selectedCameraId: session.selectedCameraId,
-              onSelectCamera: (id) async {
-                await session.selectCamera(id);
-                setState(() {});
-              },
-              processor: session.videoProcessor,
-              onProcessor: _setProcessor,
-              replaceStill: _replaceStill ?? const [],
-              onMute: () {
-                if (session.isMuted) {
-                  session.unmute();
-                } else {
-                  session.mute();
-                }
-                setState(() {});
-              },
-              onCamera: () async {
-                await session.setCameraEnabled(!session.isCameraEnabled);
-                setState(() {});
-              },
-              onMuteVideo: () async {
-                if (session.isVideoMuted) {
-                  await session.unmuteVideo();
-                } else {
-                  await session.muteVideo();
-                }
-                setState(() {});
-              },
+              audioOpen: _audioOpen,
+              cameraOpen: _cameraOpen,
+              onMute: _toggleMute,
+              onCamera: _toggleCameraEnabled,
+              onAudioMenu: _toggleAudio,
+              onCameraMenu: _toggleCamera,
               onShare: () => _openSharePicker(session),
               onStopShare: () => _stopScreenShare(session),
               onPause: () async {
@@ -829,7 +1128,26 @@ final class _SessionPageState extends State<SessionPage> {
               onLeave: _stop,
               onProve: _prove,
             ),
-            _waveStrip(height: 56),
+          ] else
+            Expanded(
+              flex: 3,
+              child: LobbyStage(
+                selfView: _selfView(session),
+                audioButton: _audioSplit(),
+                cameraButton: _cameraSplit(),
+                audioPanel: _audioOpen ? _audioPanel() : null,
+                cameraPanel: _cameraOpen ? _cameraPanel() : null,
+                onDismissFlyouts: _closeFlyouts,
+                onEnter: _enterLobby,
+                onJoin: _joinMeeting,
+                onLeave: _stop,
+                canEnter: _phase == _HarnessPhase.idle,
+                canJoin: _phase == _HarnessPhase.lobby,
+                canLeave: _phase == _HarnessPhase.lobby,
+              ),
+            ),
+          if (session != null) ...[
+            _waveStrip(height: 40),
             if (_proof != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -842,73 +1160,9 @@ final class _SessionPageState extends State<SessionPage> {
                 ),
               ),
           ],
-          if (_phase != _HarnessPhase.meeting) ...[
-            Flexible(
-              fit: FlexFit.loose,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 240),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    heightFactor: 1,
-                    child: KeyedSubtree(
-                      key: const Key('self-view'),
-                      child: _selfView(session),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  FilledButton(
-                    key: const Key('lobby-enter'),
-                    onPressed: _phase == _HarnessPhase.idle
-                        ? _enterLobby
-                        : null,
-                    child: const Text('Enter lobby'),
-                  ),
-                  FilledButton(
-                    key: const Key('lobby-join'),
-                    onPressed: _phase == _HarnessPhase.lobby
-                        ? _joinMeeting
-                        : null,
-                    child: const Text('Join'),
-                  ),
-                  OutlinedButton(
-                    key: const Key('lobby-leave'),
-                    onPressed: _phase == _HarnessPhase.lobby ? _stop : null,
-                    child: const Text('Leave'),
-                  ),
-                  FilledButton.tonal(
-                    key: const Key('mute'),
-                    onPressed: session == null
-                        ? null
-                        : () {
-                            if (session.isMuted) {
-                              session.unmute();
-                            } else {
-                              session.mute();
-                            }
-                            setState(() {});
-                          },
-                    child: Text(session?.isMuted == true ? 'Unmute' : 'Mute'),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: _waveStrip(height: 56),
-            ),
-          ],
           Expanded(
             child: ListView(
+              key: const Key('diagnostics'),
               scrollCacheExtent: ScrollCacheExtent.pixels(4000),
               padding: const EdgeInsets.all(20),
               children: _harnessChildren(context, session, isolation),
@@ -925,30 +1179,44 @@ final class _SessionPageState extends State<SessionPage> {
     IsolationEvent? isolation,
   ) {
     final failure = startFailureCopy(_status);
-    final processor =
-        _manager.cameraPreview?.videoProcessor ?? session?.videoProcessor;
     final isolationRequired = isolation?.state == IsolationState.required;
+    final theme = Theme.of(context).textTheme;
+    final diagnostics = _diagnostics ?? session?.diagnostics;
     return [
-      if (_phase != _HarnessPhase.meeting)
-        Text(
-          'Lobby',
-          key: const Key('lobby'),
-          style: Theme.of(context).textTheme.headlineSmall,
-        )
-      else
-        Text('Harness', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      Text(
-        _phase == _HarnessPhase.meeting
-            ? 'Loopback meeting. Share, camera, and background are on the bar.'
-            : 'Pick devices, then Join. Permission is requested on Enter lobby.',
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
+      Text('Diagnostics', style: theme.titleMedium),
+      if (session != null) ...[
+        ListTile(
+          key: const Key('edge-format-24k'),
+          title: const Text('PCM16 24 kHz'),
+          subtitle: Text(
+            _edgeFormat == AudioFormat.pcm16le24k
+                ? '${diagnostics?.captureConversionPath.name ?? ''} '
+                      '${diagnostics?.edgeCaptureFormat ?? ''}'
+                : 'OpenAI Realtime',
+          ),
+          selected: _edgeFormat == AudioFormat.pcm16le24k,
+          onTap: () => unawaited(_applyEdgeFormat(AudioFormat.pcm16le24k)),
+        ),
+        ListTile(
+          key: const Key('edge-format-16k'),
+          title: const Text('PCM16 16 kHz'),
+          subtitle: Text(
+            _edgeFormat == _pcm16le16k
+                ? '${diagnostics?.captureConversionPath.name ?? ''} '
+                      '${diagnostics?.edgeCaptureFormat ?? ''}'
+                : 'Grok Speech-to-Speech',
+          ),
+          selected: _edgeFormat == _pcm16le16k,
+          onTap: () => unawaited(_applyEdgeFormat(_pcm16le16k)),
+        ),
+        Text('$_lastCaptureFrameBytes', key: const Key('capture-bytes')),
+        Text('$_captureBytesPerSecond', key: const Key('capture-bps')),
+      ],
       const SizedBox(height: 8),
       Text(
         _status ?? 'idle',
         key: const Key('status'),
-        style: Theme.of(context).textTheme.labelLarge,
+        style: theme.labelLarge,
       ),
       if (failure != null)
         Padding(
@@ -960,234 +1228,24 @@ final class _SessionPageState extends State<SessionPage> {
           'Isolation ${(session.lastIsolation.state.name)}',
           key: const Key('isolation'),
         ),
-      if (_phase != _HarnessPhase.meeting) ...[
-        if (session != null) ...[
-          const SizedBox(height: 24),
-          Wrap(
-            spacing: 12,
-            children: [
-              FilledButton.tonal(
-                key: const Key('camera-off'),
-                onPressed: () async {
-                  final enable = !session.isCameraEnabled;
-                  if (enable) {
-                    await _manager.cameraPreview?.stop();
-                  }
-                  await session.setCameraEnabled(enable);
-                  setState(() {});
-                },
-                child: Text(
-                  session.isCameraEnabled ? 'Camera off' : 'Camera on',
-                ),
-              ),
-              FilledButton.tonal(
-                key: const Key('camera-preview'),
-                onPressed: session.isCameraEnabled
-                    ? null
-                    : () async {
-                        _manager.bindCameraPreference(_store.cameras);
-                        final cameras = await _manager.cameras();
-                        await _manager.startCameraPreview(
-                          cameraId: _store.cameras.resolve(cameras)?.id,
-                        );
-                        if (mounted) {
-                          setState(() {});
-                        }
-                      },
-                child: const Text('Camera preview'),
-              ),
-            ],
-          ),
-        ],
-      ],
-      if (_phase != _HarnessPhase.meeting) ...[
-        const SizedBox(height: 16),
-        Text('Cameras', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        for (final camera in _cameras)
-          ListTile(
-            key: Key('camera-${camera.id}'),
-            title: Text(camera.name),
-            subtitle: switch (cameraFacingCaption(camera.facing)) {
-              final caption? => Text(caption),
-              _ => null,
-            },
-            selected:
-                camera.id ==
-                (session == null
-                    ? _store.cameras.resolve(_cameras)?.id
-                    : (_manager.cameraPreview?.selectedCameraId ??
-                          session.selectedCameraId)),
-            onTap: () async {
-              if (session == null) {
-                _store.preferCamera(camera.id);
-                _manager.bindCameraPreference(_store.cameras);
-                setState(() {});
-                return;
-              }
-              final preview = _manager.cameraPreview;
-              if (preview != null) {
-                await preview.selectCamera(camera.id);
-                setState(() {});
-                return;
-              }
-              await session.selectCamera(camera.id);
-              setState(() {});
-            },
-          ),
-        if (session != null) ...[
-          const SizedBox(height: 16),
-          Text(
-            'Video processor',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              FilterChip(
-                key: const Key('processor-none'),
-                label: const Text('None'),
-                selected: processor is NoneVideoProcessor,
-                onSelected: (_) => _setProcessor(const NoneVideoProcessor()),
-              ),
-              FilterChip(
-                key: const Key('processor-blur-50'),
-                label: const Text('Some'),
-                selected: processor == const BlurVideoProcessor(intensity: 50),
-                onSelected: (_) =>
-                    _setProcessor(const BlurVideoProcessor(intensity: 50)),
-              ),
-              FilterChip(
-                key: const Key('processor-blur-100'),
-                label: const Text('Lots'),
-                selected: processor == const BlurVideoProcessor(intensity: 100),
-                onSelected: (_) =>
-                    _setProcessor(const BlurVideoProcessor(intensity: 100)),
-              ),
-              FilterChip(
-                key: const Key('processor-replace'),
-                label: const Text('Replace'),
-                selected: processor is ReplaceVideoProcessor,
-                onSelected: (_) {
-                  final still = _replaceStill;
-                  if (still == null) {
-                    return;
-                  }
-                  _setProcessor(ReplaceVideoProcessor(bytes: still));
-                },
-              ),
-            ],
-          ),
-        ],
-      ],
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: _pipelineKeys(session),
       ),
-      PreferenceEditor(
-        catalog: _endpoints,
-        draft: _draft,
-        onChanged: (preference) => setState(() => _draft = preference),
-        onApply: _applyPreference,
-        onReset: () {
-          _draft = const EndpointPreference();
-          unawaited(_applyPreference());
-        },
-        onUseCurrent: session == null ? null : _useCurrent,
-      ),
-      const SizedBox(height: 16),
-      Text('Endpoints', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      for (final endpoint in _endpoints)
-        ListTile(
-          key: Key('endpoint-${endpoint.id}'),
-          title: Text(endpoint.name),
-          subtitle: Text(
-            '${endpoint.routeClass.name} · ${endpoint.isCapture ? 'capture' : 'render'}',
-          ),
-          selected:
-              endpoint.id == session?.selectedCaptureId ||
-              endpoint.id == session?.selectedRenderId ||
-              (session == null && _idlePreferredEndpoint(endpoint)),
-          onTap: () async {
-            if (session == null) {
-              _store.preferEndpoint(endpoint, _endpoints);
-              _draft = _store.endpoints;
-              await _manager.bindPreference(_store.endpoints);
-              if (mounted) {
-                setState(() {});
-              }
-              return;
-            }
-            try {
-              await session.select(
-                captureId: endpoint.isCapture ? endpoint.id : null,
-                renderId: endpoint.isCapture ? null : endpoint.id,
-              );
-            } on Object {
-              // Platform select can fail; keep the live diagnostics.
-            }
-            if (mounted) {
-              setState(() {
-                _diagnostics = session.diagnostics;
-              });
-            }
-          },
-        ),
-      if (_phase != _HarnessPhase.meeting) ...[
-        const SizedBox(height: 24),
-        Text('Screen send', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(
-          _phase == _HarnessPhase.lobby
-              ? 'Join first. Lobby cannot start screen send.'
-              : 'Start a meeting Session, then Share from the bar to pick a screen or window.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        if (_screenStatus != null)
-          Text(
-            _screenStatus!,
-            key: const Key('screen-status'),
-            style: Theme.of(context).textTheme.labelLarge,
-          ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            FilledButton(
-              key: const Key('screen-session'),
-              onPressed: _phase == _HarnessPhase.idle
-                  ? _startScreenSession
-                  : null,
-              child: const Text('Start session'),
-            ),
-            FilterChip(
-              key: const Key('screen-sound'),
-              label: const Text('Include sound'),
-              selected: _includeSound,
-              onSelected: (value) => setState(() => _includeSound = value),
-            ),
-            FilterChip(
-              key: const Key('screen-motion'),
-              label: const Text('Optimize'),
-              selected: _screenMotion,
-              onSelected: (value) => setState(() => _screenMotion = value),
-            ),
-            FilterChip(
-              key: const Key('screen-cursor'),
-              label: const Text('Cursor'),
-              selected: _screenCursor,
-              onSelected: (value) => setState(() => _screenCursor = value),
-            ),
-          ],
-        ),
-      ] else if (_screenStatus != null)
+      if (_screenStatus != null)
         Text(
           _screenStatus!,
           key: const Key('screen-status'),
-          style: Theme.of(context).textTheme.labelLarge,
+          style: theme.labelLarge,
+        ),
+      if (_phase == _HarnessPhase.idle)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: FilledButton.tonal(
+            key: const Key('screen-session'),
+            onPressed: _startScreenSession,
+            child: const Text('Start session'),
+          ),
         ),
       if (session != null) ...[
         const SizedBox(height: 16),
@@ -1203,11 +1261,25 @@ final class _SessionPageState extends State<SessionPage> {
           ),
         ),
       ],
+      const SizedBox(height: 16),
+      Text('Host preference', style: theme.titleMedium),
+      PreferenceEditor(
+        catalog: _endpoints,
+        draft: _draft,
+        onChanged: (preference) => setState(() => _draft = preference),
+        onApply: _applyPreference,
+        onReset: () {
+          _draft = const EndpointPreference();
+          unawaited(_applyPreference());
+        },
+        onUseCurrent: session == null ? null : _useCurrent,
+      ),
     ];
   }
 
   Widget _waveStrip({required double height}) {
     return SizedBox(
+      key: const Key('visualizer'),
       height: height,
       child: ValueListenableBuilder<int>(
         valueListenable: _wave,
@@ -1253,25 +1325,6 @@ final class _SessionPageState extends State<SessionPage> {
       surface: surface,
       viewTypePrefix: 'fac-camera',
       followUiOrientation: true,
-    );
-  }
-
-  Widget? _screenPreviewThumb(Session? session, ScreenSource source) {
-    if (session == null || _phase != _HarnessPhase.meeting) {
-      return null;
-    }
-    final preview = session.screenPreview(source.id);
-    if (preview == null) {
-      return null;
-    }
-    return SizedBox(
-      width: 72,
-      height: 40,
-      child: VideoSurfaceView(
-        key: Key('screen-preview-${source.id}'),
-        surface: preview,
-        viewTypePrefix: 'fac-screen',
-      ),
     );
   }
 

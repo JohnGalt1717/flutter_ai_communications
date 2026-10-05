@@ -903,32 +903,103 @@ class FlutterAiCommunicationsPlugin :
             items += endpoint("handset-in", "Handset", "handset", true, "handset", "handset")
             items += endpoint("handset-out", "Handset", "handset", false, "handset", "handset")
         }
-        items += endpoint("speaker-in", "Speakerphone", "speakerphone", true, "speakerphone")
-        items += endpoint("speaker-out", "Speakerphone", "speakerphone", false, "speakerphone")
-        val defaultId = communicationDeviceId(manager)
-        for (device in manager.getDevices(AudioManager.GET_DEVICES_ALL)) {
-            val route = routeClass(device.type)
-            if (route == "handset" || route == "speakerphone") {
+        val communication = communicationDevice(manager)
+        val speakerDefault =
+            AndroidCapturePolicy.syntheticOsDefault(communication?.type) == "speakerphone"
+        items +=
+            endpoint(
+                "speaker-in",
+                "Speakerphone",
+                "speakerphone",
+                true,
+                "speakerphone",
+                osDefault = speakerDefault,
+            )
+        items +=
+            endpoint(
+                "speaker-out",
+                "Speakerphone",
+                "speakerphone",
+                false,
+                "speakerphone",
+                osDefault = speakerDefault,
+            )
+        val defaultId = communication?.id
+        val physicalDefault = AndroidCapturePolicy.syntheticOsDefault(communication?.type) == null
+        val model = Build.MODEL.orEmpty()
+        val inputs =
+            manager.getDevices(AudioManager.GET_DEVICES_INPUTS).filter { device ->
+                AndroidCapturePolicy.isSelectableInput(device.type) &&
+                    !AndroidCapturePolicy.isSyntheticType(device.type) &&
+                    !AndroidCapturePolicy.isSelfNamedUsb(
+                        device.type,
+                        device.productName?.toString(),
+                        model,
+                    )
+            }
+        val outputs =
+            manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { device ->
+                AndroidCapturePolicy.isSelectableOutput(device.type) &&
+                    !AndroidCapturePolicy.isSyntheticType(device.type) &&
+                    !AndroidCapturePolicy.isSelfNamedUsb(
+                        device.type,
+                        device.productName?.toString(),
+                        model,
+                    )
+            }
+        val voiceKeys =
+            outputs
+                .filter { AndroidCapturePolicy.isBluetoothVoiceType(it.type) }
+                .map { bluetoothCollapseKey(it) }
+                .toSet()
+        for (device in inputs) {
+            items += catalogEndpoint(device, true, bluetooth, defaultId, physicalDefault)
+        }
+        for (device in outputs) {
+            if (!AndroidCapturePolicy.keepBluetoothOutput(
+                    device.type,
+                    bluetoothCollapseKey(device),
+                    voiceKeys,
+                )
+            ) {
                 continue
             }
-            val name = device.productName?.toString() ?: "Endpoint"
-            val address = device.address?.ifEmpty { device.id.toString() } ?: device.id.toString()
-            val typeForm = AndroidBluetoothIdentity.formFactorForAudioType(device.type)
-            val (hints, btForm) = AndroidBluetoothIdentity.merge(name, route, address, bluetooth)
-            val form = if (btForm != "unknown") btForm else typeForm
-            items +=
-                endpoint(
-                    device.id.toString(),
-                    name,
-                    route,
-                    device.isSource,
-                    address,
-                    form,
-                    hints,
-                    osDefault = defaultId != null && device.id == defaultId,
-                )
+            items += catalogEndpoint(device, false, bluetooth, defaultId, physicalDefault)
         }
         return items
+    }
+
+    private fun catalogEndpoint(
+        device: AudioDeviceInfo,
+        capture: Boolean,
+        bluetooth: List<BluetoothIdentityRecord>,
+        defaultId: Int?,
+        physicalDefault: Boolean,
+    ): Map<String, Any> {
+        val route = routeClass(device.type)
+        val name = device.productName?.toString() ?: "Endpoint"
+        val address = device.address?.ifEmpty { device.id.toString() } ?: device.id.toString()
+        val typeForm = AndroidBluetoothIdentity.formFactorForAudioType(device.type)
+        val (hints, btForm) = AndroidBluetoothIdentity.merge(name, route, address, bluetooth)
+        val form = if (btForm != "unknown") btForm else typeForm
+        return endpoint(
+            device.id.toString(),
+            name,
+            route,
+            capture,
+            address,
+            form,
+            hints,
+            osDefault = physicalDefault && defaultId != null && device.id == defaultId,
+        )
+    }
+
+    private fun bluetoothCollapseKey(device: AudioDeviceInfo): String {
+        val address = device.address?.trim().orEmpty()
+        if (address.isNotEmpty()) {
+            return address
+        }
+        return device.productName?.toString().orEmpty()
     }
 
     private fun endpoint(
@@ -964,11 +1035,11 @@ class FlutterAiCommunicationsPlugin :
         return map
     }
 
-    private fun communicationDeviceId(manager: AudioManager): Int? {
+    private fun communicationDevice(manager: AudioManager): AudioDeviceInfo? {
         if (android.os.Build.VERSION.SDK_INT < 31) {
             return null
         }
-        return manager.communicationDevice?.id
+        return manager.communicationDevice
     }
 
     private fun routeClass(type: Int): String =
@@ -979,11 +1050,12 @@ class FlutterAiCommunicationsPlugin :
             -> "speakerphone"
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_HEARING_AID,
             -> "bluetooth"
             AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE,
             -> "wired"
-            AudioDeviceInfo.TYPE_BUS, AudioDeviceInfo.TYPE_AUX_LINE -> "car"
+            AudioDeviceInfo.TYPE_BUS -> "car"
             else -> "wired"
         }
 
