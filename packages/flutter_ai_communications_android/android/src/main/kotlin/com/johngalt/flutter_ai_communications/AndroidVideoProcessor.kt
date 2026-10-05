@@ -69,6 +69,10 @@ internal class AndroidVideoProcessor {
     @Volatile
     private var lastMask: MaskSnapshot? = null
 
+    private var personPixels = IntArray(0)
+    private var outPixels = IntArray(0)
+    private var outBitmap: Bitmap? = null
+
     val available: Boolean get() = segmenter != null
 
     /** Drop cached masks (camera switch / apply). In-flight callbacks are ignored. */
@@ -135,23 +139,53 @@ internal class AndroidVideoProcessor {
         val snapshot = lastMask ?: return background
         val width = bitmap.width
         val height = bitmap.height
-        val personPixels = IntArray(width * height)
-        val outPixels = IntArray(width * height)
-        bitmap.getPixels(personPixels, 0, width, 0, 0, width, height)
-        background.getPixels(outPixels, 0, width, 0, 0, width, height)
+        val buffers = ensureFrameBuffers(width, height)
+        bitmap.getPixels(buffers.person, 0, width, 0, 0, width, height)
+        background.getPixels(buffers.out, 0, width, 0, 0, width, height)
         PersonMask.composite(
-            personPixels,
-            outPixels,
+            buffers.person,
+            buffers.out,
             snapshot.floats,
             snapshot.width,
             snapshot.height,
             width,
             height,
-            outPixels,
+            buffers.out,
         )
-        val out = background.copy(Bitmap.Config.ARGB_8888, true)
-        out.setPixels(outPixels, 0, width, 0, 0, width, height)
-        return out
+        buffers.bitmap.setPixels(buffers.out, 0, width, 0, 0, width, height)
+        return buffers.bitmap
+    }
+
+    private data class FrameBuffers(
+        val person: IntArray,
+        val out: IntArray,
+        val bitmap: Bitmap,
+    )
+
+    private fun ensureFrameBuffers(
+        width: Int,
+        height: Int,
+    ): FrameBuffers {
+        val count = width * height
+        if (personPixels.size != count) {
+            personPixels = IntArray(count)
+            outPixels = IntArray(count)
+        }
+        val cached = outBitmap
+        val bitmap =
+            if (cached != null &&
+                !cached.isRecycled &&
+                cached.width == width &&
+                cached.height == height
+            ) {
+                cached
+            } else {
+                cached?.recycle()
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+                    outBitmap = it
+                }
+            }
+        return FrameBuffers(person = personPixels, out = outPixels, bitmap = bitmap)
     }
 
     private fun bytesOf(value: Any?): ByteArray? =
