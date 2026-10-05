@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
+import 'chrome.dart';
 import 'video_surface_view.dart';
 
 /// Teams-like loopback meeting chrome.
@@ -153,7 +154,11 @@ final class LoopbackMeetingStage extends StatelessWidget {
                 const Positioned(
                   right: 6,
                   top: 6,
-                  child: Icon(Icons.mic_off, size: 16, color: Color(0xFFFF8A80)),
+                  child: Icon(
+                    Icons.mic_off,
+                    size: 16,
+                    color: Color(0xFFFF8A80),
+                  ),
                 ),
             ],
           ],
@@ -219,18 +224,15 @@ final class MeetingBar extends StatelessWidget {
     required this.session,
     required this.onMute,
     required this.onCamera,
-    required this.onMuteVideo,
+    required this.onAudioMenu,
+    required this.onCameraMenu,
     required this.onShare,
     required this.onStopShare,
     required this.onPause,
     required this.onLeave,
     required this.onProve,
-    this.cameras = const [],
-    this.selectedCameraId,
-    this.onSelectCamera,
-    this.processor,
-    this.onProcessor,
-    this.replaceStill = const [],
+    this.audioOpen = false,
+    this.cameraOpen = false,
   });
 
   /// Live meeting Session.
@@ -242,8 +244,11 @@ final class MeetingBar extends StatelessWidget {
   /// Camera-off / camera on.
   final VoidCallback onCamera;
 
-  /// Mute-video / unmute video.
-  final VoidCallback onMuteVideo;
+  /// Toggle the mic/speaker panel.
+  final VoidCallback onAudioMenu;
+
+  /// Toggle the camera/background panel.
+  final VoidCallback onCameraMenu;
 
   /// Open the host Share picker, or start the OS picker.
   final VoidCallback onShare;
@@ -260,28 +265,17 @@ final class MeetingBar extends StatelessWidget {
   /// Digital echo Prove.
   final VoidCallback onProve;
 
-  /// Camera catalog for the in-call picker.
-  final List<CameraEndpoint> cameras;
+  /// Audio panel is open.
+  final bool audioOpen;
 
-  /// Currently selected Camera Endpoint id.
-  final String? selectedCameraId;
+  /// Camera panel is open.
+  final bool cameraOpen;
 
-  /// In-session camera pick. Does not write Camera preference.
-  final ValueChanged<String>? onSelectCamera;
-
-  /// Current send-path Video processor.
-  final VideoProcessor? processor;
-
-  /// None / blur / replace from the in-call menu.
-  final ValueChanged<VideoProcessor>? onProcessor;
-
-  /// Still bytes for replace.
-  final List<int> replaceStill;
   @override
   Widget build(BuildContext context) {
     final sharing = session.isScreenSending;
     return Material(
-      color: const Color(0xFF16161F),
+      color: MeetingChrome.bar,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -292,190 +286,84 @@ final class MeetingBar extends StatelessWidget {
               key: const Key('meeting-bar'),
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _round(
-                  key: const Key('mute'),
-                  tooltip: session.isMuted ? 'Unmute' : 'Mute',
-                  icon: session.isMuted ? Icons.mic_off : Icons.mic,
-                  active: session.isMuted,
-                  onPressed: onMute,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: SplitCallButton(
+                    actionKey: const Key('mute'),
+                    menuKey: const Key('audio-pick'),
+                    icon: session.isMuted ? Icons.mic_off : Icons.mic,
+                    tooltip: session.isMuted ? 'Unmute' : 'Mute',
+                    menuTooltip: 'Choose microphone and speaker',
+                    active: session.isMuted,
+                    menuOpen: audioOpen,
+                    onAction: onMute,
+                    onMenu: onAudioMenu,
+                  ),
                 ),
-                _round(
-                  key: const Key('camera-off'),
-                  tooltip: session.isCameraEnabled ? 'Camera off' : 'Camera on',
-                  icon: session.isCameraEnabled
-                      ? Icons.videocam
-                      : Icons.videocam_off,
-                  active: !session.isCameraEnabled,
-                  onPressed: onCamera,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: SplitCallButton(
+                    actionKey: const Key('camera-off'),
+                    menuKey: const Key('camera-pick'),
+                    icon: session.isCameraEnabled
+                        ? Icons.videocam
+                        : Icons.videocam_off,
+                    tooltip: session.isCameraEnabled
+                        ? 'Camera off'
+                        : 'Camera on',
+                    menuTooltip: 'Choose camera and background',
+                    active: !session.isCameraEnabled,
+                    menuOpen: cameraOpen,
+                    onAction: onCamera,
+                    onMenu: onCameraMenu,
+                  ),
                 ),
-                if (cameras.isNotEmpty && onSelectCamera != null) _cameraMenu(),
-                if (onProcessor != null) _processorMenu(),
-                _round(
-                  key: const Key('mute-video'),
-                  tooltip: session.isVideoMuted ? 'Unmute video' : 'Mute video',
-                  icon: session.isVideoMuted
-                      ? Icons.video_camera_front_outlined
-                      : Icons.video_camera_front,
-                  active: session.isVideoMuted,
-                  onPressed: session.isCameraEnabled ? onMuteVideo : null,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: RoundCallButton(
+                    buttonKey: sharing
+                        ? const Key('screen-stop')
+                        : const Key('screen-share'),
+                    tooltip: sharing ? 'Stop share' : 'Share',
+                    icon: sharing
+                        ? Icons.stop_screen_share
+                        : Icons.present_to_all,
+                    active: sharing,
+                    onPressed: sharing ? onStopShare : onShare,
+                  ),
                 ),
-                _round(
-                  key: sharing
-                      ? const Key('screen-stop')
-                      : const Key('screen-share'),
-                  tooltip: sharing ? 'Stop share' : 'Share',
-                  icon: sharing
-                      ? Icons.stop_screen_share
-                      : Icons.present_to_all,
-                  active: sharing,
-                  onPressed: sharing ? onStopShare : onShare,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: RoundCallButton(
+                    buttonKey: const Key('pause'),
+                    tooltip: session.isPaused ? 'Resume' : 'Pause',
+                    icon: session.isPaused ? Icons.play_arrow : Icons.pause,
+                    active: session.isPaused,
+                    onPressed: onPause,
+                  ),
                 ),
-                _round(
-                  key: const Key('pause'),
-                  tooltip: session.isPaused ? 'Resume' : 'Pause',
-                  icon: session.isPaused ? Icons.play_arrow : Icons.pause,
-                  active: session.isPaused,
-                  onPressed: onPause,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: RoundCallButton(
+                    buttonKey: const Key('prove'),
+                    tooltip: 'Prove',
+                    icon: Icons.verified_outlined,
+                    onPressed: onProve,
+                  ),
                 ),
-                _round(
-                  key: const Key('prove'),
-                  tooltip: 'Prove',
-                  icon: Icons.verified_outlined,
-                  onPressed: onProve,
-                ),
-                _round(
-                  key: const Key('stop'),
-                  tooltip: 'Leave',
-                  icon: Icons.call_end,
-                  danger: true,
-                  onPressed: onLeave,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: RoundCallButton(
+                    buttonKey: const Key('stop'),
+                    tooltip: 'Leave',
+                    icon: Icons.call_end,
+                    danger: true,
+                    onPressed: onLeave,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _cameraMenu() {
-    return _menu<String>(
-      key: const Key('camera-pick'),
-      tooltip: 'Choose camera',
-      icon: Icons.arrow_drop_up,
-      onSelected: onSelectCamera!,
-      items: [
-        for (final camera in cameras)
-          PopupMenuItem(
-            key: Key('camera-${camera.id}'),
-            value: camera.id,
-            child: Text(
-              camera.id == selectedCameraId ? '${camera.name} ✓' : camera.name,
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _processorMenu() {
-    final current = processor;
-    return _menu<VideoProcessor>(
-      key: const Key('processor-pick'),
-      tooltip: 'Background',
-      icon: Icons.blur_on,
-      onSelected: onProcessor!,
-      items: [
-        PopupMenuItem(
-          key: const Key('processor-none'),
-          value: const NoneVideoProcessor(),
-          child: Text(current is NoneVideoProcessor ? 'None ✓' : 'None'),
-        ),
-        PopupMenuItem(
-          key: const Key('processor-blur-50'),
-          value: const BlurVideoProcessor(intensity: 50),
-          child: Text(
-            current == const BlurVideoProcessor(intensity: 50)
-                ? 'Blur ✓'
-                : 'Blur',
-          ),
-        ),
-        PopupMenuItem(
-          key: const Key('processor-blur-100'),
-          value: const BlurVideoProcessor(intensity: 100),
-          child: Text(
-            current == const BlurVideoProcessor(intensity: 100)
-                ? 'Lots of blur ✓'
-                : 'Lots of blur',
-          ),
-        ),
-        PopupMenuItem(
-          key: const Key('processor-replace'),
-          value: ReplaceVideoProcessor(bytes: replaceStill),
-          child: Text(
-            current is ReplaceVideoProcessor
-                ? 'Background image ✓'
-                : 'Background image',
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _menu<T>({
-    required Key key,
-    required String tooltip,
-    required IconData icon,
-    required ValueChanged<T> onSelected,
-    required List<PopupMenuEntry<T>> items,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: PopupMenuButton<T>(
-        key: key,
-        tooltip: tooltip,
-        onSelected: onSelected,
-        itemBuilder: (context) => items,
-        icon: Icon(icon, color: const Color(0xFFE8E8F0)),
-        style: IconButton.styleFrom(
-          backgroundColor: const Color(0xFF2B2B38),
-          foregroundColor: const Color(0xFFE8E8F0),
-        ),
-      ),
-    );
-  }
-
-  Widget _round({
-    required Key key,
-    required String tooltip,
-    required IconData icon,
-    required VoidCallback? onPressed,
-    bool active = false,
-    bool danger = false,
-  }) {
-    final background = danger
-        ? const Color(0xFFC4314B)
-        : active
-        ? const Color(0xFFE8E8F0)
-        : const Color(0xFF2B2B38);
-    final foreground = danger
-        ? Colors.white
-        : active
-        ? const Color(0xFF1C1C28)
-        : const Color(0xFFE8E8F0);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Tooltip(
-        message: tooltip,
-        child: IconButton.filled(
-          key: key,
-          onPressed: onPressed,
-          style: IconButton.styleFrom(
-            backgroundColor: background,
-            foregroundColor: foreground,
-            disabledBackgroundColor: const Color(0xFF2B2B38),
-            disabledForegroundColor: const Color(0xFF6E6E7A),
-          ),
-          icon: Icon(icon),
         ),
       ),
     );

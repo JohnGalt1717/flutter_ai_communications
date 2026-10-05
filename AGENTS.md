@@ -69,6 +69,7 @@ Load the skill before the work it covers:
 | Live system dialogs (MediaProjection, ReplayKit, TCC, Allow) | `fac-os-sheets` (Appium). Never Appium for Flutter keys. After iOS WDA create, activate the example — do not leave **Automation is running** covering the harness. |
 | Physical iOS/Android native receipts | `.agents/workflows/real-device-orchestration.md` |
 | Screen send receipts (six platforms) | `.agents/workflows/screen-send-orchestration.md` |
+| Interactive iOS/macOS human receipts | `.agents/workflows/interactive-ios-macos.md` |
 | Ship PR → CI → Copilot review → squash-merge | `/ship-pr-review-loop` |
 
 ## Non-negotiables

@@ -7,8 +7,9 @@ import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 /// adapter accepts them. Analog speaker → microphone is not this path.
 final class LoopbackCommunicationsPlatform
     extends FlutterAiCommunicationsPlatform {
-  /// Wraps a real (or fake) adapter and adds the loopback Pair.
-  LoopbackCommunicationsPlatform(this.inner) {
+  /// Wraps a real (or fake) adapter. The loopback Pair stays off the catalog
+  /// unless [includeInCatalog] is true (Prove / echo tests).
+  LoopbackCommunicationsPlatform(this.inner, {this.includeInCatalog = false}) {
     _innerCapture = inner.nativeCapture.listen(_onInnerCapture);
     _innerCatalog = inner.endpointCatalog.listen(
       _onInnerCatalog,
@@ -26,18 +27,35 @@ final class LoopbackCommunicationsPlatform
   static const pairId = 'loopback';
 
   /// Replaces the registered adapter with a loopback wrapper.
-  static LoopbackCommunicationsPlatform wrapRegistered() {
+  static LoopbackCommunicationsPlatform wrapRegistered({
+    bool includeInCatalog = false,
+  }) {
     final current = FlutterAiCommunicationsPlatform.instance;
     if (current is LoopbackCommunicationsPlatform) {
-      return current;
+      if (current.includeInCatalog == includeInCatalog) {
+        return current;
+      }
+      unawaited(current.dispose());
+      final rewrapped = LoopbackCommunicationsPlatform(
+        current.inner,
+        includeInCatalog: includeInCatalog,
+      );
+      FlutterAiCommunicationsPlatform.instance = rewrapped;
+      return rewrapped;
     }
-    final wrapped = LoopbackCommunicationsPlatform(current);
+    final wrapped = LoopbackCommunicationsPlatform(
+      current,
+      includeInCatalog: includeInCatalog,
+    );
     FlutterAiCommunicationsPlatform.instance = wrapped;
     return wrapped;
   }
 
   /// The real platform adapter.
   final FlutterAiCommunicationsPlatform inner;
+
+  /// When true, [loopbackPair] is published as catalog Endpoints.
+  final bool includeInCatalog;
 
   final StreamController<Uint8List> _capture =
       StreamController<Uint8List>.broadcast();
@@ -75,10 +93,19 @@ final class LoopbackCommunicationsPlatform
   IsolationEvent get lastIsolation => inner.lastIsolation;
 
   @override
-  Future<List<Endpoint>> enumerateEndpoints() async => [
-    ...await inner.enumerateEndpoints(),
-    ...loopbackPair,
-  ];
+  NativeFormatReport get lastNativeFormats => inner.lastNativeFormats;
+
+  @override
+  PairingSnapshot get lastObservedRoute => inner.lastObservedRoute;
+
+  @override
+  Future<List<Endpoint>> enumerateEndpoints() async {
+    final catalog = await inner.enumerateEndpoints();
+    if (!includeInCatalog) {
+      return catalog;
+    }
+    return [...catalog, ...loopbackPair];
+  }
 
   @override
   Future<void> beginCatalogObservation() => inner.beginCatalogObservation();
@@ -350,6 +377,6 @@ final class LoopbackCommunicationsPlatform
   }
 
   void _onInnerCatalog(List<Endpoint> catalog) {
-    _catalog.add([...catalog, ...loopbackPair]);
+    _catalog.add(includeInCatalog ? [...catalog, ...loopbackPair] : catalog);
   }
 }

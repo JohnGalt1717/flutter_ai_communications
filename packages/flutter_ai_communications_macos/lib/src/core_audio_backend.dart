@@ -19,9 +19,7 @@ const _silenceBytes = 480;
 const _bufferCount = 3;
 
 /// Catalog and Observed UID lookup. Duplex capture/playback is native.
-final class CoreAudioBackend
-    with DeviceWatchSupport
-    implements AudioBackend {
+final class CoreAudioBackend with DeviceWatchSupport implements AudioBackend {
   /// Opens Core Audio in-process.
   CoreAudioBackend() : _audio = CoreAudio();
 
@@ -402,6 +400,7 @@ final class CoreAudioBackend
 
   List<Endpoint> _collect({required bool capture}) {
     final scope = capture ? fourCC('inpt') : fourCC('outp');
+    final defaultId = _defaultDeviceId(capture: capture);
     final items = <Endpoint>[];
     for (final id in _audio.uint32Array(
       audioObjectSystemObject,
@@ -424,6 +423,14 @@ final class CoreAudioBackend
               (transportCode >> 8) & 0xff,
               transportCode & 0xff,
             ]);
+      final hidden = (_audio.uint32Property(id, fourCC('hidn')) ?? 0) != 0;
+      if (!macosIsCatalogEndpoint(
+        name: name,
+        transport: transport,
+        hidden: hidden,
+      )) {
+        continue;
+      }
       final relatedUids = _relatedDeviceUids(id);
       final route = macosRouteClass(name: name, transport: transport);
       items.add(
@@ -440,6 +447,7 @@ final class CoreAudioBackend
             transport: transport,
             relatedUids: relatedUids,
           ),
+          osDefault: defaultId != null && id == defaultId,
         ),
       );
     }

@@ -54,8 +54,7 @@ final class VideoSurfaceView extends StatelessWidget {
         viewType: '$viewTypePrefix-${surface.handle}',
         aspectRatio: surface.aspectRatio,
         caption: viewTypePrefix == 'fac-camera' ? caption : null,
-        showMuteBadge:
-            viewTypePrefix == 'fac-camera' ? showMuteBadge : false,
+        showMuteBadge: viewTypePrefix == 'fac-camera' ? showMuteBadge : false,
       );
     }
     // Texture fills its layout size and ignores FittedBox / RotatedBox.
@@ -112,8 +111,7 @@ final class _HtmlCameraSlot extends StatefulWidget {
 
   bool get _isCamera => viewType.startsWith('fac-camera-');
 
-  bool get _ownsChrome =>
-      _isCamera && (caption != null || showMuteBadge);
+  bool get _ownsChrome => _isCamera && (caption != null || showMuteBadge);
 
   @override
   State<_HtmlCameraSlot> createState() => _HtmlCameraSlotState();
@@ -154,9 +152,7 @@ final class _HtmlCameraSlotState extends State<_HtmlCameraSlot> {
   Widget build(BuildContext context) {
     return _ContainedFeed(
       aspectRatio: widget.aspectRatio,
-      child: ClipRect(
-        child: HtmlElementView(viewType: widget.viewType),
-      ),
+      child: ClipRect(child: HtmlElementView(viewType: widget.viewType)),
     );
   }
 }

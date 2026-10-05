@@ -64,6 +64,30 @@ void main() {
     await sub.cancel();
   });
 
+  test('native 24 kHz capture converts down to 16 kHz edge bytes', () async {
+    platform.nativeCaptureFormat = AudioFormat.pcm16le24k;
+    const edge16k = AudioFormat.pcm16le(sampleRate: 16000);
+    final session = await ready(
+      captureFormat: edge16k,
+      playbackFormat: edge16k,
+    );
+    expect(session.diagnostics.requestedCaptureFormat, edge16k);
+    expect(session.diagnostics.nativeCaptureFormat, AudioFormat.pcm16le24k);
+    expect(session.diagnostics.edgeCaptureFormat, edge16k);
+    expect(session.diagnostics.captureConversionPath, ConversionPath.dart);
+
+    final frames = <Uint8List>[];
+    final sub = session.capture.listen(frames.add);
+    platform.feedCapture(_sinePcm(sampleRate: 24000, seconds: 0.05));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(frames, hasLength(1));
+    expect(frames.single.length ~/ 2, closeTo(16000 * 0.05, 48));
+    expect(_rms(frames.single), greaterThan(0.1));
+    expect(session.status.code, SessionStatusCode.formatConverted);
+    await sub.cancel();
+  });
+
   test('playback 16 kHz edge converts to native 24 kHz', () async {
     platform.nativePlaybackFormat = AudioFormat.pcm16le24k;
     final session = await ready(

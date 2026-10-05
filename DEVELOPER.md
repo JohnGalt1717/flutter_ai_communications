@@ -89,7 +89,8 @@ flutter run -d R5GL63B3GWV --vm-service-port=50005
 
 Pin the printed `ws://127.0.0.1:<port>/<token>=/ws`. Screen receipts:
 `.agents/workflows/screen-send-orchestration.md`. Audio receipts:
-`.agents/workflows/real-device-orchestration.md`.
+`.agents/workflows/real-device-orchestration.md`. Interactive iOS/macOS
+human rows: `.agents/workflows/interactive-ios-macos.md`.
 
 ## Tests
 

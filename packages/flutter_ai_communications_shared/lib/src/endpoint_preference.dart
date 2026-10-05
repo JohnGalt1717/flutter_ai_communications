@@ -98,6 +98,63 @@ final class EndpointPreference {
   /// Whether the host supplied any ordered entries.
   bool get isEmpty => entries.isEmpty;
 
+  /// Catalog Endpoints in picker order: OS default first when this list is
+  /// empty, otherwise this list's available ids, then remaining catalog items.
+  List<Endpoint> orderedForDisplay(
+    List<Endpoint> catalog, {
+    required bool capture,
+  }) {
+    final available = [
+      for (final item in catalog)
+        if (item.isCapture == capture) item,
+    ];
+    final byId = {for (final item in available) item.id: item};
+    final out = <Endpoint>[];
+    final seen = <String>{};
+
+    void add(Endpoint? item) {
+      if (item == null || item.isCapture != capture) {
+        return;
+      }
+      if (!seen.add(item.id)) {
+        return;
+      }
+      out.add(item);
+    }
+
+    if (isEmpty) {
+      for (final item in available) {
+        if (item.osDefault) {
+          add(item);
+        }
+      }
+      for (final item in available) {
+        add(item);
+      }
+      return out;
+    }
+
+    for (final entry in entries) {
+      if (!entry.enabled) {
+        continue;
+      }
+      if (capture) {
+        for (final slot in entry.captures) {
+          if (!slot.enabled) {
+            continue;
+          }
+          add(byId[slot.id]);
+        }
+      } else {
+        add(byId[entry.renderId]);
+      }
+    }
+    for (final item in available) {
+      add(item);
+    }
+    return out;
+  }
+
   /// OS default render+capture first when both exist, then complete hardware
   /// Pairs by Bluetooth, wired, car, speakerphone, handset.
   static EndpointPreference platformDefault(List<Endpoint> catalog) {

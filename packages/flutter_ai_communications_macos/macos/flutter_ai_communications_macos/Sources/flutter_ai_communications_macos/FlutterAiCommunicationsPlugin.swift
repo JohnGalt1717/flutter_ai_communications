@@ -1,6 +1,7 @@
 import AVFoundation
 import AudioToolbox
 import CoreAudio
+import FacExceptionCatch
 import FlutterMacOS
 
 /// One duplex AVAudioEngine for capture and playback.
@@ -27,7 +28,21 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var voiceProcessingEnabled = false
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
+  private var playbackConverter: AVAudioConverter?
+  private var captureConverter: AVAudioConverter?
+  private var captureConverterFromRate: Double = 0
+  private var captureConverterToRate: Double = 0
   private var captureTapInstalled = false
+  private var captureTapFrames = 0
+  private var scheduledPlaybackBuffers = 0
+  private var isRebuildingGraph = false
+  private let maxScheduledPlaybackBuffers = 12
+  private let edgeSampleRate = 24_000.0
+  /// Engine stop/start stay off the UI thread (Fieldist MacOSAudioEngine).
+  private let audioQueue = DispatchQueue(
+    label: "fac.macos.audio",
+    qos: .userInitiated
+  )
   private var watchingDevices = false
   private let camera = MacCameraGraph()
   private let screen = MacScreenGraph()
@@ -73,32 +88,37 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         result: result
       )
     case "stopNative":
-      stopNative()
-      result(nil)
+      stopNative(result: result)
     case "pauseNative":
       paused = true
-      engine?.pause()
-      result(nil)
+      audioQueue.async { [weak self] in
+        self?.engine?.pause()
+        DispatchQueue.main.async { result(nil) }
+      }
     case "resumeNative":
       paused = false
-      try? engine?.start()
-      result(nil)
+      resumeEngine(result: result)
     case "play":
-      play(call.arguments as? FlutterStandardTypedData)
+      let data = call.arguments as? FlutterStandardTypedData
+      audioQueue.async { [weak self] in
+        self?.play(data)
+      }
       result(nil)
     case "selectEndpoints":
       let args = call.arguments as? [String: Any]
       selectEndpoints(
         captureId: args?["captureId"] as? String,
-        renderId: args?["renderId"] as? String
+        renderId: args?["renderId"] as? String,
+        result: result
       )
-      result(startedFormatMap())
     case "openIsolationSettings":
       emitIsolation()
       result(nil)
     case "flushPlayback":
-      flushPlayback()
-      result(nil)
+      audioQueue.async { [weak self] in
+        self?.flushPlayback()
+        DispatchQueue.main.async { result(nil) }
+      }
     case "enumerateCameras":
       result(camera.enumerate())
     case "requestCameraPermission":
@@ -264,26 +284,72 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     selectedRenderId = renderId
     self.noiseCancelling = noiseCancelling
     generation += 1
-    do {
-      try startEngine()
-      running = true
-      paused = false
-      emitCatalog()
-      emitIsolation()
-      emitRoute()
-      result(startedFormatMap())
-    } catch {
-      let line = "fac.audio start failed \(error)\n"
-      NSLog("%@", line)
-      let url = FileManager.default.temporaryDirectory.appendingPathComponent("fac.audio.log")
-      try? line.write(to: url, atomically: true, encoding: .utf8)
-      result("failed")
+    let gen = generation
+    running = true
+    paused = false
+    audioQueue.async { [weak self] in
+      guard let self else { return }
+      guard self.generation == gen else {
+        DispatchQueue.main.async { result("failed") }
+        return
+      }
+      do {
+        try self.startEngine(recreate: true)
+        DispatchQueue.main.async {
+          guard self.generation == gen else {
+            result("failed")
+            return
+          }
+          self.emitCatalog()
+          self.emitIsolation()
+          self.emitRoute()
+          result(self.startedFormatMap())
+        }
+      } catch {
+        self.running = false
+        self.teardownEngine()
+        let line = "fac.audio start failed \(error)\n"
+        NSLog("%@", line)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fac.audio.log")
+        try? line.write(to: url, atomically: true, encoding: .utf8)
+        DispatchQueue.main.async { result("failed") }
+      }
     }
   }
 
-  private func stopNative() {
+  private func stopNative(result: FlutterResult?) {
     running = false
-    teardownEngine()
+    generation += 1
+    audioQueue.async { [weak self] in
+      self?.teardownEngine()
+      if let result {
+        DispatchQueue.main.async { result(nil) }
+      }
+    }
+  }
+
+  private func resumeEngine(result: @escaping FlutterResult) {
+    audioQueue.async { [weak self] in
+      guard let self, let engine = self.engine else {
+        DispatchQueue.main.async { result(nil) }
+        return
+      }
+      var thrown: NSError?
+      var swiftError: Error?
+      let ok = FacTry({
+        do {
+          try engine.start()
+        } catch {
+          swiftError = error
+        }
+      }, &thrown)
+      if let swiftError {
+        NSLog("fac.audio resume failed \(swiftError)")
+      } else if !ok {
+        NSLog("fac.audio resume NSException \(thrown?.localizedDescription ?? "")")
+      }
+      DispatchQueue.main.async { result(nil) }
+    }
   }
 
   private func presentId(_ id: String?) -> String? {
@@ -299,106 +365,237 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     presentId(selectedRenderId) != nil || presentId(selectedCaptureId) == nil
   }
 
-  private func startEngine() throws {
+  /// Fieldist `configureGraph`: stop before reset, 1ch tap before start, no
+  /// `player.play()` here. Recreate only when the graph is cold or in-place
+  /// configure fails.
+  private func startEngine(recreate: Bool) throws {
+    guard !isRebuildingGraph else { return }
+    isRebuildingGraph = true
+    defer { isRebuildingGraph = false }
+
     let wantCapture = wantsCapture()
     let wantPlayback = wantsPlayback()
     if wantCapture {
       emitSilenceFrame()
     }
-    teardownEngine()
-    let next = AVAudioEngine()
+
+    stopGraph()
+
+    var next: AVAudioEngine
+    if recreate || engine == nil {
+      engine?.reset()
+      next = AVAudioEngine()
+      engine = next
+      player = nil
+      playbackFormat = nil
+      playbackConverter = nil
+      captureConverter = nil
+      captureConverterFromRate = 0
+      captureConverterToRate = 0
+    } else {
+      next = engine!
+    }
+
     bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
     bindDevice(to: next.outputNode, endpointId: selectedRenderId)
-    let mixerFormat = next.mainMixerNode.outputFormat(forBus: 0)
-    let inputFormat = next.inputNode.outputFormat(forBus: 0)
-    var playerNode: AVAudioPlayerNode?
-    var playerFormat: AVAudioFormat?
+
     if wantPlayback {
-      let node = AVAudioPlayerNode()
-      next.attach(node)
-      let format = try Self.makePlaybackFormat(
-        inputFormat: inputFormat,
-        mixerFormat: mixerFormat
-      )
-      // Capture + playback share this one engine. Mixer is the VPIO reference.
-      next.connect(node, to: next.mainMixerNode, format: format)
-      playerNode = node
-      playerFormat = format
+      let node: AVAudioPlayerNode
+      if let existing = player, next.attachedNodes.contains(existing) {
+        node = existing
+      } else {
+        node = AVAudioPlayerNode()
+        next.attach(node)
+        player = node
+      }
+      next.disconnectNodeOutput(node)
+      next.connect(node, to: next.mainMixerNode, format: nil)
     }
     next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
 
     if wantCapture {
-      // Voice Processing on a USB composite (BRIO mic+camera) resets the
-      // UVC function: AVCaptureSession starts, then AVErrorDeviceWasDisconnected.
-      let captureIsBuiltIn =
-        selectedCaptureId?.localizedCaseInsensitiveContains("BuiltIn") == true
-      let enableVoiceProcessing = noiseCancelling && captureIsBuiltIn
-      if enableVoiceProcessing {
-        do {
-          try next.inputNode.setVoiceProcessingEnabled(true)
-          if next.inputNode.isVoiceProcessingBypassed {
-            next.inputNode.isVoiceProcessingBypassed = false
-          }
-          voiceProcessingEnabled = next.inputNode.isVoiceProcessingEnabled
-        } catch {
-          voiceProcessingEnabled = false
+      applyVoiceProcessing(on: next)
+    }
+    if wantPlayback, let node = player {
+      let hardware = next.outputNode.inputFormat(forBus: 0)
+      if hardware.sampleRate > 0, hardware.channelCount > 0 {
+        next.disconnectNodeOutput(node)
+        next.connect(node, to: next.mainMixerNode, format: hardware)
+        next.connect(next.mainMixerNode, to: next.outputNode, format: nil)
+        playbackFormat = hardware
+        if let source = AVAudioFormat(
+          commonFormat: .pcmFormatInt16,
+          sampleRate: edgeSampleRate,
+          channels: 1,
+          interleaved: true
+        ) {
+          playbackConverter = AVAudioConverter(from: source, to: hardware)
         }
-      } else if next.inputNode.isVoiceProcessingEnabled {
-        try? next.inputNode.setVoiceProcessingEnabled(false)
-        voiceProcessingEnabled = false
-      } else {
-        voiceProcessingEnabled = false
       }
+    }
 
-      let processedInput = next.inputNode.outputFormat(forBus: 0)
-      let tapChannels = processedInput.channelCount > 0 ? Int(processedInput.channelCount) : 1
-      let tapFormat = captureTapFormat(inputFormat: processedInput, channels: min(tapChannels, 1))
-      next.inputNode.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self] buffer, _ in
-        self?.emitCapture(buffer)
-      }
-      captureTapInstalled = true
+    if wantCapture {
+      try installCaptureTap(on: next.inputNode)
     }
-    try next.start()
+    next.prepare()
+    do {
+      try startEngineGraph(next)
+    } catch {
+      NSLog("fac.audio startEngineGraph failed \(error)")
+      stopGraph()
+      next.reset()
+      engine = nil
+      player = nil
+      playbackFormat = nil
+      playbackConverter = nil
+      captureConverter = nil
+      captureConverterFromRate = 0
+      captureConverterToRate = 0
+      throw error
+    }
     // start() restores the default output; rebind so the selected Endpoint sticks.
-    let boundOutput = bindDevice(to: next.outputNode, endpointId: selectedRenderId)
-    let boundInput: String?
+    _ = bindDevice(to: next.outputNode, endpointId: selectedRenderId)
     if selectedCaptureId != nil {
-      boundInput = bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
-    } else {
-      boundInput = nil
+      _ = bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
     }
-    NSLog(
-      "MacOSAudioEngine route input=%@ output=%@",
-      boundInput ?? "nil",
-      boundOutput ?? "nil"
-    )
-    engine = next
-    player = playerNode
-    playbackFormat = playerFormat
     queuedPlaybackFrames = 0
-    playerNode?.play()
+    scheduledPlaybackBuffers = 0
+    NSLog(
+      "fac.audio graph running capture=%@ render=%@ vp=%d",
+      selectedCaptureId ?? "",
+      selectedRenderId ?? "",
+      voiceProcessingEnabled ? 1 : 0
+    )
+  }
+
+  /// Fieldist `endSession` / `configureGraph` order: tap off, VP off,
+  /// player.stop, engine.stop. `reset()` only after stop, never on a live graph.
+  private func stopGraph() {
+    guard let engine else { return }
+    if captureTapInstalled {
+      engine.inputNode.removeTap(onBus: 0)
+      captureTapInstalled = false
+    }
+    if voiceProcessingEnabled || engine.inputNode.isVoiceProcessingEnabled {
+      try? engine.inputNode.setVoiceProcessingEnabled(false)
+    }
+    voiceProcessingEnabled = false
+    player?.stop()
+    var thrown: NSError?
+    _ = FacTry({
+      if engine.isRunning {
+        engine.stop()
+      }
+    }, &thrown)
+    captureTapFrames = 0
+    scheduledPlaybackBuffers = 0
   }
 
   private func teardownEngine() {
-    if let engine {
-      if engine.inputNode.isVoiceProcessingEnabled {
-        try? engine.inputNode.setVoiceProcessingEnabled(false)
-      }
-      if captureTapInstalled {
-        engine.inputNode.removeTap(onBus: 0)
-      }
-      player?.stop()
-      engine.stop()
-    }
+    stopGraph()
+    engine?.reset()
     engine = nil
     player = nil
     playbackFormat = nil
+    playbackConverter = nil
+    captureConverter = nil
+    captureConverterFromRate = 0
+    captureConverterToRate = 0
     captureTapInstalled = false
+    captureTapFrames = 0
+    scheduledPlaybackBuffers = 0
     voiceProcessingEnabled = false
   }
 
+  /// Voice Processing on a USB composite (BRIO mic+camera) resets the
+  /// UVC function: AVCaptureSession starts, then AVErrorDeviceWasDisconnected.
+  private func applyVoiceProcessing(on engine: AVAudioEngine) {
+    let captureIsBuiltIn =
+      selectedCaptureId?.localizedCaseInsensitiveContains("BuiltIn") == true
+    guard noiseCancelling, captureIsBuiltIn else {
+      if engine.inputNode.isVoiceProcessingEnabled {
+        try? engine.inputNode.setVoiceProcessingEnabled(false)
+      }
+      voiceProcessingEnabled = false
+      return
+    }
+    do {
+      try engine.inputNode.setVoiceProcessingEnabled(true)
+      if engine.inputNode.isVoiceProcessingBypassed {
+        engine.inputNode.isVoiceProcessingBypassed = false
+      }
+      voiceProcessingEnabled = engine.inputNode.isVoiceProcessingEnabled
+    } catch {
+      voiceProcessingEnabled = false
+      NSLog("fac.audio VoiceProcessingIO failed %@", error.localizedDescription)
+    }
+  }
+
+  /// `installTap` and `start()` throw NSException (-10868) on Join. Swift `do` cannot catch that.
+  private func startEngineGraph(_ engine: AVAudioEngine) throws {
+    var thrown: NSError?
+    var swiftError: Error?
+    let ok = FacTry({
+      do {
+        try engine.start()
+      } catch {
+        swiftError = error
+      }
+    }, &thrown)
+    if let swiftError {
+      throw swiftError
+    }
+    if !ok {
+      throw thrown ?? NSError(
+        domain: "fac.audio",
+        code: -10868,
+        userInfo: [NSLocalizedDescriptionKey: "AVAudioEngine.start NSException"]
+      )
+    }
+  }
+
+  private func installCaptureTap(on node: AVAudioInputNode) throws {
+    guard !captureTapInstalled else {
+      return
+    }
+    let processed = node.outputFormat(forBus: 0)
+    // Fieldist: 1ch tap only. A stereo fallback here is what Join logged as
+    // rate=44100 ch=2 then -10868 on engine.start().
+    let oneChannel = captureTapFormat(
+      inputFormat: processed,
+      channels: min(Int(processed.channelCount), 1)
+    )
+    let handler: (AVAudioPCMBuffer, AVAudioTime) -> Void = { [weak self] buffer, _ in
+      self?.emitCapture(buffer)
+    }
+    let candidates: [AVAudioFormat?] = [oneChannel, nil]
+    for tapFormat in candidates {
+      var thrown: NSError?
+      let ok = FacTry({
+        node.installTap(onBus: 0, bufferSize: 1024, format: tapFormat, block: handler)
+      }, &thrown)
+      if ok {
+        captureTapInstalled = true
+        NSLog(
+          "fac.audio tap installed rate=%.0f ch=%u",
+          tapFormat?.sampleRate ?? processed.sampleRate,
+          tapFormat?.channelCount ?? processed.channelCount
+        )
+        return
+      }
+    }
+    NSLog("fac.audio tap skipped")
+    throw NSError(
+      domain: "fac.audio",
+      code: -10868,
+      userInfo: [NSLocalizedDescriptionKey: "capture tap failed"]
+    )
+  }
+
   private func captureTapFormat(inputFormat: AVAudioFormat, channels: Int) -> AVAudioFormat? {
-    guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else { return nil }
+    guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
+      return nil
+    }
     if inputFormat.channelCount == AVAudioChannelCount(channels) {
       return inputFormat
     }
@@ -413,14 +610,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private func startedFormatMap() -> [String: Any] {
     var map: [String: Any] = ["status": "started"]
     if wantsCapture() {
-      let captureRate = engine?.inputNode.outputFormat(forBus: 0).sampleRate ?? 24_000
-      map["nativeCaptureFormat"] = formatMap(sampleRate: captureRate)
+      map["nativeCaptureFormat"] = formatMap(sampleRate: edgeSampleRate)
     }
     if wantsPlayback() {
-      let playRate = playbackFormat?.sampleRate
-        ?? engine?.inputNode.outputFormat(forBus: 0).sampleRate
-        ?? 24_000
-      map["nativePlaybackFormat"] = formatMap(sampleRate: playRate)
+      map["nativePlaybackFormat"] = formatMap(sampleRate: edgeSampleRate)
     }
     return map
   }
@@ -435,42 +628,148 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     ]
   }
 
-  private static func makePlaybackFormat(
-    inputFormat: AVAudioFormat,
-    mixerFormat: AVAudioFormat
-  ) throws -> AVAudioFormat {
-    let sampleRate = mixerFormat.sampleRate > 0 ? mixerFormat.sampleRate : inputFormat.sampleRate
-    let common = mixerFormat.sampleRate > 0 ? mixerFormat.commonFormat : inputFormat.commonFormat
-    guard let format = AVAudioFormat(
-      commonFormat: common,
-      sampleRate: sampleRate,
-      channels: 1,
-      interleaved: false
-    ) else {
-      throw AVError(.fileFormatNotRecognized)
-    }
-    return format
-  }
-
   private func emitCapture(_ buffer: AVAudioPCMBuffer) {
     if paused || !running { return }
-    guard let channel = buffer.int16ChannelData?[0] else {
-      if let floats = buffer.floatChannelData?[0] {
-        let count = Int(buffer.frameLength)
-        var bytes = [UInt8](repeating: 0, count: count * 2)
-        for i in 0..<count {
-          let clamped = max(-1.0, min(1.0, Double(floats[i])))
-          let sample = Int16((clamped * 32767.0).rounded())
-          bytes[i * 2] = UInt8(truncatingIfNeeded: sample)
-          bytes[i * 2 + 1] = UInt8(truncatingIfNeeded: sample >> 8)
-        }
-        emitCaptureBytes(FlutterStandardTypedData(bytes: Data(bytes)))
-      }
-      return
+    guard let pcm16 = pcm16MonoData(from: buffer) else { return }
+    guard let hub = resamplePcm16Mono(
+      pcm16,
+      fromRate: buffer.format.sampleRate,
+      toRate: edgeSampleRate
+    ) else { return }
+    emitCaptureBytes(FlutterStandardTypedData(bytes: hub))
+    captureTapFrames += 1
+    if captureTapFrames == 1 || captureTapFrames % 50 == 0 {
+      NSLog(
+        "fac.audio tap frames=%d bytes=%d sink=%d",
+        captureTapFrames,
+        hub.count,
+        captureSink == nil ? 0 : 1
+      )
     }
-    let count = Int(buffer.frameLength)
-    let data = Data(bytes: channel, count: count * 2)
-    emitCaptureBytes(FlutterStandardTypedData(bytes: data))
+  }
+
+  private func pcm16MonoData(from buffer: AVAudioPCMBuffer) -> Data? {
+    let frameCount = Int(buffer.frameLength)
+    guard frameCount > 0 else { return nil }
+    let planarOrMono = !buffer.format.isInterleaved || buffer.format.channelCount <= 1
+    if planarOrMono, let int16 = buffer.int16ChannelData?[0] {
+      return Data(bytes: int16, count: frameCount * MemoryLayout<Int16>.size)
+    }
+    if planarOrMono, let floats = buffer.floatChannelData?[0] {
+      var bytes = [UInt8](repeating: 0, count: frameCount * 2)
+      for index in 0..<frameCount {
+        writeInt16(int16Sample(floats: floats[index]), into: &bytes, at: index)
+      }
+      return Data(bytes)
+    }
+    let abl = buffer.audioBufferList.pointee
+    guard abl.mNumberBuffers > 0, let mData = abl.mBuffers.mData else { return nil }
+    let channels = max(Int(buffer.format.channelCount), 1)
+    let interleaved = buffer.format.isInterleaved
+    if buffer.format.commonFormat == .pcmFormatInt16 {
+      let src = mData.assumingMemoryBound(to: Int16.self)
+      if interleaved, channels > 1 {
+        var bytes = [UInt8](repeating: 0, count: frameCount * 2)
+        for index in 0..<frameCount {
+          writeInt16(src[index * channels], into: &bytes, at: index)
+        }
+        return Data(bytes)
+      }
+      return Data(bytes: src, count: frameCount * MemoryLayout<Int16>.size)
+    }
+    if buffer.format.commonFormat == .pcmFormatFloat32 {
+      let src = mData.assumingMemoryBound(to: Float.self)
+      var bytes = [UInt8](repeating: 0, count: frameCount * 2)
+      for index in 0..<frameCount {
+        let sample = interleaved && channels > 1 ? src[index * channels] : src[index]
+        writeInt16(int16Sample(floats: sample), into: &bytes, at: index)
+      }
+      return Data(bytes)
+    }
+    return nil
+  }
+
+  private func resamplePcm16Mono(_ data: Data, fromRate: Double, toRate: Double) -> Data? {
+    guard fromRate > 0, toRate > 0 else { return nil }
+    if abs(fromRate - toRate) < 0.5 {
+      return data
+    }
+    guard let sourceFormat = AVAudioFormat(
+      commonFormat: .pcmFormatInt16,
+      sampleRate: fromRate,
+      channels: 1,
+      interleaved: false
+    ),
+    let destinationFormat = AVAudioFormat(
+      commonFormat: .pcmFormatInt16,
+      sampleRate: toRate,
+      channels: 1,
+      interleaved: false
+    )
+    else { return nil }
+    let converter: AVAudioConverter
+    if let existing = captureConverter,
+       abs(captureConverterFromRate - fromRate) < 0.5,
+       abs(captureConverterToRate - toRate) < 0.5
+    {
+      converter = existing
+    } else if let created = AVAudioConverter(from: sourceFormat, to: destinationFormat) {
+      captureConverter = created
+      captureConverterFromRate = fromRate
+      captureConverterToRate = toRate
+      converter = created
+    } else {
+      return nil
+    }
+    let sourceFrames = AVAudioFrameCount(data.count / MemoryLayout<Int16>.size)
+    guard let sourceBuffer = AVAudioPCMBuffer(
+      pcmFormat: sourceFormat,
+      frameCapacity: sourceFrames
+    ) else { return nil }
+    sourceBuffer.frameLength = sourceFrames
+    data.withUnsafeBytes { raw in
+      if let src = raw.bindMemory(to: Int16.self).baseAddress,
+         let dst = sourceBuffer.int16ChannelData?[0]
+      {
+        dst.update(from: src, count: Int(sourceFrames))
+      }
+    }
+    let capacity = AVAudioFrameCount(
+      (Double(sourceFrames) * toRate / fromRate).rounded(.up)
+    ) + 32
+    guard let destinationBuffer = AVAudioPCMBuffer(
+      pcmFormat: destinationFormat,
+      frameCapacity: capacity
+    ) else { return nil }
+    var suppliedInput = false
+    var conversionError: NSError?
+    converter.convert(to: destinationBuffer, error: &conversionError) { _, status in
+      if suppliedInput {
+        status.pointee = .noDataNow
+        return nil
+      }
+      suppliedInput = true
+      status.pointee = .haveData
+      return sourceBuffer
+    }
+    guard conversionError == nil,
+          destinationBuffer.frameLength > 0,
+          let samples = destinationBuffer.int16ChannelData?[0]
+    else { return nil }
+    return Data(
+      bytes: samples,
+      count: Int(destinationBuffer.frameLength) * MemoryLayout<Int16>.size
+    )
+  }
+
+  private func int16Sample(floats value: Float) -> Int16 {
+    let clamped = max(-1.0, min(1.0, Double(value)))
+    return Int16((clamped * 32767.0).rounded())
+  }
+
+  private func writeInt16(_ sample: Int16, into bytes: inout [UInt8], at index: Int) {
+    bytes[index * 2] = UInt8(truncatingIfNeeded: sample)
+    bytes[index * 2 + 1] = UInt8(truncatingIfNeeded: sample >> 8)
   }
 
   private func emitSilenceFrame() {
@@ -488,56 +787,114 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func play(_ data: FlutterStandardTypedData?) {
-    guard let data, let player, running, !paused else { return }
-    guard let format = playbackFormat else { return }
-    let frames = UInt32(data.data.count / 2)
-    guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
-    buffer.frameLength = frames
-    if let dest = buffer.int16ChannelData?[0] {
-      data.data.copyBytes(to: UnsafeMutableBufferPointer(start: dest, count: Int(frames)))
-    } else if let dest = buffer.floatChannelData?[0] {
-      let samples = data.data.withUnsafeBytes { raw -> [Int16] in
-        Array(raw.bindMemory(to: Int16.self))
-      }
-      for i in 0..<Int(frames) {
-        dest[i] = Float(samples[i]) / 32768.0
+    guard let data, let player, running, !paused, !isRebuildingGraph else { return }
+    guard engine?.isRunning == true else { return }
+    guard scheduledPlaybackBuffers < maxScheduledPlaybackBuffers else { return }
+    guard let destinationFormat = playbackFormat, let playbackConverter else { return }
+    guard let sourceFormat = AVAudioFormat(
+      commonFormat: .pcmFormatInt16,
+      sampleRate: edgeSampleRate,
+      channels: 1,
+      interleaved: true
+    ) else { return }
+    let frameCount = AVAudioFrameCount(data.data.count / MemoryLayout<Int16>.size)
+    guard frameCount > 0,
+          let inputBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount)
+    else { return }
+    inputBuffer.frameLength = frameCount
+    data.data.withUnsafeBytes { raw in
+      if let source = raw.baseAddress, let destination = inputBuffer.int16ChannelData?[0] {
+        memcpy(destination, source, data.data.count)
       }
     }
-    let at: AVAudioTime?
-    if let last = player.lastRenderTime {
-      at = AVAudioTime(
-        sampleTime: last.sampleTime + queuedPlaybackFrames,
-        atRate: format.sampleRate
-      )
-    } else {
-      at = nil
+    let capacity = AVAudioFrameCount(
+      (Double(frameCount) * destinationFormat.sampleRate / edgeSampleRate).rounded(.up)
+    ) + 16
+    guard let outputBuffer = AVAudioPCMBuffer(
+      pcmFormat: destinationFormat,
+      frameCapacity: capacity
+    ) else { return }
+    var consumed = false
+    var conversionError: NSError?
+    playbackConverter.convert(to: outputBuffer, error: &conversionError) { _, status in
+      if consumed {
+        status.pointee = .noDataNow
+        return nil
+      }
+      consumed = true
+      status.pointee = .haveData
+      return inputBuffer
     }
-    player.scheduleBuffer(buffer, at: at, options: [], completionHandler: nil)
-    queuedPlaybackFrames += AVAudioFramePosition(frames)
+    guard conversionError == nil, outputBuffer.frameLength > 0 else { return }
+    scheduledPlaybackBuffers += 1
+    player.scheduleBuffer(outputBuffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+      self?.audioQueue.async {
+        guard let self else { return }
+        self.scheduledPlaybackBuffers = max(0, self.scheduledPlaybackBuffers - 1)
+      }
+    }
+    // Fieldist: player.play() on the method-channel thread after an IO cycle.
+    // Calling it during configureGraph throws "player did not see an IO cycle".
+    if !player.isPlaying {
+      var thrown: NSError?
+      _ = FacTry({
+        player.play()
+      }, &thrown)
+    }
   }
 
   private func flushPlayback() {
     player?.stop()
     queuedPlaybackFrames = 0
-    if running, !paused {
-      player?.play()
-    }
+    scheduledPlaybackBuffers = 0
   }
 
-  private func selectEndpoints(captureId: String?, renderId: String?) {
-    if (captureId == nil || captureId == selectedCaptureId),
-       (renderId == nil || renderId == selectedRenderId)
-    {
+  private func selectEndpoints(
+    captureId: String?,
+    renderId: String?,
+    result: @escaping FlutterResult
+  ) {
+    let sameCapture = captureId == nil || captureId == selectedCaptureId
+    let sameRender = renderId == nil || renderId == selectedRenderId
+    if running, sameCapture, sameRender {
+      result(startedFormatMap())
       return
     }
     if let captureId { selectedCaptureId = captureId }
     if let renderId { selectedRenderId = renderId }
-    do {
-      try startEngine()
-      emitRoute()
-      emitIsolation()
-    } catch {
-      emitPath(alive: false)
+    guard running else {
+      result(startedFormatMap())
+      return
+    }
+    let recreate = engine == nil
+    audioQueue.async { [weak self] in
+      guard let self else { return }
+      do {
+        try self.startEngine(recreate: recreate)
+      } catch {
+        if !recreate {
+          do {
+            try self.startEngine(recreate: true)
+          } catch {
+            DispatchQueue.main.async {
+              self.emitPath(alive: false)
+              result(self.startedFormatMap())
+            }
+            return
+          }
+        } else {
+          DispatchQueue.main.async {
+            self.emitPath(alive: false)
+            result(self.startedFormatMap())
+          }
+          return
+        }
+      }
+      DispatchQueue.main.async {
+        self.emitRoute()
+        self.emitIsolation()
+        result(self.startedFormatMap())
+      }
     }
   }
 
@@ -549,6 +906,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       let name = stringProperty(id, kAudioObjectPropertyName) ?? "Endpoint"
       let uid = stringProperty(id, kAudioDevicePropertyDeviceUID) ?? "\(id)"
       let transport = transportName(id)
+      let hidden = boolProperty(id, kAudioDevicePropertyIsHidden)
+      if !includeInCatalog(name: name, transport: transport, hidden: hidden) {
+        continue
+      }
       let route = routeClass(name: name, transport: transport)
       let pairId = pairIdentity(
         route: route,
@@ -602,7 +963,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       "routeClass": route,
       "isCapture": capture,
       "pairId": pairId,
-      "osDefault": osDefault,
+      "osDefault": NSNumber(value: osDefault),
       "capabilities": [
         "formFactor": "unknown",
         "aec": false,
@@ -751,6 +1112,50 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     ]
     return String(bytes: scalars, encoding: .ascii)?
       .trimmingCharacters(in: .whitespaces) ?? ""
+  }
+
+  private func includeInCatalog(name: String, transport: String, hidden: Bool) -> Bool {
+    if hidden {
+      return false
+    }
+    let t = transport.lowercased()
+    if t == "virt" || t == "grup" || t == "auto" || t == "fgrp" {
+      return false
+    }
+    let n = name.lowercased()
+    let blocked = [
+      "microsoft teams audio",
+      "caddefaultdeviceaggregate",
+      "zoomaudio",
+      "blackhole",
+      "soundflower",
+      "vb-audio",
+      "multi-output device",
+    ]
+    for needle in blocked where n.contains(needle) {
+      return false
+    }
+    if n.contains("loopback") {
+      return false
+    }
+    return true
+  }
+
+  private func boolProperty(
+    _ id: AudioDeviceID,
+    _ selector: AudioObjectPropertySelector
+  ) -> Bool {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    var value: UInt32 = 0
+    var size = UInt32(MemoryLayout<UInt32>.size)
+    guard AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr else {
+      return false
+    }
+    return value != 0
   }
 
   private func routeClass(name: String, transport: String) -> String {

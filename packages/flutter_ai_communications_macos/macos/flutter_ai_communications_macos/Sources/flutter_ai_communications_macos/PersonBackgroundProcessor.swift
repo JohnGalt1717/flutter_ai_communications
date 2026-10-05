@@ -11,15 +11,23 @@ final class PersonBackgroundProcessor {
     case replace
   }
 
-  private let context = CIContext(options: [.cacheIntermediates: false])
+  private let context = CIContext(options: [
+    .cacheIntermediates: false,
+    .workingColorSpace: NSNull(),
+  ])
   private let segmentationRequest: VNGeneratePersonSegmentationRequest = {
     let request = VNGeneratePersonSegmentationRequest()
     request.qualityLevel = .balanced
     request.outputPixelFormat = kCVPixelFormatType_OneComponent8
     return request
   }()
+  private let humanRequest = VNDetectHumanRectanglesRequest()
   private var kind: Kind = .none
   private var still: CIImage?
+  private var lastMask: CIImage?
+  private var ring: [CVPixelBuffer] = []
+  private var ringIndex = 0
+  private var lastOutput: CVPixelBuffer?
 
   func apply(_ args: [String: Any]) -> String {
     let kindName = args["kind"] as? String ?? "none"
@@ -27,6 +35,8 @@ final class PersonBackgroundProcessor {
     case "none":
       kind = .none
       still = nil
+      lastMask = nil
+      lastOutput = nil
       return "ready"
     case "blur":
       let intensity = intArg(args, "intensity", 50)
@@ -69,20 +79,44 @@ final class PersonBackgroundProcessor {
     case .none:
       return buffer
     case .blur(let intensity):
-      return composite(buffer, background: blurred(buffer, intensity: intensity)) ?? buffer
+      guard let background = blurred(buffer, intensity: intensity) else {
+        return lastOutput ?? buffer
+      }
+      if let mask = personMask(buffer) {
+        let out = composite(buffer, background: background, mask: mask)
+        lastOutput = out ?? lastOutput
+        return out ?? lastOutput ?? buffer
+      }
+      return lastOutput ?? buffer
     case .replace:
-      return composite(buffer, background: scaledStill(to: buffer)) ?? buffer
+      guard let background = scaledStill(to: buffer) else {
+        return lastOutput ?? buffer
+      }
+      if let mask = personMask(buffer) {
+        let out = composite(buffer, background: background, mask: mask)
+        lastOutput = out ?? lastOutput
+        return out ?? lastOutput ?? buffer
+      }
+      return lastOutput ?? buffer
     }
   }
 
   private func blurred(_ buffer: CVPixelBuffer, intensity: Int) -> CIImage? {
     let image = CIImage(cvPixelBuffer: buffer)
-    // Some (50) → 20; Lots (100) → 40. The previous *20 max looked like Some.
-    let radius = Double(intensity) / 100.0 * 40.0
+    let radius = Double(intensity) / 100.0 * 18.0
     if radius <= 0.5 {
       return image
     }
-    return image.clampedToExtent().applyingGaussianBlur(sigma: radius).cropped(to: image.extent)
+    let extent = image.extent
+    let scale: CGFloat = 0.4
+    let small = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    let blurred = small
+      .clampedToExtent()
+      .applyingGaussianBlur(sigma: radius)
+      .cropped(to: small.extent)
+    return blurred
+      .transformed(by: CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
+      .cropped(to: extent)
   }
 
   private func scaledStill(to buffer: CVPixelBuffer) -> CIImage? {
@@ -98,17 +132,13 @@ final class PersonBackgroundProcessor {
       .cropped(to: target)
   }
 
-  private func composite(_ buffer: CVPixelBuffer, background: CIImage?) -> CVPixelBuffer? {
-    guard let background, let mask = personMask(buffer) else {
-      return nil
-    }
+  private func composite(
+    _ buffer: CVPixelBuffer,
+    background: CIImage,
+    mask: CIImage
+  ) -> CVPixelBuffer? {
     let person = CIImage(cvPixelBuffer: buffer)
-    let scaledMask = mask.transformed(
-      by: CGAffineTransform(
-        scaleX: person.extent.width / max(mask.extent.width, 1),
-        y: person.extent.height / max(mask.extent.height, 1)
-      )
-    )
+    let scaledMask = preparedMask(mask, to: person.extent)
     let output = person.applyingFilter(
       "CIBlendWithMask",
       parameters: [
@@ -116,35 +146,122 @@ final class PersonBackgroundProcessor {
         kCIInputMaskImageKey: scaledMask,
       ]
     )
-    var dst: CVPixelBuffer?
-    CVPixelBufferCreate(
-      kCFAllocatorDefault,
-      CVPixelBufferGetWidth(buffer),
-      CVPixelBufferGetHeight(buffer),
-      kCVPixelFormatType_32BGRA,
-      [
-        kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-        kCVPixelBufferMetalCompatibilityKey: true,
-      ] as CFDictionary,
-      &dst
-    )
-    guard let dst else {
+    return render(output, like: buffer)
+  }
+
+  private func render(_ image: CIImage, like buffer: CVPixelBuffer) -> CVPixelBuffer? {
+    guard let dst = nextDst(like: buffer) else {
       return nil
     }
-    context.render(output, to: dst)
+    context.render(image, to: dst)
     return dst
+  }
+
+  private func nextDst(like buffer: CVPixelBuffer) -> CVPixelBuffer? {
+    let width = CVPixelBufferGetWidth(buffer)
+    let height = CVPixelBufferGetHeight(buffer)
+    if ring.count == 2 {
+      let first = ring[0]
+      if CVPixelBufferGetWidth(first) != width || CVPixelBufferGetHeight(first) != height {
+        ring.removeAll()
+      }
+    }
+    while ring.count < 2 {
+      var dst: CVPixelBuffer?
+      CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        width,
+        height,
+        kCVPixelFormatType_32BGRA,
+        [
+          kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+          kCVPixelBufferMetalCompatibilityKey: true,
+        ] as CFDictionary,
+        &dst
+      )
+      guard let dst else {
+        return nil
+      }
+      ring.append(dst)
+    }
+    let dst = ring[ringIndex % ring.count]
+    ringIndex += 1
+    return dst
+  }
+
+  private func preparedMask(_ mask: CIImage, to extent: CGRect) -> CIImage {
+    let confident = mask.applyingFilter(
+      "CIGammaAdjust",
+      parameters: ["inputPower": 2.4]
+    )
+    let cleaned = confident
+      .applyingFilter("CIMorphologyMinimum", parameters: [kCIInputRadiusKey: 2.5])
+      .applyingFilter("CIMorphologyMaximum", parameters: [kCIInputRadiusKey: 3.5])
+    let scaled = cleaned.transformed(
+      by: CGAffineTransform(
+        scaleX: extent.width / max(cleaned.extent.width, 1),
+        y: extent.height / max(cleaned.extent.height, 1)
+      )
+    )
+    return scaled
+      .clampedToExtent()
+      .applyingGaussianBlur(sigma: 3)
+      .cropped(to: extent)
   }
 
   private func personMask(_ buffer: CVPixelBuffer) -> CIImage? {
     let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
     do {
-      try handler.perform([segmentationRequest])
+      try handler.perform([segmentationRequest, humanRequest])
       guard let pixel = segmentationRequest.results?.first?.pixelBuffer else {
-        return nil
+        return lastMask
       }
-      return CIImage(cvPixelBuffer: pixel)
+      var mask = CIImage(cvPixelBuffer: pixel)
+      let width = CGFloat(CVPixelBufferGetWidth(buffer))
+      let height = CGFloat(CVPixelBufferGetHeight(buffer))
+      if let gated = clipToHumans(mask, imageWidth: width, imageHeight: height) {
+        mask = gated
+      }
+      lastMask = mask
+      return mask
     } catch {
-      return nil
+      return lastMask
     }
+  }
+
+  private func clipToHumans(
+    _ mask: CIImage,
+    imageWidth: CGFloat,
+    imageHeight: CGFloat
+  ) -> CIImage? {
+    let humans = humanRequest.results ?? []
+    guard !humans.isEmpty else {
+      return mask
+    }
+    let maskW = mask.extent.width
+    let maskH = mask.extent.height
+    var union = CGRect.null
+    for human in humans {
+      var box = VNImageRectForNormalizedRect(
+        human.boundingBox,
+        Int(maskW.rounded()),
+        Int(maskH.rounded())
+      )
+      box = box.insetBy(dx: -box.width * 0.06, dy: -box.height * 0.1)
+      union = union.union(box)
+    }
+    union = union.intersection(mask.extent)
+    guard !union.isNull, union.width > 2, union.height > 2 else {
+      return mask
+    }
+    let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: 1))
+      .cropped(to: union)
+    let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1))
+      .cropped(to: mask.extent)
+    let gate = white.composited(over: black)
+    return mask.applyingFilter(
+      "CIMultiplyCompositing",
+      parameters: [kCIInputBackgroundImageKey: gate]
+    )
   }
 }

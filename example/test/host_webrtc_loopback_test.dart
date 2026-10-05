@@ -67,6 +67,8 @@ void main() {
     await pumpMeeting(tester);
     expect(loopback.lastTrack, isNotNull);
 
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('mute-video')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));

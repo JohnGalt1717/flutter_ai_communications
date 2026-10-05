@@ -13,7 +13,7 @@ The public module that creates and drives at most one Session and at most one Ca
 _Avoid_: Audio manager, engine, plugin (the manager is not a plugin), recorder
 
 **Endpoint**:
-One capture or render audio device the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; the catalog does not shrink to a lowest-common-denominator record.
+One capture or render audio device the OS exposes, with the richest metadata the platform can give. Missing fields are null and unused; the catalog omits software virtual and aggregate devices that are not a physical capture or render port.
 _Avoid_: device (alone), route (alone), input, output (as the type name), camera (that is Camera Endpoint)
 
 **Pair**:

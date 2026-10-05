@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
+import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -219,17 +220,16 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.scrollUntilVisible(find.byKey(const Key('self-view')), 80);
     expect(find.byKey(const Key('self-view')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), 80);
     expect(find.byKey(const Key('camera-off')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
     expect(find.byKey(const Key('camera-front')), findsOneWidget);
     expect(find.text('unspecified'), findsNothing);
     expect(find.text('Front'), findsWidgets);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-back')), 80);
     expect(find.byKey(const Key('camera-back')), findsOneWidget);
     expect(find.text('Back'), findsWidgets);
+    expect(find.byKey(const Key('camera-none')), findsOneWidget);
     await manager.session?.stop();
     await tester.pump(Duration.zero);
   });
@@ -268,7 +268,51 @@ void main() {
     },
   );
 
+  testWidgets('auto lobby start rejects a second lobby-enter', (tester) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    expect(manager.session, isNotNull);
+    final first = manager.session;
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
+    expect(identical(manager.session, first), isTrue);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
+
+  testWidgets('meeting EchoTransport does not replay live capture', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('lobby-join')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const Key('meeting')), findsOneWidget);
+
+    platform.played.clear();
+    platform.feedCapture(FixturePcm.voiceBand24k());
+    await tester.pump();
+    expect(platform.played, isEmpty);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
+
   testWidgets('Join opens a loopback meeting with in-call bar', (tester) async {
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(ExampleApp(manager: manager));
     await tester.pump();
     await tester.pump();
@@ -296,6 +340,9 @@ void main() {
     await tester.pump();
     expect(manager.session?.isMuted, isTrue);
 
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const Key('mute-video')));
     await tester.pump();
     expect(manager.session?.isVideoMuted, isTrue);
@@ -343,18 +390,14 @@ void main() {
     await tester.tap(find.byKey(const Key('mute')));
     await tester.pump();
     expect(manager.session?.isMuted, isTrue);
-    expect(find.text('Unmute'), findsOneWidget);
+    expect(find.byTooltip('Unmute'), findsOneWidget);
 
+    await tester.tap(find.byKey(const Key('audio-pick')));
+    await tester.pump();
     final handset = find.byKey(
       const Key('endpoint-handset-out'),
       skipOffstage: false,
     );
-    await tester.scrollUntilVisible(
-      handset,
-      400,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pump();
     await tester.tap(handset);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -367,10 +410,7 @@ void main() {
     expect(
       tester
           .widget<ListTile>(
-            find.byKey(
-              const Key('endpoint-handset-out'),
-              skipOffstage: false,
-            ),
+            find.byKey(const Key('endpoint-handset-out'), skipOffstage: false),
           )
           .selected,
       isTrue,
@@ -380,12 +420,6 @@ void main() {
       const Key('endpoint-speaker-in'),
       skipOffstage: false,
     );
-    await tester.scrollUntilVisible(
-      speaker,
-      400,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pump();
     await tester.tap(speaker);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -395,10 +429,7 @@ void main() {
     expect(manager.session?.diagnostics.applied.captureId, 'speaker-in');
     expect(manager.session?.diagnostics.observed.captureId, 'speaker-in');
     expect(manager.session?.isMuted, isTrue);
-    expect(
-      tester.widget<ListTile>(speaker).selected,
-      isTrue,
-    );
+    expect(tester.widget<ListTile>(speaker).selected, isTrue);
 
     await tester.tap(find.byKey(const Key('lobby-join')));
     await tester.pump();

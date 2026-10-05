@@ -13,7 +13,9 @@ void main() {
   testWidgets('live Session echoes fixture byte for byte after select', (
     tester,
   ) async {
-    final loopback = LoopbackCommunicationsPlatform.wrapRegistered();
+    final loopback = LoopbackCommunicationsPlatform.wrapRegistered(
+      includeInCatalog: true,
+    );
     addTearDown(loopback.dispose);
 
     final manager = CommunicationsManager();

@@ -32,7 +32,7 @@ void main() {
   });
 
   Future<void> pumpHarness(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.physicalSize = const Size(800, 8000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -50,21 +50,29 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   }
 
-  testWidgets('idle camera tap writes Camera preference and start binds it', (
+  testWidgets('SessionPage starts in the lobby Session', (tester) async {
+    await pumpHarness(tester);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session, isNotNull);
+    expect(manager.session?.purpose, 'lobby');
+    expect(find.byKey(const Key('lobby')), findsOneWidget);
+    expect(find.byKey(const Key('meeting')), findsNothing);
+    expect(find.byKey(const Key('lobby-join')), findsOneWidget);
+    expect(find.byKey(const Key('visualizer')), findsOneWidget);
+  });
+
+  testWidgets('lobby audio picker dismisses when tapping outside', (
     tester,
   ) async {
     await pumpHarness(tester);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-back')), 80);
-    await tester.tap(find.byKey(const Key('camera-back')));
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('audio-pick')));
     await tester.pump();
+    expect(find.byKey(const Key('audio-panel')), findsOneWidget);
 
-    expect(store.cameras.entries.map((entry) => entry.id), ['back']);
-    expect(store.endpoints.isEmpty, isTrue);
-    expect(manager.boundCameraPreference.entries.single.id, 'back');
-
-    await tester.scrollUntilVisible(find.byKey(const Key('lobby-enter')), -80);
-    await enterLobby(tester);
-    expect(manager.session?.selectedCameraId, 'back');
+    await tester.tap(find.byKey(const Key('flyout-dismiss')));
+    await tester.pump();
+    expect(find.byKey(const Key('audio-panel')), findsNothing);
   });
 
   testWidgets('mid-session camera select does not write Camera preference', (
@@ -75,7 +83,8 @@ void main() {
     await enterLobby(tester);
     expect(manager.session?.selectedCameraId, 'front');
 
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-back')), 80);
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('camera-back')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -102,7 +111,7 @@ void main() {
   });
 
   testWidgets(
-    'idle Endpoint highlight is the first stored capture and render',
+    'stored Endpoint preference is selected when the lobby Session starts',
     (tester) async {
       store.preferEndpoint(
         FakeCommunicationsPlatform.defaultCatalog.firstWhere(
@@ -117,10 +126,11 @@ void main() {
         FakeCommunicationsPlatform.defaultCatalog,
       );
       await pumpHarness(tester);
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('endpoint-handset-out')),
-        80,
-      );
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(manager.session?.selectedCaptureId, 'handset-in');
+      expect(manager.session?.selectedRenderId, 'handset-out');
+      await tester.tap(find.byKey(const Key('audio-pick')));
+      await tester.pump();
       expect(
         tester
             .widget<ListTile>(find.byKey(const Key('endpoint-handset-out')))
@@ -143,29 +153,19 @@ void main() {
   );
 
   testWidgets(
-    'idle Endpoint tap writes Endpoint preference and start binds it',
+    'lobby Endpoint tap is Explicit selection and does not write preference',
     (tester) async {
       await pumpHarness(tester);
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('endpoint-speaker-in')),
-        80,
-      );
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.tap(find.byKey(const Key('audio-pick')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('endpoint-speaker-in')));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
 
-      expect(store.endpoints.entries.single.renderId, 'speaker-out');
-      expect(store.endpoints.entries.single.captures.single.id, 'speaker-in');
-      expect(store.cameras.isEmpty, isTrue);
-      expect(manager.boundPreference.entries.single.renderId, 'speaker-out');
-
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('lobby-enter')),
-        -80,
-      );
-      await enterLobby(tester);
       expect(manager.session?.selectedCaptureId, 'speaker-in');
-      expect(manager.session?.selectedRenderId, 'speaker-out');
-      expect(manager.session?.diagnostics.preferenceControlled, isTrue);
+      expect(store.endpoints.isEmpty, isTrue);
+      expect(manager.session?.diagnostics.preferenceControlled, isFalse);
     },
   );
 
@@ -182,10 +182,8 @@ void main() {
       await enterLobby(tester);
       expect(manager.session?.selectedCaptureId, 'airpods-in');
 
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('endpoint-speaker-in')),
-        80,
-      );
+      await tester.tap(find.byKey(const Key('audio-pick')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('endpoint-speaker-in')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1));
@@ -201,10 +199,11 @@ void main() {
     store.preferCamera('back');
     await pumpHarness(tester);
     await enterLobby(tester);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), 80);
     await tester.tap(find.byKey(const Key('camera-off')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('camera-preview')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -219,13 +218,13 @@ void main() {
     store.preferCamera('back');
     await pumpHarness(tester);
     await enterLobby(tester);
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-front')), 80);
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
     await tester.tap(find.byKey(const Key('camera-front')));
     await tester.pump();
     expect(manager.session?.selectedCameraId, 'front');
     expect(store.cameras.entries.single.id, 'back');
 
-    await tester.scrollUntilVisible(find.byKey(const Key('camera-off')), -80);
     await tester.tap(find.byKey(const Key('camera-off')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
@@ -237,12 +236,89 @@ void main() {
     expect(store.cameras.entries.single.id, 'back');
   });
 
+  testWidgets('camera-none stops an active Camera preview', (tester) async {
+    await pumpHarness(tester);
+    await enterLobby(tester);
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('camera-preview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.cameraPreview, isNotNull);
+
+    await tester.tap(find.byKey(const Key('camera-none')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.cameraPreview, isNull);
+    expect(manager.session?.isCameraEnabled, isFalse);
+  });
+
+  testWidgets('camera resume applies the preview camera to the Session', (
+    tester,
+  ) async {
+    await pumpHarness(tester);
+    await enterLobby(tester);
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('camera-preview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-back')));
+    await tester.pump();
+    expect(manager.cameraPreview?.selectedCameraId, 'back');
+
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.isCameraEnabled, isTrue);
+    expect(manager.session?.selectedCameraId, 'back');
+    expect(manager.cameraPreview, isNull);
+  });
+
+  testWidgets('edge format keys restart the Session at 24 kHz and 16 kHz', (
+    tester,
+  ) async {
+    await pumpHarness(tester);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.captureFormat, AudioFormat.pcm16le24k);
+    expect(manager.session?.playbackFormat, AudioFormat.pcm16le24k);
+    expect(find.byKey(const Key('edge-format-24k')), findsOneWidget);
+    expect(find.byKey(const Key('edge-format-16k')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('edge-format-16k')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      manager.session?.captureFormat,
+      const AudioFormat.pcm16le(sampleRate: 16000),
+    );
+    expect(
+      manager.session?.playbackFormat,
+      const AudioFormat.pcm16le(sampleRate: 16000),
+    );
+    expect(manager.session?.purpose, 'lobby');
+
+    await tester.tap(find.byKey(const Key('edge-format-24k')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.captureFormat, AudioFormat.pcm16le24k);
+    expect(manager.session?.playbackFormat, AudioFormat.pcm16le24k);
+  });
+
   testWidgets('editor Apply persists Endpoint preference', (tester) async {
     await pumpHarness(tester);
-    await tester.scrollUntilVisible(
+    await tester.ensureVisible(
       find.byKey(const Key('pref-row-enable-airpods-out')),
-      80,
     );
+    await tester.pump();
     await tester.tap(find.byKey(const Key('pref-row-enable-airpods-out')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('pref-apply')));
