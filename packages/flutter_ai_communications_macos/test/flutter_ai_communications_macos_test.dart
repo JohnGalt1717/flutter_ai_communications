@@ -207,6 +207,10 @@ void main() {
       isFalse,
     );
     expect(
+      macosIsCatalogEndpoint(name: 'Device Aggregate', transport: 'fgrp'),
+      isFalse,
+    );
+    expect(
       macosIsCatalogEndpoint(name: 'Device Aggregate', transport: 'auto'),
       isFalse,
     );

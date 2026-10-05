@@ -182,8 +182,66 @@ class AndroidCapturePolicyTest {
     fun phoneModelUsbRowsStayOutOfTheCatalog() {
         assertTrue(AndroidCapturePolicy.isSelfNamedUsb(11, "SM-A176U1", "SM-A176U1"))
         assertTrue(AndroidCapturePolicy.isSelfNamedUsb(22, "SM A176U1", "SM-A176U1"))
+        assertTrue(AndroidCapturePolicy.isSelfNamedUsb(11, "SM-A176U1", "SM A176U1"))
         assertFalse(AndroidCapturePolicy.isSelfNamedUsb(11, "USB-C Headset", "SM-A176U1"))
         assertFalse(AndroidCapturePolicy.isSelfNamedUsb(3, "SM-A176U1", "SM-A176U1"))
+    }
+
+    @Test
+    fun catalogPairKeyPrefersAddressThenProductName() {
+        assertEquals("aa:bb", AndroidCapturePolicy.catalogPairKey("aa:bb", "Headset", 9))
+        assertEquals("Headset", AndroidCapturePolicy.catalogPairKey("", "Headset", 9))
+        assertEquals("Headset", AndroidCapturePolicy.catalogPairKey(null, "Headset", 9))
+        assertEquals("9", AndroidCapturePolicy.catalogPairKey("", "", 9))
+    }
+
+    @Test
+    fun physicalOsDefaultMarksRenderByIdAndCaptureByPairKey() {
+        assertTrue(
+            AndroidCapturePolicy.isPhysicalOsDefault(
+                true,
+                42,
+                "aa:bb",
+                42,
+                "aa:bb",
+            ),
+        )
+        assertTrue(
+            AndroidCapturePolicy.isPhysicalOsDefault(
+                true,
+                7,
+                "aa:bb",
+                42,
+                "aa:bb",
+            ),
+        )
+        assertFalse(
+            AndroidCapturePolicy.isPhysicalOsDefault(
+                true,
+                7,
+                "cc:dd",
+                42,
+                "aa:bb",
+            ),
+        )
+        assertFalse(
+            AndroidCapturePolicy.isPhysicalOsDefault(
+                true,
+                7,
+                "mic-7",
+                42,
+                "sink-42",
+            ),
+        )
+        assertFalse(
+            AndroidCapturePolicy.isPhysicalOsDefault(
+                false,
+                42,
+                "aa:bb",
+                42,
+                "aa:bb",
+            ),
+        )
     }
 
     @Test

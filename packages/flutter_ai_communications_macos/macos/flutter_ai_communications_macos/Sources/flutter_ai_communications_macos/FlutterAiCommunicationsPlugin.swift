@@ -629,7 +629,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func emitCapture(_ buffer: AVAudioPCMBuffer) {
-    if paused { return }
+    if paused || !running { return }
     guard let pcm16 = pcm16MonoData(from: buffer) else { return }
     guard let hub = resamplePcm16Mono(
       pcm16,
@@ -1119,7 +1119,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       return false
     }
     let t = transport.lowercased()
-    if t == "virt" || t == "grup" || t == "auto" {
+    if t == "virt" || t == "grup" || t == "auto" || t == "fgrp" {
       return false
     }
     let n = name.lowercased()

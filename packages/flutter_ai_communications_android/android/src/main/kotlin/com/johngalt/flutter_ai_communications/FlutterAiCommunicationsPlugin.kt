@@ -924,7 +924,15 @@ class FlutterAiCommunicationsPlugin :
                 "speakerphone",
                 osDefault = speakerDefault,
             )
-        val defaultId = communication?.id
+        val communicationId = communication?.id
+        val communicationPairKey =
+            communication?.let {
+                AndroidCapturePolicy.catalogPairKey(
+                    it.address,
+                    it.productName?.toString(),
+                    it.id,
+                )
+            }
         val physicalDefault = AndroidCapturePolicy.syntheticOsDefault(communication?.type) == null
         val model = Build.MODEL.orEmpty()
         val inputs =
@@ -953,7 +961,15 @@ class FlutterAiCommunicationsPlugin :
                 .map { bluetoothCollapseKey(it) }
                 .toSet()
         for (device in inputs) {
-            items += catalogEndpoint(device, true, bluetooth, defaultId, physicalDefault)
+            items +=
+                catalogEndpoint(
+                    device,
+                    true,
+                    bluetooth,
+                    communicationId,
+                    communicationPairKey,
+                    physicalDefault,
+                )
         }
         for (device in outputs) {
             if (!AndroidCapturePolicy.keepBluetoothOutput(
@@ -964,7 +980,15 @@ class FlutterAiCommunicationsPlugin :
             ) {
                 continue
             }
-            items += catalogEndpoint(device, false, bluetooth, defaultId, physicalDefault)
+            items +=
+                catalogEndpoint(
+                    device,
+                    false,
+                    bluetooth,
+                    communicationId,
+                    communicationPairKey,
+                    physicalDefault,
+                )
         }
         return items
     }
@@ -973,24 +997,37 @@ class FlutterAiCommunicationsPlugin :
         device: AudioDeviceInfo,
         capture: Boolean,
         bluetooth: List<BluetoothIdentityRecord>,
-        defaultId: Int?,
+        communicationId: Int?,
+        communicationPairKey: String?,
         physicalDefault: Boolean,
     ): Map<String, Any> {
         val route = routeClass(device.type)
         val name = device.productName?.toString() ?: "Endpoint"
-        val address = device.address?.ifEmpty { device.id.toString() } ?: device.id.toString()
+        val pairKey =
+            AndroidCapturePolicy.catalogPairKey(
+                device.address,
+                device.productName?.toString(),
+                device.id,
+            )
         val typeForm = AndroidBluetoothIdentity.formFactorForAudioType(device.type)
-        val (hints, btForm) = AndroidBluetoothIdentity.merge(name, route, address, bluetooth)
+        val (hints, btForm) = AndroidBluetoothIdentity.merge(name, route, pairKey, bluetooth)
         val form = if (btForm != "unknown") btForm else typeForm
         return endpoint(
             device.id.toString(),
             name,
             route,
             capture,
-            address,
+            pairKey,
             form,
             hints,
-            osDefault = physicalDefault && defaultId != null && device.id == defaultId,
+            osDefault =
+                AndroidCapturePolicy.isPhysicalOsDefault(
+                    physicalDefault,
+                    device.id,
+                    pairKey,
+                    communicationId,
+                    communicationPairKey,
+                ),
         )
     }
 

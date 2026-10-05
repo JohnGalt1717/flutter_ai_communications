@@ -160,8 +160,55 @@ internal object AndroidCapturePolicy {
         if (name.isEmpty() || phone.isEmpty()) {
             return false
         }
+        val foldedName = foldProductToken(name)
+        val foldedPhone = foldProductToken(phone)
         return name.equals(phone, ignoreCase = true) ||
-            name.replace(" ", "").equals(phone.replace("-", ""), ignoreCase = true)
+            foldedName.equals(foldedPhone, ignoreCase = true)
+    }
+
+    /** Strip space and hyphen so `SM-A176U1` and `SM A176U1` match either way. */
+    fun foldProductToken(value: String): String =
+        value.replace(" ", "").replace("-", "")
+
+    /**
+     * Pair key shared by a device's capture and render halves. Address when
+     * the HAL provides one; otherwise product name; otherwise the HAL id.
+     */
+    fun catalogPairKey(
+        address: String?,
+        productName: String?,
+        deviceId: Int,
+    ): String {
+        val addr = address?.trim().orEmpty()
+        if (addr.isNotEmpty()) {
+            return addr
+        }
+        val name = productName?.trim().orEmpty()
+        if (name.isNotEmpty()) {
+            return name
+        }
+        return deviceId.toString()
+    }
+
+    /**
+     * [communicationDevice] is a sink. Render matches that sink id; capture
+     * matches the sink's pair key so the OS-default row has both halves.
+     */
+    fun isPhysicalOsDefault(
+        physicalDefault: Boolean,
+        deviceId: Int,
+        devicePairKey: String,
+        communicationId: Int?,
+        communicationPairKey: String?,
+    ): Boolean {
+        if (!physicalDefault || communicationId == null) {
+            return false
+        }
+        if (deviceId == communicationId) {
+            return true
+        }
+        val commKey = communicationPairKey?.takeIf { it.isNotEmpty() } ?: return false
+        return devicePairKey.isNotEmpty() && devicePairKey == commKey
     }
 
     /**
