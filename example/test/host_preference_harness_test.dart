@@ -236,6 +236,26 @@ void main() {
     expect(store.cameras.entries.single.id, 'back');
   });
 
+  testWidgets('camera-none stops an active Camera preview', (tester) async {
+    await pumpHarness(tester);
+    await enterLobby(tester);
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('camera-preview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.cameraPreview, isNotNull);
+
+    await tester.tap(find.byKey(const Key('camera-none')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.cameraPreview, isNull);
+    expect(manager.session?.isCameraEnabled, isFalse);
+  });
+
   testWidgets('camera resume applies the preview camera to the Session', (
     tester,
   ) async {

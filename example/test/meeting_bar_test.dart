@@ -76,6 +76,21 @@ void main() {
     expect(find.byKey(const Key('screen-share')), findsOneWidget);
   });
 
+  testWidgets('Share cancel ends the screen pick', (tester) async {
+    await pumpMeeting(tester);
+    await tester.tap(find.byKey(const Key('screen-share')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('share-picker')), findsOneWidget);
+    expect(platform.screenPickOpen, isTrue);
+
+    await tester.tap(find.byKey(const Key('share-cancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('share-picker')), findsNothing);
+    expect(platform.screenPickOpen, isFalse);
+    expect(manager.session?.isScreenSending, isFalse);
+  });
+
   testWidgets('camera-pick selects a Camera Endpoint on the live Session', (
     tester,
   ) async {

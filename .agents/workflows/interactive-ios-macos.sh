@@ -295,6 +295,14 @@ md.append("## All rows")
 md.append("")
 md.append(table(rows))
 md.append("")
+meta = [
+    f"# iOS/macOS interactive receipts (`{payload['commit']}`)",
+    "",
+    f"- Operator: {payload['operator']}",
+    f"- Scope: {payload['scope']}",
+    f"- Receipt JSON: `{json_path}`",
+    "",
+]
 for num, title in (("92", "#92 macOS #89 + iPhone #88"),
                    ("26", "#26 remaining physical iPhone / prove"),
                    ("100", "#100 Mac execution"),
@@ -303,7 +311,11 @@ for num, title in (("92", "#92 macOS #89 + iPhone #88"),
     md.append("")
     md.append(table(issue_rows(num)))
     md.append("")
-pathlib.Path(os.environ["RECEIPT_MD"]).write_text("\n".join(md))
+    issue_body = meta + [f"## {title}", "", table(issue_rows(num)), ""]
+    pathlib.Path(os.environ["RECEIPT_MD"] + f".{num}").write_text(
+        "\n".join(issue_body) + "\n"
+    )
+pathlib.Path(os.environ["RECEIPT_MD"]).write_text("\n".join(md) + "\n")
 print(json_path)
 print(os.environ["RECEIPT_MD"])
 PY
@@ -511,11 +523,15 @@ say "Comments belong on #92 (A2/A3), #26 (remaining iPhone), #100 (Mac pass), #9
 say "Close a ticket only when every required box is pass or accepted skipped=capability."
 if confirm "Post the markdown receipt as comments via gh now?"; then
   if command -v gh >/dev/null 2>&1; then
-    body="$(cat "$RECEIPT_MD")"
-    gh issue comment 92 --body "$body" || SKIPPED+=("gh comment #92")
-    gh issue comment 26 --body "$body" || SKIPPED+=("gh comment #26")
-    gh issue comment 100 --body "$body" || SKIPPED+=("gh comment #100")
-    gh issue comment 93 --body "$body" || SKIPPED+=("gh comment #93")
+    for issue in 92 26 100 93; do
+      issue_md="${RECEIPT_MD}.${issue}"
+      if [[ -f "$issue_md" ]]; then
+        gh issue comment "$issue" --body "$(cat "$issue_md")" \
+          || SKIPPED+=("gh comment #${issue}")
+      else
+        SKIPPED+=("missing ${issue_md}")
+      fi
+    done
   else
     SKIPPED+=("gh not on PATH — paste ${RECEIPT_MD} onto the issues")
   fi

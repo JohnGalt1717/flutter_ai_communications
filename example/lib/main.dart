@@ -438,6 +438,11 @@ final class _SessionPageState extends State<SessionPage> {
     try {
       await _echo?.dispose();
       _echo = null;
+      final sub = _webrtcSub;
+      _webrtcSub = null;
+      await sub?.cancel();
+      _webrtc?.detach();
+      _webrtc = null;
       await _manager.cameraPreview?.stop();
       await _session?.stop();
       if (!mounted) {
@@ -700,8 +705,10 @@ final class _SessionPageState extends State<SessionPage> {
     }
     await session.beginScreenPick();
     if (!mounted) {
+      await session.endScreenPick();
       return;
     }
+    var startedShare = false;
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -733,12 +740,14 @@ final class _SessionPageState extends State<SessionPage> {
                 },
                 previewBuilder: (source) => screenPreviewThumb(session, source),
                 onPick: (id) {
+                  startedShare = true;
                   Navigator.of(dialogContext).pop();
                   unawaited(_shareScreen(session, sourceId: id));
                 },
               ),
               actions: [
                 TextButton(
+                  key: const Key('share-cancel'),
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
@@ -748,6 +757,9 @@ final class _SessionPageState extends State<SessionPage> {
         );
       },
     );
+    if (!startedShare) {
+      await session.endScreenPick();
+    }
   }
 
   Future<void> _shareScreen(Session session, {String? sourceId}) async {
@@ -929,6 +941,7 @@ final class _SessionPageState extends State<SessionPage> {
   Future<void> _pickCamera(String? id) async {
     final session = _session;
     if (id == null) {
+      await _manager.cameraPreview?.stop();
       if (session != null) {
         await session.setCameraEnabled(false);
       }

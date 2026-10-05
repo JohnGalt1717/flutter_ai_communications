@@ -854,6 +854,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     renderId: String?,
     result: @escaping FlutterResult
   ) {
+    let sameCapture = captureId == nil || captureId == selectedCaptureId
+    let sameRender = renderId == nil || renderId == selectedRenderId
+    if running, sameCapture, sameRender {
+      result(startedFormatMap())
+      return
+    }
     if let captureId { selectedCaptureId = captureId }
     if let renderId { selectedRenderId = renderId }
     guard running else {

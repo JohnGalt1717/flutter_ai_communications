@@ -35,6 +35,7 @@ final class LoopbackCommunicationsPlatform
       if (current.includeInCatalog == includeInCatalog) {
         return current;
       }
+      unawaited(current.dispose());
       final rewrapped = LoopbackCommunicationsPlatform(
         current.inner,
         includeInCatalog: includeInCatalog,

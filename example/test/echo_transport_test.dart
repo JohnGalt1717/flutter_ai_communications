@@ -131,6 +131,21 @@ void main() {
     },
   );
 
+  test('wrapRegistered disposes the previous wrapper on catalog flag change',
+      () async {
+    FlutterAiCommunicationsPlatform.instance = platform;
+    final first = LoopbackCommunicationsPlatform.wrapRegistered();
+    expect(first.includeInCatalog, isFalse);
+    final second = LoopbackCommunicationsPlatform.wrapRegistered(
+      includeInCatalog: true,
+    );
+    expect(identical(first, second), isFalse);
+    expect(second.includeInCatalog, isTrue);
+    await Future<void>.delayed(Duration.zero);
+    expect(first.endpointCatalog, isNot(same(second.endpointCatalog)));
+    addTearDown(second.dispose);
+  });
+
   test('host loopback Pair stays out of the Endpoint catalog', () async {
     final loopback = LoopbackCommunicationsPlatform(platform);
     addTearDown(loopback.dispose);
