@@ -202,6 +202,7 @@ final class _SessionPageState extends State<SessionPage> {
   static const _pcm16le16k = AudioFormat.pcm16le(sampleRate: 16000);
   AudioFormat _edgeFormat = AudioFormat.pcm16le24k;
   var _formatSwitching = false;
+  var _starting = false;
   var _lastCaptureFrameBytes = 0;
   var _captureBytesPerSecond = 0;
   var _captureByteWindow = 0;
@@ -248,7 +249,7 @@ final class _SessionPageState extends State<SessionPage> {
     _loadEndpoints();
     unawaited(_loadReplaceStill());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _phase == _HarnessPhase.idle) {
+      if (mounted && _phase == _HarnessPhase.idle && !_starting) {
         unawaited(_enterLobby());
       }
     });
@@ -459,10 +460,21 @@ final class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _enterLobby() async {
-    if (_phase != _HarnessPhase.idle) {
+    if (_phase != _HarnessPhase.idle || _starting) {
       return;
     }
-    await _applyStart(await _startForPhase(meeting: false), meeting: false);
+    _starting = true;
+    if (mounted) {
+      setState(() {});
+    }
+    try {
+      await _applyStart(await _startForPhase(meeting: false), meeting: false);
+    } finally {
+      _starting = false;
+      if (mounted) {
+        setState(() {});
+      }
+    }
   }
 
   Future<void> _joinMeeting() async {
@@ -550,7 +562,7 @@ final class _SessionPageState extends State<SessionPage> {
     _isolation = session.lastIsolation;
     _diagnostics = session.diagnostics;
     if (meeting) {
-      final echo = EchoTransport(session);
+      final echo = EchoTransport(session, replay: false);
       _echo = echo;
       unawaited(echo.attach());
       final webrtc = WebrtcVideoSink();
@@ -861,9 +873,15 @@ final class _SessionPageState extends State<SessionPage> {
     }
     final enable = !session.isCameraEnabled;
     if (enable) {
+      final previewId = _manager.cameraPreview?.selectedCameraId;
       await _manager.cameraPreview?.stop();
+      await session.setCameraEnabled(true);
+      if (previewId != null && previewId != session.selectedCameraId) {
+        await session.selectCamera(previewId);
+      }
+    } else {
+      await session.setCameraEnabled(false);
     }
-    await session.setCameraEnabled(enable);
     if (mounted) {
       setState(() {});
     }
@@ -1141,7 +1159,7 @@ final class _SessionPageState extends State<SessionPage> {
                 onEnter: _enterLobby,
                 onJoin: _joinMeeting,
                 onLeave: _stop,
-                canEnter: _phase == _HarnessPhase.idle,
+                canEnter: _phase == _HarnessPhase.idle && !_starting,
                 canJoin: _phase == _HarnessPhase.lobby,
                 canLeave: _phase == _HarnessPhase.lobby,
               ),

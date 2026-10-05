@@ -1,6 +1,10 @@
 package com.johngalt.flutter_ai_communications
 
-/** Cheap wide blur via two bilinear downscales. Matches iOS sigma ~20 at intensity 50. */
+/** Cheap wide blur via two bilinear downscales. Matches iOS sigma ~20 at intensity 50.
+ *
+ * [scale] at intensity 0 is still a downsample. Callers must skip this path
+ * when intensity is 0 so [BlurVideoProcessor] identity is preserved.
+ */
 internal object DownscaleBlur {
     fun scale(intensity: Int): Float {
         val clamped = intensity.coerceIn(0, 100)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
+import 'package:flutter_ai_communications_example/echo/fixture_pcm.dart';
 import 'package:flutter_ai_communications_example/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -266,6 +267,46 @@ void main() {
       await tester.pump(Duration.zero);
     },
   );
+
+  testWidgets('auto lobby start rejects a second lobby-enter', (tester) async {
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    expect(manager.session, isNotNull);
+    final first = manager.session;
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump();
+    expect(identical(manager.session, first), isTrue);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
+
+  testWidgets('meeting EchoTransport does not replay live capture', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(ExampleApp(manager: manager));
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('lobby-enter')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('lobby-join')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.byKey(const Key('meeting')), findsOneWidget);
+
+    platform.played.clear();
+    platform.feedCapture(FixturePcm.voiceBand24k());
+    await tester.pump();
+    expect(platform.played, isEmpty);
+    await manager.session?.stop();
+    await tester.pump(Duration.zero);
+  });
 
   testWidgets('Join opens a loopback meeting with in-call bar', (tester) async {
     tester.view.physicalSize = const Size(800, 4000);

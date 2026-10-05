@@ -428,7 +428,8 @@ if want_ios; then
   pause "Press Enter when the example is up on the iPhone."
 
   stage "iPhone — idle catalog (#92 A3 / #88)"
-  step "Do not Join yet. Connect AirPods (CarPlay if you are in a car)."
+  step "Tap lobby-leave so the example is idle. The app auto-enters a lobby Session on launch."
+  step "Do not Join. Connect AirPods (CarPlay if you are in a car)."
   step "Agent inspects Endpoints. AirPods / CarPlay must appear."
   note "A2DP-only accessories are render-only; that is expected after #88."
   record_row ios-idle-catalog 92

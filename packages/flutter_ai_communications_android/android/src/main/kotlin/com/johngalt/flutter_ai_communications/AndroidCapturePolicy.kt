@@ -89,6 +89,7 @@ internal object AndroidCapturePolicy {
             AudioDeviceInfo.TYPE_USB_HEADSET,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_HEARING_AID,
             AudioDeviceInfo.TYPE_BUS,
             -> true
             else -> false
@@ -108,6 +109,7 @@ internal object AndroidCapturePolicy {
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BLE_HEADSET,
             AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_HEARING_AID,
             AudioDeviceInfo.TYPE_BUS,
             -> true
             else -> false
@@ -126,7 +128,8 @@ internal object AndroidCapturePolicy {
 
     fun isBluetoothVoiceType(type: Int): Boolean =
         type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-            type == AudioDeviceInfo.TYPE_BLE_HEADSET
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            type == AudioDeviceInfo.TYPE_HEARING_AID
 
     fun isBluetoothMediaTwinType(type: Int): Boolean =
         type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||

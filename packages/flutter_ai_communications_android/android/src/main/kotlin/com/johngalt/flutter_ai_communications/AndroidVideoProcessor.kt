@@ -321,6 +321,9 @@ internal class AndroidVideoProcessor {
         bitmap: Bitmap,
         intensity: Int,
     ): Bitmap {
+        if (intensity <= 0) {
+            return bitmap
+        }
         val scale = DownscaleBlur.scale(intensity)
         val width = (bitmap.width * scale).toInt().coerceAtLeast(8)
         val height = (bitmap.height * scale).toInt().coerceAtLeast(8)

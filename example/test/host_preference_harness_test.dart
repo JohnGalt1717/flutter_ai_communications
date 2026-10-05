@@ -236,6 +236,31 @@ void main() {
     expect(store.cameras.entries.single.id, 'back');
   });
 
+  testWidgets('camera resume applies the preview camera to the Session', (
+    tester,
+  ) async {
+    await pumpHarness(tester);
+    await enterLobby(tester);
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-pick')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('camera-preview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.tap(find.byKey(const Key('camera-back')));
+    await tester.pump();
+    expect(manager.cameraPreview?.selectedCameraId, 'back');
+
+    await tester.tap(find.byKey(const Key('camera-off')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(manager.session?.isCameraEnabled, isTrue);
+    expect(manager.session?.selectedCameraId, 'back');
+    expect(manager.cameraPreview, isNull);
+  });
+
   testWidgets('edge format keys restart the Session at 24 kHz and 16 kHz', (
     tester,
   ) async {

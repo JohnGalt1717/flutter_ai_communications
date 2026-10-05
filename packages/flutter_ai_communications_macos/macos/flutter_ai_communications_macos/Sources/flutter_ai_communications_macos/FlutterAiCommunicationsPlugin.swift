@@ -29,6 +29,9 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private var queuedPlaybackFrames: AVAudioFramePosition = 0
   private var playbackFormat: AVAudioFormat?
   private var playbackConverter: AVAudioConverter?
+  private var captureConverter: AVAudioConverter?
+  private var captureConverterFromRate: Double = 0
+  private var captureConverterToRate: Double = 0
   private var captureTapInstalled = false
   private var captureTapFrames = 0
   private var scheduledPlaybackBuffers = 0
@@ -88,13 +91,18 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       stopNative(result: result)
     case "pauseNative":
       paused = true
-      engine?.pause()
-      result(nil)
+      audioQueue.async { [weak self] in
+        self?.engine?.pause()
+        DispatchQueue.main.async { result(nil) }
+      }
     case "resumeNative":
       paused = false
       resumeEngine(result: result)
     case "play":
-      play(call.arguments as? FlutterStandardTypedData)
+      let data = call.arguments as? FlutterStandardTypedData
+      audioQueue.async { [weak self] in
+        self?.play(data)
+      }
       result(nil)
     case "selectEndpoints":
       let args = call.arguments as? [String: Any]
@@ -107,8 +115,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       emitIsolation()
       result(nil)
     case "flushPlayback":
-      flushPlayback()
-      result(nil)
+      audioQueue.async { [weak self] in
+        self?.flushPlayback()
+        DispatchQueue.main.async { result(nil) }
+      }
     case "enumerateCameras":
       result(camera.enumerate())
     case "requestCameraPermission":
@@ -379,6 +389,9 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       player = nil
       playbackFormat = nil
       playbackConverter = nil
+      captureConverter = nil
+      captureConverterFromRate = 0
+      captureConverterToRate = 0
     } else {
       next = engine!
     }
@@ -422,7 +435,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     }
 
     if wantCapture {
-      installCaptureTap(on: next.inputNode)
+      try installCaptureTap(on: next.inputNode)
     }
     next.prepare()
     do {
@@ -435,6 +448,9 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       player = nil
       playbackFormat = nil
       playbackConverter = nil
+      captureConverter = nil
+      captureConverterFromRate = 0
+      captureConverterToRate = 0
       throw error
     }
     // start() restores the default output; rebind so the selected Endpoint sticks.
@@ -482,16 +498,21 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     player = nil
     playbackFormat = nil
     playbackConverter = nil
+    captureConverter = nil
+    captureConverterFromRate = 0
+    captureConverterToRate = 0
     captureTapInstalled = false
     captureTapFrames = 0
     scheduledPlaybackBuffers = 0
     voiceProcessingEnabled = false
   }
 
-  /// Fieldist: request VoiceProcessingIO on every capture device, including USB
-  /// webcams. Soft-fail if the unit rejects it.
+  /// Voice Processing on a USB composite (BRIO mic+camera) resets the
+  /// UVC function: AVCaptureSession starts, then AVErrorDeviceWasDisconnected.
   private func applyVoiceProcessing(on engine: AVAudioEngine) {
-    guard noiseCancelling else {
+    let captureIsBuiltIn =
+      selectedCaptureId?.localizedCaseInsensitiveContains("BuiltIn") == true
+    guard noiseCancelling, captureIsBuiltIn else {
       if engine.inputNode.isVoiceProcessingEnabled {
         try? engine.inputNode.setVoiceProcessingEnabled(false)
       }
@@ -533,7 +554,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     }
   }
 
-  private func installCaptureTap(on node: AVAudioInputNode) {
+  private func installCaptureTap(on node: AVAudioInputNode) throws {
     guard !captureTapInstalled else {
       return
     }
@@ -564,6 +585,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       }
     }
     NSLog("fac.audio tap skipped")
+    throw NSError(
+      domain: "fac.audio",
+      code: -10868,
+      userInfo: [NSLocalizedDescriptionKey: "capture tap failed"]
+    )
   }
 
   private func captureTapFormat(inputFormat: AVAudioFormat, channels: Int) -> AVAudioFormat? {
@@ -625,10 +651,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   private func pcm16MonoData(from buffer: AVAudioPCMBuffer) -> Data? {
     let frameCount = Int(buffer.frameLength)
     guard frameCount > 0 else { return nil }
-    if let int16 = buffer.int16ChannelData?[0] {
+    let planarOrMono = !buffer.format.isInterleaved || buffer.format.channelCount <= 1
+    if planarOrMono, let int16 = buffer.int16ChannelData?[0] {
       return Data(bytes: int16, count: frameCount * MemoryLayout<Int16>.size)
     }
-    if let floats = buffer.floatChannelData?[0] {
+    if planarOrMono, let floats = buffer.floatChannelData?[0] {
       var bytes = [UInt8](repeating: 0, count: frameCount * 2)
       for index in 0..<frameCount {
         writeInt16(int16Sample(floats: floats[index]), into: &bytes, at: index)
@@ -678,9 +705,22 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       sampleRate: toRate,
       channels: 1,
       interleaved: false
-    ),
-    let converter = AVAudioConverter(from: sourceFormat, to: destinationFormat)
+    )
     else { return nil }
+    let converter: AVAudioConverter
+    if let existing = captureConverter,
+       abs(captureConverterFromRate - fromRate) < 0.5,
+       abs(captureConverterToRate - toRate) < 0.5
+    {
+      converter = existing
+    } else if let created = AVAudioConverter(from: sourceFormat, to: destinationFormat) {
+      captureConverter = created
+      captureConverterFromRate = fromRate
+      captureConverterToRate = toRate
+      converter = created
+    } else {
+      return nil
+    }
     let sourceFrames = AVAudioFrameCount(data.count / MemoryLayout<Int16>.size)
     guard let sourceBuffer = AVAudioPCMBuffer(
       pcmFormat: sourceFormat,
@@ -788,7 +828,7 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     guard conversionError == nil, outputBuffer.frameLength > 0 else { return }
     scheduledPlaybackBuffers += 1
     player.scheduleBuffer(outputBuffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-      DispatchQueue.main.async {
+      self?.audioQueue.async {
         guard let self else { return }
         self.scheduledPlaybackBuffers = max(0, self.scheduledPlaybackBuffers - 1)
       }

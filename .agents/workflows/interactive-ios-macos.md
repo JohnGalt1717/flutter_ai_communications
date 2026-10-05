@@ -122,7 +122,7 @@ Record every row as `pass`, `fail`, `skipped=capability`, or
 
 | Row id | Issue | Human does | Agent asserts |
 | --- | --- | --- | --- |
-| `ios-idle-catalog` | #92 A3 / #88 | AirPods (and CarPlay if in a car) with **no** Session | Catalog lists accessory capture/render. A2DP-only is render-only |
+| `ios-idle-catalog` | #92 A3 / #88 | Tap `lobby-leave` first (the example auto-enters lobby). AirPods (and CarPlay if in a car) with **no** Session | Catalog lists accessory capture/render. A2DP-only is render-only |
 | `ios-speaker-handset` | #26 | Hold to ear vs speaker | Both directions; Desired = Applied = Observed on each |
 | `ios-airpods-before` | #26 | AirPods connected, then Join | Pair is AirPods both sides |
 | `ios-airpods-during` | #26 | Disconnect then reconnect during Session | Out → speakerphone; in → AirPods; Capture stream object unchanged |
