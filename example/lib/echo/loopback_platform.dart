@@ -324,6 +324,9 @@ final class LoopbackCommunicationsPlatform
       inner.screenPreviewNative(sourceId);
 
   @override
+  Stream<String> get screenPreviewReady => inner.screenPreviewReady;
+
+  @override
   Future<NativeGraphStart> startScreenShareNative({
     required String sourceId,
     bool includeSystemAudio = false,

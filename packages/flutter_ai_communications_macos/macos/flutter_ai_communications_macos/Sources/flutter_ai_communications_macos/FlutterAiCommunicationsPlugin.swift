@@ -75,6 +75,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     instance.screen.attachCatalog { [weak instance] sources in
       instance?.eventSink?(["type": "screenCatalog", "payload": sources])
     }
+    instance.screen.attachPreview { [weak instance] id, textureId in
+      instance?.eventSink?(
+        ["type": "screenPreview", "payload": ["id": id, "textureId": textureId]]
+      )
+    }
     instance.camera.onCatalog = { [weak instance] cameras in
       instance?.eventSink?(["type": "cameraCatalog", "payload": cameras])
     }

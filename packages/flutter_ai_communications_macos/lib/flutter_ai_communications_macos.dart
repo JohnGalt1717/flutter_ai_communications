@@ -381,7 +381,11 @@ final class FlutterAiCommunicationsMacos
 
   @override
   VideoSurface? screenPreviewNative(String sourceId) =>
-      _screen.previews[sourceId];
+      _screen.previews[sourceId] ?? _channel?.screenPreviewNative(sourceId);
+
+  @override
+  Stream<String> get screenPreviewReady =>
+      _channel?.screenPreviewReady ?? const Stream.empty();
 
   @override
   Future<NativeGraphStart> startScreenShareNative({

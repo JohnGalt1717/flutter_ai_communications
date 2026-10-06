@@ -67,10 +67,23 @@ void main() {
     expect(session.isScreenPickOpen, isFalse);
   });
 
+  test('Screen preview ready ids fire during pick', () async {
+    final session = ((await manager.start()) as StartReady).session;
+    final ids = <String>[];
+    final sub = session.screenPreviewReady.listen(ids.add);
+    addTearDown(sub.cancel);
+    await session.beginScreenPick();
+    expect(ids, isNotEmpty);
+    expect(session.screenPreview(ids.first), isNotNull);
+  });
+
   test('OS picker decline maps to ScreenShareDenied', () async {
     platform.screenShareStartReason = 'denied';
     final session = ((await manager.start()) as StartReady).session;
-    expect(await session.startScreenShare('display-0'), isA<ScreenShareDenied>());
+    expect(
+      await session.startScreenShare('display-0'),
+      isA<ScreenShareDenied>(),
+    );
     expect(session.isStopped, isFalse);
     expect(session.screenUnavailableReason, 'denied');
   });
@@ -84,16 +97,19 @@ void main() {
     expect(session.screenUnavailableReason, 'denied');
   });
 
-  test('thrown native start is ScreenShareFailed and does not end Session', () async {
-    platform.screenShareThrow = StateError('native');
-    final session = ((await manager.start()) as StartReady).session;
-    expect(
-      await session.startScreenShare('display-0'),
-      isA<ScreenShareFailed>(),
-    );
-    expect(session.isStopped, isFalse);
-    expect(session.isScreenSending, isFalse);
-  });
+  test(
+    'thrown native start is ScreenShareFailed and does not end Session',
+    () async {
+      platform.screenShareThrow = StateError('native');
+      final session = ((await manager.start()) as StartReady).session;
+      expect(
+        await session.startScreenShare('display-0'),
+        isA<ScreenShareFailed>(),
+      );
+      expect(session.isStopped, isFalse);
+      expect(session.isScreenSending, isFalse);
+    },
+  );
 
   test('denied permission on replace stops the live screen send', () async {
     final session = ((await manager.start()) as StartReady).session;

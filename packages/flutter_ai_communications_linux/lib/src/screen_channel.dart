@@ -49,9 +49,7 @@ final class MethodChannelScreenBackend {
       previews
         ..clear()
         ..addAll(_readPreviews(value));
-      return previews.isEmpty
-          ? NativeGraphStart.unavailable
-          : NativeGraphStart.started;
+      return NativeGraphStart.started;
     } on MissingPluginException {
       previews.clear();
       return NativeGraphStart.unavailable;

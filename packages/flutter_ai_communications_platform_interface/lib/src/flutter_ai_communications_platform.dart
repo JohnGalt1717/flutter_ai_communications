@@ -320,6 +320,9 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   /// Screen preview handle for [sourceId] during Screen pick, if any.
   VideoSurface? screenPreviewNative(String sourceId) => null;
 
+  /// Source ids whose Screen preview thumb became ready during pick.
+  Stream<String> get screenPreviewReady => const Stream.empty();
+
   /// Starts the screen Production video path. Does not fail the Session.
   Future<NativeGraphStart> startScreenShareNative({
     required String sourceId,

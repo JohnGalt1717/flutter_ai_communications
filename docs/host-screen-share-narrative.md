@@ -58,6 +58,8 @@ Join still uses `lobby-enter` / `lobby-join`. Share is in-session only.
 
 ## Enumerable desktop (Windows, macOS, Linux X11)
 
+macOS 14+ has `SCContentSharingPicker`. We do not present it. Catalog, thumbs, Indicate, and Share frame stay host-owned so Mac matches Windows/Linux. Why, store/TCC risk, and when to revisit: ADR-0031. Production send is still `SCStream`.
+
 ```text
 sources = await manager.screenSources()
 await meeting.beginScreenPick()

@@ -197,7 +197,7 @@ A downscaled view of a Screen source for a host picker. Same handle shape as a V
 _Avoid_: Video surface, thumbnail (as the type name), picker chrome (the host draws the picker)
 
 **Share frame**:
-A native rectangle the library draws on the real display or window to show which Screen source the host is indicating or the Session is sending. The host picker does not draw it. Library red in v1. No-op on OS-picker platforms.
+A native rectangle the library draws on the real display or window to show which Screen source the host is indicating or the Session is sending. The host picker does not draw it. Library red in v1. No-op on OS-picker platforms. For a window source it is clipped to that window's visible region (hidden when fully covered or off-screen) so it is not painted on another window.
 _Avoid_: yellow capture border (OS), picker chrome, highlight
 
 **Screen motion**:

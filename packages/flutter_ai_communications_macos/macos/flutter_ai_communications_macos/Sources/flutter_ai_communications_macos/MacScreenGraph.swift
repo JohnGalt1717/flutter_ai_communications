@@ -6,7 +6,7 @@ import ScreenCaptureKit
 
 /// ScreenCaptureKit Production video path, Screen pick thumbs, and Share frame.
 ///
-/// Host picker, not `SCContentSharingPicker`. Camera graph is a separate path.
+/// Host picker, not `SCContentSharingPicker` (ADR-0031). Camera graph is a separate path.
 final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   private let queue = DispatchQueue(label: "fac.screen")
   private weak var textures: FlutterTextureRegistry?
@@ -29,9 +29,10 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   private var sendId: String?
   private var indicatedId: String?
 
-  private var overlayWindows: [NSWindow] = []
+  private var overlayWindows: [ShareFrameWindow] = []
   private var followTimer: Timer?
   private var previews: [String: PreviewTexture] = [:]
+  private var emitPreview: ((String, Int64) -> Void)?
 
   func attach(textures: FlutterTextureRegistry) {
     self.textures = textures
@@ -40,6 +41,10 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
 
   func attachCatalog(_ emit: @escaping ([[String: Any]]) -> Void) {
     emitCatalog = emit
+  }
+
+  func attachPreview(_ emit: @escaping (String, Int64) -> Void) {
+    emitPreview = emit
   }
 
   func copySendBuffer() -> Unmanaged<CVPixelBuffer>? {
@@ -89,15 +94,19 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   func beginPick(result: @escaping FlutterResult) {
     endPick()
     refreshContent { [weak self] content, _ in
-      guard let self, let content else {
+      guard let self else {
         result(["previews": [:] as [String: Int64]])
         return
       }
+      self.content = content
+      self.mainAsync {
+        result(["previews": [:] as [String: Int64]])
+      }
+      guard let content else {
+        return
+      }
       Task {
-        let maps = await self.capturePreviews(content: content)
-        self.mainAsync {
-          result(["previews": maps])
-        }
+        await self.capturePreviews(content: content)
       }
     }
   }
@@ -506,6 +515,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     var alpha: Double
     var onScreen: Bool
     var sharingState: Int
+    var bounds: CGRect
   }
 
   private static func cgWindowMeta() -> [CGWindowID: CGWindowMeta] {
@@ -518,10 +528,14 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
       guard let number = item[kCGWindowNumber as String] as? NSNumber else {
         continue
       }
+      let boundsDict = item[kCGWindowBounds as String] as? [String: Any]
+      let bounds =
+        boundsDict.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .null
       map[CGWindowID(truncating: number)] = CGWindowMeta(
         alpha: (item[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
         onScreen: (item[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false,
-        sharingState: (item[kCGWindowSharingState as String] as? NSNumber)?.intValue ?? 2
+        sharingState: (item[kCGWindowSharingState as String] as? NSNumber)?.intValue ?? 2,
+        bounds: bounds
       )
     }
     return map
@@ -535,48 +549,47 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     return screen?.localizedName ?? "Display \(display.displayID)"
   }
 
-  private func capturePreviews(content: SCShareableContent) async -> [String: Int64] {
-    var maps: [String: Int64] = [:]
+  private func capturePreviews(content: SCShareableContent) async {
     let ownApps = content.applications.filter {
       $0.bundleIdentifier == Bundle.main.bundleIdentifier
     }
     for display in content.displays {
       let id = "display-\(display.displayID)"
       let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
-      if let texture = await previewTexture(id: id, filter: filter, frame: display.frame) {
-        maps[id] = texture.textureId
-      }
+      await previewTexture(id: id, filter: filter, frame: display.frame)
     }
     if !content.displays.isEmpty {
       let union = content.displays.map(\.frame).reduce(CGRect.null) { $0.union($1) }
       if let first = content.displays.first {
         let filter = SCContentFilter(display: first, excludingApplications: ownApps, exceptingWindows: [])
-        if let texture = await previewTexture(id: "all-displays", filter: filter, frame: union) {
-          maps["all-displays"] = texture.textureId
+        await previewTexture(id: "all-displays", filter: filter, frame: union)
+      }
+    }
+    let overlayIds = await MainActor.run {
+      Set(self.overlayWindows.map { CGWindowID($0.windowNumber) })
+    }
+    let cg = Self.cgWindowMeta()
+    let windows = content.windows.prefix(48).filter {
+      Self.shouldPublish($0, overlayIds: overlayIds, cg: cg)
+    }
+    await withTaskGroup(of: Void.self) { group in
+      for window in windows {
+        let id = "window-\(window.windowID)"
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let frame = window.frame
+        group.addTask {
+          await self.previewTexture(id: id, filter: filter, frame: frame)
         }
       }
     }
-    let overlayIds = Set(overlayWindows.map { CGWindowID($0.windowNumber) })
-    let cg = Self.cgWindowMeta()
-    for window in content.windows.prefix(48) {
-      guard Self.shouldPublish(window, overlayIds: overlayIds, cg: cg) else {
-        continue
-      }
-      let id = "window-\(window.windowID)"
-      let filter = SCContentFilter(desktopIndependentWindow: window)
-      if let texture = await previewTexture(id: id, filter: filter, frame: window.frame) {
-        maps[id] = texture.textureId
-      }
-    }
-    return maps
   }
 
-  private func previewTexture(id: String, filter: SCContentFilter, frame: CGRect) async -> PreviewTexture? {
+  private func previewTexture(id: String, filter: SCContentFilter, frame: CGRect) async {
     let image = await screenshot(filter: filter, frame: frame)
     guard let image else {
-      return nil
+      return
     }
-    return await MainActor.run {
+    await MainActor.run {
       let preview = PreviewTexture()
       preview.pixelBuffer = self.pixelBuffer(from: image, width: 160, height: 90)
       if let textures {
@@ -584,7 +597,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
         textures.textureFrameAvailable(preview.textureId)
       }
       self.previews[id] = preview
-      return preview
+      self.emitPreview?(id, preview.textureId)
     }
   }
 
@@ -607,6 +620,13 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     guard let sourceId, let content else {
       return
     }
+    if sourceId.hasPrefix("window-") {
+      applyWindowShareFrame(sourceId)
+      followTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        self?.applyWindowShareFrame(sourceId)
+      }
+      return
+    }
     let frames: [CGRect]
     if sourceId == "all-displays" {
       frames = content.displays.map(\.frame)
@@ -614,40 +634,150 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
               let display = content.displays.first(where: { $0.displayID == displayID })
     {
       frames = [display.frame]
-    } else if sourceId.hasPrefix("window-"), let windowID = UInt32(sourceId.dropFirst("window-".count)),
-              let window = content.windows.first(where: { $0.windowID == windowID })
-    {
-      frames = [window.frame]
     } else {
       frames = []
     }
     for frame in frames where frame.width > 2 && frame.height > 2 {
       let cocoa = Self.cocoaRect(fromQuartz: frame)
-      NSLog(
-        "fac.screen share-frame quartz=%@ cocoa=%@",
-        NSStringFromRect(frame),
-        NSStringFromRect(cocoa)
-      )
-      overlayWindows.append(ShareFrameWindow(frame: cocoa))
-    }
-    followTimer?.invalidate()
-    followTimer = nil
-    if sourceId.hasPrefix("window-") {
-      followTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-        self?.repositionWindowFrame(sourceId)
-      }
+      overlayWindows.append(ShareFrameWindow(frame: cocoa, fragments: [NSRect(origin: .zero, size: cocoa.size)]))
     }
   }
 
-  private func repositionWindowFrame(_ sourceId: String) {
+  /// Share frame is only the live window. Off-screen or empty bounds hide it.
+  static func shareFrameQuartz(onScreen: Bool, bounds: CGRect) -> CGRect? {
+    guard onScreen, bounds.width > 2, bounds.height > 2 else {
+      return nil
+    }
+    return bounds
+  }
+
+  /// Normal app windows only. Cursor, menus, and overlay chrome are not
+  /// occluders — subtracting them punched a hole that followed the mouse.
+  static func isOccluder(
+    _ item: [String: Any],
+    rect: CGRect,
+    onScreen: Bool,
+    alpha: Double
+  ) -> Bool {
+    guard onScreen, alpha >= 0.05, rect.width >= 48, rect.height >= 48 else {
+      return false
+    }
+    let layer = (item[kCGWindowLayer as String] as? NSNumber)?.intValue ?? 0
+    if layer != 0 {
+      return false
+    }
+    let owner = (item[kCGWindowOwnerName as String] as? String) ?? ""
+    let name = (item[kCGWindowName as String] as? String) ?? ""
+    let blob = "\(owner) \(name)".lowercased()
+    if blob.contains("cursor") {
+      return false
+    }
+    return true
+  }
+
+  /// Visible quartz slices of [target] after subtracting on-screen windows in
+  /// front of it. Empty when the window is off-screen or fully covered.
+  static func visibleQuartzFragments(
+    target: CGWindowID,
+    windows: [[String: Any]],
+    overlayIds: Set<CGWindowID>
+  ) -> [CGRect] {
+    var occluders: [CGRect] = []
+    var bounds: CGRect?
+    for item in windows {
+      guard let number = item[kCGWindowNumber as String] as? NSNumber else {
+        continue
+      }
+      let id = CGWindowID(truncating: number)
+      if overlayIds.contains(id) {
+        continue
+      }
+      let onScreen = (item[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false
+      let alpha = (item[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+      let dict = item[kCGWindowBounds as String] as? [String: Any]
+      let rect = dict.flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .null
+      if id == target {
+        if onScreen, rect.width > 2, rect.height > 2 {
+          bounds = rect
+        }
+        break
+      }
+      if Self.isOccluder(item, rect: rect, onScreen: onScreen, alpha: alpha) {
+        occluders.append(rect)
+      }
+    }
+    guard var region = bounds.map({ [$0] }) else {
+      return []
+    }
+    for hole in occluders {
+      region = subtract(region: region, minus: hole)
+    }
+    return region
+  }
+
+  static func subtract(region: [CGRect], minus hole: CGRect) -> [CGRect] {
+    region.flatMap { subtract($0, minus: hole) }.filter { $0.width > 1 && $0.height > 1 }
+  }
+
+  static func subtract(_ rect: CGRect, minus hole: CGRect) -> [CGRect] {
+    let hit = rect.intersection(hole)
+    guard !hit.isNull, !hit.isEmpty else {
+      return [rect]
+    }
+    var out: [CGRect] = []
+    let top = rect.maxY - hit.maxY
+    if top > 0.5 {
+      out.append(CGRect(x: rect.minX, y: hit.maxY, width: rect.width, height: top))
+    }
+    let bottom = hit.minY - rect.minY
+    if bottom > 0.5 {
+      out.append(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: bottom))
+    }
+    let left = hit.minX - rect.minX
+    if left > 0.5 {
+      out.append(CGRect(x: rect.minX, y: hit.minY, width: left, height: hit.height))
+    }
+    let right = rect.maxX - hit.maxX
+    if right > 0.5 {
+      out.append(CGRect(x: hit.maxX, y: hit.minY, width: right, height: hit.height))
+    }
+    return out
+  }
+
+  private func applyWindowShareFrame(_ sourceId: String) {
     guard sourceId.hasPrefix("window-"),
-          let windowID = UInt32(sourceId.dropFirst("window-".count)),
-          let window = content?.windows.first(where: { $0.windowID == windowID }),
-          let overlay = overlayWindows.first
+          let raw = UInt32(sourceId.dropFirst("window-".count))
     else {
+      overlayWindows.first?.orderOut(nil)
       return
     }
-    overlay.setFrame(Self.cocoaRect(fromQuartz: window.frame), display: true)
+    let overlayIds = Set(overlayWindows.map { CGWindowID($0.windowNumber) })
+    let info =
+      CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+    let quartz = Self.visibleQuartzFragments(
+      target: CGWindowID(raw),
+      windows: info,
+      overlayIds: overlayIds
+    )
+    guard !quartz.isEmpty else {
+      overlayWindows.first?.orderOut(nil)
+      return
+    }
+    let cocoa = quartz.map { Self.cocoaRect(fromQuartz: $0) }
+    let frame = cocoa.reduce(CGRect.null) { $0.union($1) }
+    let local = cocoa.map {
+      CGRect(
+        x: $0.minX - frame.minX,
+        y: frame.maxY - $0.maxY,
+        width: $0.width,
+        height: $0.height
+      )
+    }
+    if let overlay = overlayWindows.first {
+      overlay.apply(frame: frame, fragments: local)
+    } else {
+      overlayWindows.append(ShareFrameWindow(frame: frame, fragments: local))
+    }
   }
 
   /// ScreenCaptureKit and CGWindow bounds are Quartz global (origin at the
@@ -845,7 +975,7 @@ private final class PreviewTexture: NSObject, FlutterTexture {
 }
 
 private final class ShareFrameWindow: NSWindow {
-  convenience init(frame: CGRect) {
+  convenience init(frame: CGRect, fragments: [CGRect]) {
     self.init(
       contentRect: frame,
       styleMask: .borderless,
@@ -863,19 +993,31 @@ private final class ShareFrameWindow: NSWindow {
     title = ""
     let view = ShareFrameView(frame: NSRect(origin: .zero, size: frame.size))
     view.autoresizingMask = [.width, .height]
+    view.fragments = fragments
     contentView = view
     setFrame(frame, display: true)
+    orderFrontRegardless()
+  }
+
+  func apply(frame: CGRect, fragments: [CGRect]) {
+    setFrame(frame, display: true)
+    (contentView as? ShareFrameView)?.fragments = fragments
+    contentView?.needsDisplay = true
     orderFrontRegardless()
   }
 }
 
 private final class ShareFrameView: NSView {
+  var fragments: [CGRect] = []
   override var isFlipped: Bool { true }
 
   override func draw(_ dirtyRect: NSRect) {
     NSColor.red.setStroke()
-    let path = NSBezierPath(rect: bounds.insetBy(dx: 2, dy: 2))
-    path.lineWidth = 4
-    path.stroke()
+    let rects = fragments.isEmpty ? [bounds] : fragments
+    for rect in rects where rect.width > 2 && rect.height > 2 {
+      let path = NSBezierPath(rect: rect.insetBy(dx: 2, dy: 2))
+      path.lineWidth = 4
+      path.stroke()
+    }
   }
 }
