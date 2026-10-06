@@ -4,6 +4,17 @@ import CoreAudio
 import FacExceptionCatch
 import FlutterMacOS
 
+private enum MacAudioEngineError: LocalizedError {
+  case routeFailed
+
+  var errorDescription: String? {
+    switch self {
+    case .routeFailed:
+      return "route_failed"
+    }
+  }
+}
+
 /// One duplex AVAudioEngine for capture and playback.
 ///
 /// Isolation is unavailable on macOS. The Session still emits Isolation
@@ -442,30 +453,58 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       try startEngineGraph(next)
     } catch {
       NSLog("fac.audio startEngineGraph failed \(error)")
-      stopGraph()
-      next.reset()
-      engine = nil
-      player = nil
-      playbackFormat = nil
-      playbackConverter = nil
-      captureConverter = nil
-      captureConverterFromRate = 0
-      captureConverterToRate = 0
+      abandonEngine(next)
       throw error
     }
     // start() restores the default output; rebind so the selected Endpoint sticks.
-    _ = bindDevice(to: next.outputNode, endpointId: selectedRenderId)
-    if selectedCaptureId != nil {
-      _ = bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
+    let boundOutput = bindDevice(to: next.outputNode, endpointId: selectedRenderId)
+    let boundInput: String?
+    if presentId(selectedCaptureId) != nil {
+      boundInput = bindDevice(to: next.inputNode, endpointId: selectedCaptureId)
+    } else {
+      boundInput = nil
+    }
+    if postStartBindFailed(selectedId: selectedRenderId, boundUid: boundOutput)
+      || postStartBindFailed(selectedId: selectedCaptureId, boundUid: boundInput)
+    {
+      NSLog(
+        "fac.audio post-start bind failed capture=%@/%@ render=%@/%@",
+        selectedCaptureId ?? "",
+        boundInput ?? "nil",
+        selectedRenderId ?? "",
+        boundOutput ?? "nil"
+      )
+      abandonEngine(next)
+      throw MacAudioEngineError.routeFailed
     }
     queuedPlaybackFrames = 0
     scheduledPlaybackBuffers = 0
     NSLog(
-      "fac.audio graph running capture=%@ render=%@ vp=%d",
+      "fac.audio graph running capture=%@/%@ render=%@/%@ vp=%d",
       selectedCaptureId ?? "",
+      boundInput ?? "",
       selectedRenderId ?? "",
+      boundOutput ?? "",
       voiceProcessingEnabled ? 1 : 0
     )
+  }
+
+  /// A selected Endpoint whose post-start bind returned nil must fail
+  /// start/select. Nil selected is OS default and may stay unbound (#95).
+  private func postStartBindFailed(selectedId: String?, boundUid: String?) -> Bool {
+    presentId(selectedId) != nil && boundUid == nil
+  }
+
+  private func abandonEngine(_ next: AVAudioEngine) {
+    stopGraph()
+    next.reset()
+    engine = nil
+    player = nil
+    playbackFormat = nil
+    playbackConverter = nil
+    captureConverter = nil
+    captureConverterFromRate = 0
+    captureConverterToRate = 0
   }
 
   /// Fieldist `endSession` / `configureGraph` order: tap off, VP off,
@@ -878,14 +917,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
           } catch {
             DispatchQueue.main.async {
               self.emitPath(alive: false)
-              result(self.startedFormatMap())
+              result("failed")
             }
             return
           }
         } else {
           DispatchQueue.main.async {
             self.emitPath(alive: false)
-            result(self.startedFormatMap())
+            result("failed")
           }
           return
         }

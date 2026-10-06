@@ -20,3 +20,18 @@ final class MacQueueBind {
 /// a failed set, a failed get, or an OS that ignored the set must not
 /// rewrite Desired or lie that the queue is on the requested Endpoint.
 String? observedQueueUid({required String? boundUid}) => boundUid;
+
+/// Whether a post-start deviceID bind must fail start/select (issue #95).
+///
+/// A non-null selected Endpoint whose bind returned nil is a lie if the
+/// graph reports started. A null or empty selected id is OS default and
+/// is allowed to stay unbound.
+bool postStartBindFailed({
+  required String? selectedId,
+  required String? boundUid,
+}) {
+  if (selectedId == null || selectedId.isEmpty) {
+    return false;
+  }
+  return boundUid == null;
+}

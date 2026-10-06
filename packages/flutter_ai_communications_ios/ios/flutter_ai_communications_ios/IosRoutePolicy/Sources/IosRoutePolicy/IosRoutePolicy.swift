@@ -25,6 +25,19 @@ public struct IosCatalogEndpoint: Equatable, Sendable {
     }
 }
 
+/// One AVAudioSession route port as Observed by the plugin (issue #94).
+public struct IosObservedPort: Equatable, Sendable {
+    public let routeClass: String
+    public let pairId: String
+    public let portType: String
+
+    public init(routeClass: String, pairId: String, portType: String = "") {
+        self.routeClass = routeClass
+        self.pairId = pairId
+        self.portType = portType
+    }
+}
+
 public enum IosRoutePolicy {
     public static func shouldAdvertiseHandset(hasReceiver: Bool) -> Bool {
         hasReceiver
@@ -86,15 +99,77 @@ public enum IosRoutePolicy {
         outputRouteClass: String?,
         accessoryPairId: String
     ) -> (capture: String?, render: String?) {
-        switch outputRouteClass {
-        case "speakerphone":
-            return ("speaker-in", "speaker-out")
-        case "handset":
-            return ("handset-in", "handset-out")
-        case nil:
+        guard let outputRouteClass else {
             return (nil, nil)
+        }
+        let output = IosObservedPort(
+            routeClass: outputRouteClass,
+            pairId: accessoryPairId
+        )
+        let input: IosObservedPort? =
+            (outputRouteClass == "speakerphone" || outputRouteClass == "handset")
+            ? output
+            : nil
+        return catalogIds(output: output, input: input)
+    }
+
+    /// Observed capture from the input port, render from the output port.
+    ///
+    /// Accessory output without a capture-capable input does not invent `-in`.
+    public static func catalogIds(
+        output: IosObservedPort?,
+        input: IosObservedPort?
+    ) -> (capture: String?, render: String?) {
+        (
+            capture: observedCaptureId(output: output, input: input),
+            render: observedRenderId(output)
+        )
+    }
+
+    private static func observedRenderId(_ output: IosObservedPort?) -> String? {
+        guard let output else {
+            return nil
+        }
+        return endpointId(routeClass: output.routeClass, pairId: output.pairId, capture: false)
+    }
+
+    private static func observedCaptureId(
+        output: IosObservedPort?,
+        input: IosObservedPort?
+    ) -> String? {
+        guard let input else {
+            return nil
+        }
+        let builtin = isBuiltin(input.routeClass)
+        if !builtin && !isCaptureCapableAccessory(portType: input.portType) {
+            return nil
+        }
+        if builtin, let output, isBuiltin(output.routeClass) {
+            return endpointId(
+                routeClass: output.routeClass,
+                pairId: output.pairId,
+                capture: true
+            )
+        }
+        return endpointId(routeClass: input.routeClass, pairId: input.pairId, capture: true)
+    }
+
+    private static func isBuiltin(_ routeClass: String) -> Bool {
+        routeClass == "speakerphone" || routeClass == "handset"
+    }
+
+    private static func endpointId(
+        routeClass: String,
+        pairId: String,
+        capture: Bool
+    ) -> String {
+        switch routeClass {
+        case "speakerphone":
+            return capture ? "speaker-in" : "speaker-out"
+        case "handset":
+            return capture ? "handset-in" : "handset-out"
         default:
-            return ("\(accessoryPairId)-in", "\(accessoryPairId)-out")
+            return capture ? "\(pairId)-in" : "\(pairId)-out"
         }
     }
 

@@ -28,4 +28,34 @@ void main() {
       expect(observedQueueUid(boundUid: bind.boundUid), 'built-in-in');
     },
   );
+
+  test('selected Endpoint with nil post-start bind fails start/select', () {
+    expect(postStartBindFailed(selectedId: 'usb-in', boundUid: null), isTrue);
+    expect(
+      postStartBindFailed(
+        selectedId: 'BuiltInSpeakerDevice-out',
+        boundUid: null,
+      ),
+      isTrue,
+    );
+  });
+
+  test('nil selected Endpoint with nil bind is OS default, not a failure', () {
+    expect(postStartBindFailed(selectedId: null, boundUid: null), isFalse);
+    expect(postStartBindFailed(selectedId: '', boundUid: null), isFalse);
+  });
+
+  test('selected Endpoint with a bound UID is not a failure', () {
+    expect(
+      postStartBindFailed(selectedId: 'usb-in', boundUid: 'usb-in'),
+      isFalse,
+    );
+    expect(
+      postStartBindFailed(
+        selectedId: 'BuiltInSpeakerDevice-out',
+        boundUid: 'BuiltInSpeakerDevice',
+      ),
+      isFalse,
+    );
+  });
 }

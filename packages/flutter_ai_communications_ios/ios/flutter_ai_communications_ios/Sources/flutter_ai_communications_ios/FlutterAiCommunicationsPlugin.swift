@@ -62,6 +62,8 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
 
   public func detachFromEngine(for registrar: FlutterPluginRegistrar) {
     camera.stopCatalogWatch()
+    // Engine is gone: force-release observation without matching Dart ends (#93).
+    releaseCatalogObservationForDetach()
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -284,6 +286,24 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       false,
       options: .notifyOthersOnDeactivation
     )
+  }
+
+  /// Drop observation bookkeeping on engine detach. Does not deactivate a
+  /// live Session's call session (`running`); `stopNative` still owns that.
+  private func releaseCatalogObservationForDetach() {
+    let plan = IosCatalogObservationPolicy.releaseForDetach(
+      ownsSession: catalogObservationOwnsSession,
+      running: running
+    )
+    catalogObservationDepth = plan.depth
+    catalogObservationOwnsSession = plan.ownsSession
+    if plan.deactivate {
+      removeCatalogRouteObserver()
+      try? AVAudioSession.sharedInstance().setActive(
+        false,
+        options: .notifyOthersOnDeactivation
+      )
+    }
   }
 
   private func activateCatalogObservationSession() throws {
@@ -1089,17 +1109,21 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   }
 
   private func catalogIds(from session: AVAudioSession) -> (capture: String?, render: String?) {
-    if let output = session.currentRoute.outputs.first {
-      return IosRoutePolicy.catalogIds(
-        outputRouteClass: routeClass(for: output.portType),
-        accessoryPairId: pairId(for: output)
+    let output = session.currentRoute.outputs.first.map { port in
+      IosObservedPort(
+        routeClass: routeClass(for: port.portType),
+        pairId: pairId(for: port),
+        portType: port.portType.rawValue
       )
     }
-    if let input = session.currentRoute.inputs.first {
-      let pair = pairId(for: input)
-      return ("\(pair)-in", "\(pair)-out")
+    let input = session.currentRoute.inputs.first.map { port in
+      IosObservedPort(
+        routeClass: routeClass(for: port.portType),
+        pairId: pairId(for: port),
+        portType: port.portType.rawValue
+      )
     }
-    return (nil, nil)
+    return IosRoutePolicy.catalogIds(output: output, input: input)
   }
 
   @objc private func handleInterruption(_ notification: Notification) {
