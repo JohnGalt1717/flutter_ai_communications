@@ -38,6 +38,8 @@ class AndroidScreenGraph(
     private var sendWidth = 0
     private var sendHeight = 0
     private val playback = AndroidPlaybackCapture()
+    private val stillsThread = HandlerThread("fac-screen-still").also { it.start() }
+    private val stillsHandler = Handler(stillsThread.looper)
     private val startReplied = AtomicBoolean(true)
     private val requestCode = 0xFAC4
     private val projectionCallback =
@@ -256,19 +258,24 @@ class AndroidScreenGraph(
                     result.success(null)
                     return@request
                 }
-                val stream = ByteArrayOutputStream()
-                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)) {
-                    result.success(null)
-                    return@request
+                stillsHandler.post {
+                    val stream = ByteArrayOutputStream()
+                    val ok = bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+                    main.post {
+                        if (!ok) {
+                            result.success(null)
+                        } else {
+                            result.success(
+                                mapOf(
+                                    "bytes" to stream.toByteArray(),
+                                    "width" to width,
+                                    "height" to height,
+                                    "mime" to "image/jpeg",
+                                ),
+                            )
+                        }
+                    }
                 }
-                result.success(
-                    mapOf(
-                        "bytes" to stream.toByteArray(),
-                        "width" to width,
-                        "height" to height,
-                        "mime" to "image/jpeg",
-                    ),
-                )
             }, main)
         } catch (_: IllegalArgumentException) {
             result.success(null)

@@ -36,9 +36,9 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
     _inboundChanged = callback;
   }
 
-  Future<void> _run(Future<void> Function() op) {
+  Future<void> _run(Future<void> Function() op, {bool ignoreDisposed = false}) {
     _queue = _queue.then((_) async {
-      if (_disposed) {
+      if (_disposed && !ignoreDisposed) {
         return;
       }
       await op();
@@ -201,15 +201,15 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
       _screenRtpSender = null;
       _track = null;
       _hasRemote = false;
-      _renderer.srcObject = null;
       await _sender?.close();
       await _receiver?.close();
       _sender = null;
       _receiver = null;
       if (_rendererReady) {
+        _renderer.srcObject = null;
         await _renderer.dispose();
         _rendererReady = false;
       }
-    });
+    }, ignoreDisposed: true);
   }
 }

@@ -135,6 +135,8 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     result: @escaping FlutterResult
   ) {
     stopStreams()
+    pixelBuffer = nil
+    stitchBuffer = nil
     includeAudio = includeSystemAudio
     self.cursor = cursor
     self.motion = motion

@@ -109,9 +109,10 @@ final class MacCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
 
   func captureStill() -> [String: Any]? {
     bufferLock.lock()
+    let ready = enabled && frameCount > 0
     let buffer = muted ? blackBuffer : pixelBuffer
     bufferLock.unlock()
-    guard enabled, let buffer else {
+    guard ready, let buffer else {
       return nil
     }
     return StillEncoder.jpeg(from: buffer)

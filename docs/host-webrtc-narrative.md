@@ -28,7 +28,8 @@ sink.localScreens.listen((track) {
     // Screen send stopped: host removeTrack
     return
   }
-  // Second Send track. Host addTracks it separately. The server never sees a PIP.
+  // Second Send track. addTrack once; replaceTrack when generation changes.
+  // The server never sees a PIP.
   hostPeerConnection.addTrack(mapSendTrack(track))
 })
 session.capture.listen(hostPeerConnection.addAudio)  // same Capture stream

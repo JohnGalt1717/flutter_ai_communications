@@ -52,7 +52,7 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
 
   func captureStill() -> [String: Any]? {
     queue.sync {
-      guard enabled else {
+      guard enabled, frameCount > 0 else {
         return nil
       }
       let buffer = muted ? blackBuffer : pixelBuffer

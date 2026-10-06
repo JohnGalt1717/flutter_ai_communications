@@ -401,6 +401,9 @@ class AndroidCameraGraph(
 
     fun setMuted(muted: Boolean) {
         videoMuted = muted
+        if (muted) {
+            lastStill = null
+        }
         val captureSession = session ?: return
         val device = camera ?: return
         val target = surface ?: return
@@ -428,6 +431,7 @@ class AndroidCameraGraph(
 
     fun stop(releaseTexture: Boolean = true) {
         startId.incrementAndGet()
+        lastStill = null
         stopRepeatingLocked()
         closeCameraLocked()
         surface = null
@@ -487,8 +491,8 @@ class AndroidCameraGraph(
                 main.post { onFormat?.invoke(lastWidth, lastHeight, 0) }
             }
             blit(processed, destProducer.surface)
-            lastStill = processed.copy(processed.config ?: Bitmap.Config.ARGB_8888, false)
             if (!videoMuted) {
+                lastStill = processed
                 liveFrames.incrementAndGet()
             }
         } catch (error: Exception) {
