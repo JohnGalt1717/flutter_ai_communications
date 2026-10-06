@@ -501,6 +501,7 @@ final class _SessionPageState extends State<SessionPage> {
     if (!mounted) {
       return;
     }
+    setState(() => _session = null);
     try {
       await _applyStart(
         await _manager.start(
@@ -540,16 +541,19 @@ final class _SessionPageState extends State<SessionPage> {
         _bind(session, meeting: meeting);
       case StartDenied():
         setState(() {
+          _session = null;
           _status = 'denied';
           _phase = _HarnessPhase.idle;
         });
       case StartRestricted():
         setState(() {
+          _session = null;
           _status = 'restricted';
           _phase = _HarnessPhase.idle;
         });
       case StartUnavailable():
         setState(() {
+          _session = null;
           _status = 'unavailable';
           _phase = _HarnessPhase.idle;
         });
@@ -557,6 +561,7 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() => _status = 'alreadyActive');
       case StartFailed():
         setState(() {
+          _session = null;
           _status = 'failed';
           _phase = _HarnessPhase.idle;
         });
@@ -717,61 +722,75 @@ final class _SessionPageState extends State<SessionPage> {
       await _shareScreen(session);
       return;
     }
-    await session.beginScreenPick();
+    final pick = session.beginScreenPick();
     if (!mounted) {
+      await pick;
       await session.endScreenPick();
       return;
     }
-    var startedShare = false;
+    String? pickedId;
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Share'),
-              content: SharePicker(
-                sources: [
-                  for (final source in _screenSources)
-                    if (source.kind != ScreenSourceKind.systemPicker) source,
-                ],
-                includeSound: _includeSound,
-                motion: _screenMotion,
-                cursor: _screenCursor,
-                indicatedId: _indicatedScreenId,
-                onIncludeSound: (value) {
-                  setState(() => _includeSound = value);
-                  setDialogState(() {});
-                },
-                onMotion: (value) {
-                  setState(() => _screenMotion = value);
-                  setDialogState(() {});
-                },
-                onCursor: (value) {
-                  setState(() => _screenCursor = value);
-                  setDialogState(() {});
-                },
-                previewBuilder: (source) => screenPreviewThumb(session, source),
-                onPick: (id) {
-                  startedShare = true;
-                  Navigator.of(dialogContext).pop();
-                  unawaited(_shareScreen(session, sourceId: id));
-                },
-              ),
-              actions: [
-                TextButton(
-                  key: const Key('share-cancel'),
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Cancel'),
-                ),
-              ],
+        return StreamBuilder<String>(
+          stream: session.screenPreviewReady,
+          builder: (context, _) {
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                return AlertDialog(
+                  title: const Text('Share'),
+                  content: SharePicker(
+                    sources: [
+                      for (final source in _screenSources)
+                        if (source.kind != ScreenSourceKind.systemPicker)
+                          source,
+                    ],
+                    includeSound: _includeSound,
+                    motion: _screenMotion,
+                    cursor: _screenCursor,
+                    indicatedId: _indicatedScreenId,
+                    onIncludeSound: (value) {
+                      setState(() => _includeSound = value);
+                      setDialogState(() {});
+                    },
+                    onMotion: (value) {
+                      setState(() => _screenMotion = value);
+                      setDialogState(() {});
+                    },
+                    onCursor: (value) {
+                      setState(() => _screenCursor = value);
+                      setDialogState(() {});
+                    },
+                    previewBuilder: (source) =>
+                        screenPreviewThumb(session, source),
+                    onPick: (id) {
+                      pickedId = id;
+                      Navigator.of(dialogContext).pop();
+                    },
+                  ),
+                  actions: [
+                    TextButton(
+                      key: const Key('share-cancel'),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
       },
     );
-    if (!startedShare) {
+    await pick;
+    if (!mounted) {
+      await session.endScreenPick();
+      return;
+    }
+    if (pickedId != null) {
+      await _shareScreen(session, sourceId: pickedId);
+    } else {
       await session.endScreenPick();
     }
   }

@@ -341,6 +341,8 @@ class MethodChannelCommunicationsPlatform
   VideoFormat? _lastScreenNativeFormat;
   String? _lastScreenUnavailableReason;
   final Map<String, VideoSurface> _screenPreviews = {};
+  final StreamController<String> _screenPreviewReadyOut =
+      StreamController<String>.broadcast();
   final StreamController<List<ScreenSource>> _screenCatalogOut =
       StreamController<List<ScreenSource>>.broadcast();
   final StreamController<List<CameraEndpoint>> _cameraCatalogOut =
@@ -609,12 +611,17 @@ class MethodChannelCommunicationsPlatform
 
   @override
   Future<void> endScreenPickNative() async {
-    _screenPreviews.clear();
+    forgetScreenPreviews();
     try {
       await _methods.invokeMethod<void>('endScreenPickNative');
     } on MissingPluginException {
       return;
     }
+  }
+
+  /// Drops cached Screen preview handles. Native teardown is a separate call.
+  void forgetScreenPreviews() {
+    _screenPreviews.clear();
   }
 
   @override
@@ -631,6 +638,12 @@ class MethodChannelCommunicationsPlatform
   @override
   VideoSurface? screenPreviewNative(String sourceId) =>
       _screenPreviews[sourceId];
+
+  @override
+  Stream<String> get screenPreviewReady {
+    _ensureListening();
+    return _screenPreviewReadyOut.stream;
+  }
 
   @override
   Future<NativeGraphStart> startScreenShareNative({
@@ -891,6 +904,15 @@ class MethodChannelCommunicationsPlatform
         }
       case 'screenCatalog':
         _screenCatalogOut.add(_readScreenSources(payload as List<dynamic>?));
+      case 'screenPreview':
+        if (payload is Map) {
+          final id = payload['id'] as String?;
+          final textureId = _asInt(payload['textureId']);
+          if (id != null && textureId != null) {
+            _screenPreviews[id] = VideoSurface(handle: textureId);
+            _screenPreviewReadyOut.add(id);
+          }
+        }
       case 'isolation':
         _lastIsolation = IsolationEvent(
           _isolationState(payload as String? ?? 'unknown'),

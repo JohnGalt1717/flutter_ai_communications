@@ -373,7 +373,10 @@ final class FlutterAiCommunicationsMacos
   Future<NativeGraphStart> beginScreenPickNative() => _screen.beginPick();
 
   @override
-  Future<void> endScreenPickNative() => _screen.endPick();
+  Future<void> endScreenPickNative() async {
+    await _screen.endPick();
+    _channel?.forgetScreenPreviews();
+  }
 
   @override
   Future<void> indicateScreenSourceNative(String? sourceId) =>
@@ -381,7 +384,11 @@ final class FlutterAiCommunicationsMacos
 
   @override
   VideoSurface? screenPreviewNative(String sourceId) =>
-      _screen.previews[sourceId];
+      _screen.previews[sourceId] ?? _channel?.screenPreviewNative(sourceId);
+
+  @override
+  Stream<String> get screenPreviewReady =>
+      _channel?.screenPreviewReady ?? const Stream.empty();
 
   @override
   Future<NativeGraphStart> startScreenShareNative({

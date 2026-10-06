@@ -91,6 +91,24 @@ void main() {
     expect(manager.session?.isScreenSending, isFalse);
   });
 
+  testWidgets('Share cancel waits for beginScreenPick before ending pick', (
+    tester,
+  ) async {
+    platform.beginScreenPickDelay = const Duration(milliseconds: 40);
+    await pumpMeeting(tester);
+    await tester.tap(find.byKey(const Key('screen-share')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('share-picker')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('share-cancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('share-picker')), findsNothing);
+    expect(platform.screenPickOpen, isFalse);
+  });
+
   testWidgets('camera-pick selects a Camera Endpoint on the live Session', (
     tester,
   ) async {

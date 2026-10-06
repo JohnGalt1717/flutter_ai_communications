@@ -92,4 +92,23 @@ void main() {
     );
     expect(adapter.lastScreenSurface?.handle, 11);
   });
+
+  test('macOS beginScreenPick starts before thumbs arrive', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'beginScreenPickNative') {
+            return {'previews': <String, int>{}};
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsMacos(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(await adapter.beginScreenPickNative(), NativeGraphStart.started);
+    expect(adapter.screenPreviewNative('display-1'), isNull);
+  });
 }

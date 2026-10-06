@@ -75,6 +75,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     instance.screen.attachCatalog { [weak instance] sources in
       instance?.eventSink?(["type": "screenCatalog", "payload": sources])
     }
+    instance.screen.attachPreview { [weak instance] id, textureId in
+      instance?.eventSink?(
+        ["type": "screenPreview", "payload": ["id": id, "textureId": textureId]]
+      )
+    }
     instance.camera.onCatalog = { [weak instance] cameras in
       instance?.eventSink?(["type": "cameraCatalog", "payload": cameras])
     }
@@ -1055,7 +1060,18 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       resolved = endpointId
     }
     let uid = coreUID(resolved)
-    guard let deviceID = deviceID(forUID: uid) else {
+    // USB composites drop out of Core Audio after stopCameraNative. Join
+    // stop+start must wait (macosUidLookupRetry = 2s) or #95 fails the start.
+    let deadline = Date().addingTimeInterval(2.0)
+    var resolvedID = deviceID(forUID: uid)
+    if resolvedID == nil {
+      NSLog("MacOSAudioEngine deviceID(forUID:) waiting uid=%@", uid)
+      while resolvedID == nil, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+        resolvedID = deviceID(forUID: uid)
+      }
+    }
+    guard let deviceID = resolvedID else {
       NSLog("MacOSAudioEngine deviceID(forUID:) failed uid=%@", uid)
       return nil
     }

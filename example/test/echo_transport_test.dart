@@ -39,6 +39,19 @@ void main() {
     return (result as StartReady).session;
   }
 
+  test('loopback forwards Screen preview ready ids', () async {
+    final inner = FakeCommunicationsPlatform();
+    addTearDown(inner.dispose);
+    final loop = LoopbackCommunicationsPlatform(inner);
+    addTearDown(loop.dispose);
+    final ids = <String>[];
+    final sub = loop.screenPreviewReady.listen(ids.add);
+    addTearDown(sub.cancel);
+    await loop.beginScreenPickNative();
+    expect(ids, isNotEmpty);
+    expect(loop.screenPreviewNative(ids.first), isNotNull);
+  });
+
   test('fixture WAV round-trips as PCM16 LE mono 24 kHz', () {
     final pcm = FixturePcm.voiceBand24k();
     final wav = FixturePcm.toWav(pcm, sampleRate: 24000);
@@ -131,20 +144,22 @@ void main() {
     },
   );
 
-  test('wrapRegistered disposes the previous wrapper on catalog flag change',
-      () async {
-    FlutterAiCommunicationsPlatform.instance = platform;
-    final first = LoopbackCommunicationsPlatform.wrapRegistered();
-    expect(first.includeInCatalog, isFalse);
-    final second = LoopbackCommunicationsPlatform.wrapRegistered(
-      includeInCatalog: true,
-    );
-    expect(identical(first, second), isFalse);
-    expect(second.includeInCatalog, isTrue);
-    await Future<void>.delayed(Duration.zero);
-    expect(first.endpointCatalog, isNot(same(second.endpointCatalog)));
-    addTearDown(second.dispose);
-  });
+  test(
+    'wrapRegistered disposes the previous wrapper on catalog flag change',
+    () async {
+      FlutterAiCommunicationsPlatform.instance = platform;
+      final first = LoopbackCommunicationsPlatform.wrapRegistered();
+      expect(first.includeInCatalog, isFalse);
+      final second = LoopbackCommunicationsPlatform.wrapRegistered(
+        includeInCatalog: true,
+      );
+      expect(identical(first, second), isFalse);
+      expect(second.includeInCatalog, isTrue);
+      await Future<void>.delayed(Duration.zero);
+      expect(first.endpointCatalog, isNot(same(second.endpointCatalog)));
+      addTearDown(second.dispose);
+    },
+  );
 
   test('host loopback Pair stays out of the Endpoint catalog', () async {
     final loopback = LoopbackCommunicationsPlatform(platform);

@@ -140,6 +140,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// timeouts that return before the inner adapter finishes.
   Duration startNativeDelay = Duration.zero;
 
+  /// Delay before [beginScreenPickNative] returns.
+  Duration beginScreenPickDelay = Duration.zero;
+
   /// True after [startNative] has fully completed, including [startNativeDelay].
   var startNativeCompleted = false;
 
@@ -988,6 +991,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// Catalog updates tests inject.
   final StreamController<List<ScreenSource>> screenCatalogController =
       StreamController<List<ScreenSource>>.broadcast();
+  final StreamController<String> screenPreviewReadyController =
+      StreamController<String>.broadcast();
 
   @override
   VideoSurface? get lastScreenSurface => _lastScreenSurface;
@@ -1009,6 +1014,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   }
 
   @override
+  Stream<String> get screenPreviewReady => screenPreviewReadyController.stream;
+
+  @override
   Future<ScreenPermission> requestScreenPermission() async {
     screenPermissionRequests++;
     return screenPermission;
@@ -1016,6 +1024,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<NativeGraphStart> beginScreenPickNative() async {
+    if (beginScreenPickDelay > Duration.zero) {
+      await Future<void>.delayed(beginScreenPickDelay);
+    }
     if (screenPermission != ScreenPermission.granted) {
       screenPickOpen = true;
       _screenPreviews.clear();
@@ -1034,6 +1045,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
               ),
             ),
       );
+    for (final id in _screenPreviews.keys) {
+      screenPreviewReadyController.add(id);
+    }
     return NativeGraphStart.started;
   }
 
@@ -1158,6 +1172,7 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     await audioFocusController.close();
     await osRouteController.close();
     await screenCatalogController.close();
+    await screenPreviewReadyController.close();
     await cameraCatalogController.close();
     await _videoSurfaceOut.close();
   }

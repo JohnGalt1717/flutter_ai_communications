@@ -370,6 +370,9 @@ final class Session {
   VideoSurface? screenPreview(String sourceId) =>
       _platform.screenPreviewNative(sourceId);
 
+  /// Source ids whose Screen preview thumb became ready during pick.
+  Stream<String> get screenPreviewReady => _platform.screenPreviewReady;
+
   /// Live Screen source catalog during pick or send.
   Stream<List<ScreenSource>> get screenSourceCatalog =>
       _platform.screenSourceCatalog;
