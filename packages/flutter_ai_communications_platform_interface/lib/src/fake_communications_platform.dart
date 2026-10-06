@@ -140,6 +140,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   /// timeouts that return before the inner adapter finishes.
   Duration startNativeDelay = Duration.zero;
 
+  /// Delay before [beginScreenPickNative] returns.
+  Duration beginScreenPickDelay = Duration.zero;
+
   /// True after [startNative] has fully completed, including [startNativeDelay].
   var startNativeCompleted = false;
 
@@ -1021,6 +1024,9 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   @override
   Future<NativeGraphStart> beginScreenPickNative() async {
+    if (beginScreenPickDelay > Duration.zero) {
+      await Future<void>.delayed(beginScreenPickDelay);
+    }
     if (screenPermission != ScreenPermission.granted) {
       screenPickOpen = true;
       _screenPreviews.clear();

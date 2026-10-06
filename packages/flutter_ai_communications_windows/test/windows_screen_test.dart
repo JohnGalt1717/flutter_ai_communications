@@ -94,6 +94,24 @@ void main() {
     expect(adapter.lastScreenSurface?.handle, 9);
   });
 
+  test('Windows empty beginScreenPick is unavailable', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'beginScreenPickNative') {
+            return {'previews': <String, int>{}};
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsWindows(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(await adapter.beginScreenPickNative(), NativeGraphStart.unavailable);
+  });
+
   test(
     'Include sound uses WASAPI FFI loopback, not the screen channel',
     () async {

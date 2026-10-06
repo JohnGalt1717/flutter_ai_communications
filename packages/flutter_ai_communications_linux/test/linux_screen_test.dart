@@ -89,6 +89,24 @@ void main() {
     expect(adapter.screenPreviewNative('display-0')?.handle, 4);
   });
 
+  test('Linux empty beginScreenPick is unavailable', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'beginScreenPickNative') {
+            return {'previews': <String, int>{}};
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsLinux(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(await adapter.beginScreenPickNative(), NativeGraphStart.unavailable);
+  });
+
   test('Linux startScreenShare maps a texture handle', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

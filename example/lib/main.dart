@@ -722,12 +722,13 @@ final class _SessionPageState extends State<SessionPage> {
       await _shareScreen(session);
       return;
     }
-    unawaited(session.beginScreenPick());
+    final pick = session.beginScreenPick();
     if (!mounted) {
+      await pick;
       await session.endScreenPick();
       return;
     }
-    var startedShare = false;
+    String? pickedId;
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -764,9 +765,8 @@ final class _SessionPageState extends State<SessionPage> {
                     previewBuilder: (source) =>
                         screenPreviewThumb(session, source),
                     onPick: (id) {
-                      startedShare = true;
+                      pickedId = id;
                       Navigator.of(dialogContext).pop();
-                      unawaited(_shareScreen(session, sourceId: id));
                     },
                   ),
                   actions: [
@@ -783,7 +783,14 @@ final class _SessionPageState extends State<SessionPage> {
         );
       },
     );
-    if (!startedShare) {
+    await pick;
+    if (!mounted) {
+      await session.endScreenPick();
+      return;
+    }
+    if (pickedId != null) {
+      await _shareScreen(session, sourceId: pickedId);
+    } else {
       await session.endScreenPick();
     }
   }

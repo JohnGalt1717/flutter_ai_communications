@@ -600,7 +600,9 @@ class MethodChannelCommunicationsPlatform
       _screenPreviews
         ..clear()
         ..addAll(_readPreviewMap(value));
-      return NativeGraphStart.started;
+      return _screenPreviews.isEmpty
+          ? NativeGraphStart.unavailable
+          : NativeGraphStart.started;
     } on MissingPluginException {
       _screenPreviews.clear();
       return NativeGraphStart.unavailable;
@@ -609,12 +611,17 @@ class MethodChannelCommunicationsPlatform
 
   @override
   Future<void> endScreenPickNative() async {
-    _screenPreviews.clear();
+    forgetScreenPreviews();
     try {
       await _methods.invokeMethod<void>('endScreenPickNative');
     } on MissingPluginException {
       return;
     }
+  }
+
+  /// Drops cached Screen preview handles. Native teardown is a separate call.
+  void forgetScreenPreviews() {
+    _screenPreviews.clear();
   }
 
   @override

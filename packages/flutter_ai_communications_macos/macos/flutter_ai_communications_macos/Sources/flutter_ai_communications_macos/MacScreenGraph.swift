@@ -33,6 +33,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   private var followTimer: Timer?
   private var previews: [String: PreviewTexture] = [:]
   private var emitPreview: ((String, Int64) -> Void)?
+  private var pickGeneration: UInt64 = 0
 
   func attach(textures: FlutterTextureRegistry) {
     self.textures = textures
@@ -93,6 +94,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
 
   func beginPick(result: @escaping FlutterResult) {
     endPick()
+    let generation = pickGeneration
     refreshContent { [weak self] content, _ in
       guard let self else {
         result(["previews": [:] as [String: Int64]])
@@ -106,12 +108,13 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
         return
       }
       Task {
-        await self.capturePreviews(content: content)
+        await self.capturePreviews(content: content, generation: generation)
       }
     }
   }
 
   func endPick() {
+    pickGeneration += 1
     for preview in previews.values {
       if preview.textureId >= 0 {
         textures?.unregisterTexture(preview.textureId)
@@ -549,20 +552,33 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     return screen?.localizedName ?? "Display \(display.displayID)"
   }
 
-  private func capturePreviews(content: SCShareableContent) async {
+  private func capturePreviews(content: SCShareableContent, generation: UInt64) async {
+    guard generation == pickGeneration else {
+      return
+    }
     let ownApps = content.applications.filter {
       $0.bundleIdentifier == Bundle.main.bundleIdentifier
     }
     for display in content.displays {
       let id = "display-\(display.displayID)"
       let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
-      await previewTexture(id: id, filter: filter, frame: display.frame)
+      await previewTexture(
+        id: id,
+        filter: filter,
+        frame: display.frame,
+        generation: generation
+      )
     }
     if !content.displays.isEmpty {
       let union = content.displays.map(\.frame).reduce(CGRect.null) { $0.union($1) }
       if let first = content.displays.first {
         let filter = SCContentFilter(display: first, excludingApplications: ownApps, exceptingWindows: [])
-        await previewTexture(id: "all-displays", filter: filter, frame: union)
+        await previewTexture(
+          id: "all-displays",
+          filter: filter,
+          frame: union,
+          generation: generation
+        )
       }
     }
     let overlayIds = await MainActor.run {
@@ -578,18 +594,31 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let frame = window.frame
         group.addTask {
-          await self.previewTexture(id: id, filter: filter, frame: frame)
+          await self.previewTexture(
+            id: id,
+            filter: filter,
+            frame: frame,
+            generation: generation
+          )
         }
       }
     }
   }
 
-  private func previewTexture(id: String, filter: SCContentFilter, frame: CGRect) async {
+  private func previewTexture(
+    id: String,
+    filter: SCContentFilter,
+    frame: CGRect,
+    generation: UInt64
+  ) async {
     let image = await screenshot(filter: filter, frame: frame)
     guard let image else {
       return
     }
     await MainActor.run {
+      guard generation == self.pickGeneration else {
+        return
+      }
       let preview = PreviewTexture()
       preview.pixelBuffer = self.pixelBuffer(from: image, width: 160, height: 90)
       if let textures {
