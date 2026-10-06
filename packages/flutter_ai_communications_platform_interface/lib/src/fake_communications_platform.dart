@@ -11,6 +11,7 @@ import 'native_graph_start.dart';
 import 'native_processor_result.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
+import 'still_frame.dart';
 
 /// In-memory adapter for tests. Does not touch a real device.
 final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
@@ -484,7 +485,8 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   Stream<IsolationEvent> get isolation => isolationController.stream;
 
   @override
-  Stream<void> get processorUnavailable => processorUnavailableController.stream;
+  Stream<void> get processorUnavailable =>
+      processorUnavailableController.stream;
 
   @override
   Future<void> openIsolationSettings() async {
@@ -541,6 +543,167 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
 
   /// Tokens passed to [detachProductionVideoPathNative].
   final List<String> detachedProductionVideoPathTokens = <String>[];
+
+  /// Tokens passed to [attachScreenProductionVideoPathNative].
+  final List<String> attachedScreenProductionVideoPathTokens = <String>[];
+
+  /// Tokens passed to [detachScreenProductionVideoPathNative].
+  final List<String> detachedScreenProductionVideoPathTokens = <String>[];
+
+  /// 1×1 JPEG used by [captureStillNative] / [captureScreenStillNative].
+  static final Uint8List fixtureJpeg = Uint8List.fromList(const [
+    0xFF,
+    0xD8,
+    0xFF,
+    0xE0,
+    0x00,
+    0x10,
+    0x4A,
+    0x46,
+    0x49,
+    0x46,
+    0x00,
+    0x01,
+    0x01,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0xFF,
+    0xDB,
+    0x00,
+    0x43,
+    0x00,
+    0x08,
+    0x06,
+    0x06,
+    0x07,
+    0x06,
+    0x05,
+    0x08,
+    0x07,
+    0x07,
+    0x07,
+    0x09,
+    0x09,
+    0x08,
+    0x0A,
+    0x0C,
+    0x14,
+    0x0D,
+    0x0C,
+    0x0B,
+    0x0B,
+    0x0C,
+    0x19,
+    0x12,
+    0x13,
+    0x0F,
+    0x14,
+    0x1D,
+    0x1A,
+    0x1F,
+    0x1E,
+    0x1D,
+    0x1A,
+    0x1C,
+    0x1C,
+    0x20,
+    0x24,
+    0x2E,
+    0x27,
+    0x20,
+    0x22,
+    0x2C,
+    0x23,
+    0x1C,
+    0x1C,
+    0x28,
+    0x37,
+    0x29,
+    0x2C,
+    0x30,
+    0x31,
+    0x34,
+    0x34,
+    0x34,
+    0x1F,
+    0x27,
+    0x39,
+    0x3D,
+    0x38,
+    0x32,
+    0x3C,
+    0x2E,
+    0x33,
+    0x34,
+    0x32,
+    0xFF,
+    0xC0,
+    0x00,
+    0x0B,
+    0x08,
+    0x00,
+    0x01,
+    0x00,
+    0x01,
+    0x01,
+    0x01,
+    0x11,
+    0x00,
+    0xFF,
+    0xC4,
+    0x00,
+    0x14,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x08,
+    0xFF,
+    0xDA,
+    0x00,
+    0x08,
+    0x01,
+    0x01,
+    0x00,
+    0x00,
+    0x3F,
+    0x00,
+    0x7F,
+    0xFF,
+    0xD9,
+  ]);
+
+  /// How many times [captureStillNative] ran.
+  int captureStillCalls = 0;
+
+  /// How many times [captureScreenStillNative] ran.
+  int captureScreenStillCalls = 0;
+
+  /// When set, [captureStillNative] throws.
+  Object? stillThrow;
+
+  /// When set, [captureScreenStillNative] throws.
+  Object? screenStillThrow;
 
   /// Selected camera id.
   String? selectedCameraId;
@@ -715,6 +878,54 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
   @override
   Future<void> detachProductionVideoPathNative({required String token}) async {
     detachedProductionVideoPathTokens.add(token);
+  }
+
+  @override
+  Future<void> attachScreenProductionVideoPathNative({
+    required String token,
+  }) async {
+    attachedScreenProductionVideoPathTokens.add(token);
+  }
+
+  @override
+  Future<void> detachScreenProductionVideoPathNative({
+    required String token,
+  }) async {
+    detachedScreenProductionVideoPathTokens.add(token);
+  }
+
+  @override
+  Future<StillFrame?> captureStillNative() async {
+    captureStillCalls++;
+    final thrown = stillThrow;
+    if (thrown != null) {
+      throw thrown;
+    }
+    if (!cameraRunning) {
+      return null;
+    }
+    return StillFrame(
+      bytes: fixtureJpeg,
+      width: _lastNativeVideoFormat?.width ?? 1280,
+      height: _lastNativeVideoFormat?.height ?? 720,
+    );
+  }
+
+  @override
+  Future<StillFrame?> captureScreenStillNative() async {
+    captureScreenStillCalls++;
+    final thrown = screenStillThrow;
+    if (thrown != null) {
+      throw thrown;
+    }
+    if (!screenSending) {
+      return null;
+    }
+    return StillFrame(
+      bytes: fixtureJpeg,
+      width: _lastScreenNativeFormat?.width ?? 1920,
+      height: _lastScreenNativeFormat?.height ?? 1080,
+    );
   }
 
   @override

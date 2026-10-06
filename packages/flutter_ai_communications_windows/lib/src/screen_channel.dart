@@ -84,15 +84,13 @@ final class MethodChannelScreenBackend {
     bool motion = false,
   }) async {
     try {
-      final value = await _methods.invokeMethod<Object?>(
-        'startScreenShareNative',
-        {
-          'sourceId': sourceId,
-          'includeSystemAudio': includeSystemAudio,
-          'cursor': cursor,
-          'motion': motion,
-        },
-      );
+      final value = await _methods
+          .invokeMethod<Object?>('startScreenShareNative', {
+            'sourceId': sourceId,
+            'includeSystemAudio': includeSystemAudio,
+            'cursor': cursor,
+            'motion': motion,
+          });
       if (value is Map) {
         final status = value['status'] as String? ?? 'started';
         if (status != 'started') {
@@ -144,10 +142,9 @@ final class MethodChannelScreenBackend {
 
   Future<bool> setIncludeSystemAudio(bool enabled) async {
     try {
-      return await _methods.invokeMethod<bool>(
-            'setIncludeSystemAudioNative',
-            {'enabled': enabled},
-          ) ==
+      return await _methods.invokeMethod<bool>('setIncludeSystemAudioNative', {
+            'enabled': enabled,
+          }) ==
           true;
     } on MissingPluginException {
       return false;
@@ -161,6 +158,16 @@ final class MethodChannelScreenBackend {
       });
     } on MissingPluginException {
       return;
+    }
+  }
+
+  Future<StillFrame?> captureStill() async {
+    try {
+      return StillFrame.fromChannel(
+        await _methods.invokeMethod<Object?>('captureScreenStillNative'),
+      );
+    } on MissingPluginException {
+      return null;
     }
   }
 

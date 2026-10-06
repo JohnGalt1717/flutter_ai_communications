@@ -205,6 +205,17 @@ final class MethodChannelCameraBackend implements CameraBackend {
   }
 
   @override
+  Future<StillFrame?> captureStill() async {
+    try {
+      return StillFrame.fromChannel(
+        await _methods.invokeMethod<Object?>('captureStillNative'),
+      );
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
   Future<void> pollStats() async {
     try {
       final value = await _methods.invokeMethod<Object?>('cameraGraphStats');

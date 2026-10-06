@@ -56,13 +56,15 @@ packages.
 7. As a host on web/Android/iOS/Wayland, I want the same Session calls; the
    OS picker is the UI.
 8. As a Transport plugin, I want a second local video path (and optional
-   system audio) from the Session, without mixing it into mic capture.
+   system audio) from the Session, without mixing it into mic capture. The
+   WebRTC sink yields a screen Send track beside the camera Send track so
+   the host addTracks them separately. Server ingest taps those same edges.
 9. As a developer, I want the example in-session picker to be the
    Orchestration path on iOS, Android, web, macOS, Windows, and Linux.
 
 ## Implementation Decisions
 
-- Glossary: `CONTEXT.md`. ADRs 0013, 0018–0019, 0022–0027.
+- Glossary: `CONTEXT.md`. ADRs 0013, 0018–0019, 0022–0027, 0030.
 - Host picker narrative: `docs/host-screen-share-narrative.md`.
 - Markdown tickets: `.scratch/screen-v1-issues/`. Remaining six-platform
   receipts are tracked in GitHub issue #44.

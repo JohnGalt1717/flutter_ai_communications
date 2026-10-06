@@ -309,6 +309,9 @@ final class FlutterAiCommunicationsWindows
       _camera.attachProductionPath(token);
 
   @override
+  Future<StillFrame?> captureStillNative() => _camera.captureStill();
+
+  @override
   Future<void> detachProductionVideoPathNative({required String token}) =>
       _camera.detachProductionPath(token);
 
@@ -352,6 +355,9 @@ final class FlutterAiCommunicationsWindows
       motion: motion,
     );
   }
+
+  @override
+  Future<StillFrame?> captureScreenStillNative() => _screen.captureStill();
 
   @override
   Future<void> stopScreenShareNative() async {

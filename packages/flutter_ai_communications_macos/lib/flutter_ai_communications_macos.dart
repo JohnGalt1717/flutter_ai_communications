@@ -419,4 +419,11 @@ final class FlutterAiCommunicationsMacos
 
   @override
   String? get lastScreenUnavailableReason => _screen.lastUnavailableReason;
+
+  @override
+  Future<StillFrame?> captureStillNative() =>
+      _channel?.captureStillNative() ?? Future<StillFrame?>.value();
+
+  @override
+  Future<StillFrame?> captureScreenStillNative() => _screen.captureStill();
 }

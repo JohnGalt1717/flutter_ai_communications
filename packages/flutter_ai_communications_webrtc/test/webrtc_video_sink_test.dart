@@ -102,4 +102,56 @@ void main() {
     expect(seen?.id, 'video-1');
     await sub.cancel();
   });
+
+  test(
+    'startScreenShare yields a screen Send track beside the camera Send track',
+    () async {
+      final session =
+          ((await manager.start(cameraSend: true)) as StartReady).session;
+      final capture = session.capture;
+      sink.attach(session);
+      expect(sink.localVideo?.id, 'video-1');
+      expect(sink.localScreen, isNull);
+
+      expect(
+        await session.startScreenShare('display-0'),
+        isA<ScreenShareReady>(),
+      );
+      expect(sink.localVideo?.id, 'video-1');
+      expect(sink.localScreen, isNotNull);
+      expect(sink.localScreen!.id, 'screen-1');
+      expect(sink.localScreen!.generation, 1);
+      expect(sink.localScreen!.muteVideo, isFalse);
+      expect(sink.localScreen!.surface?.handle, 2);
+      expect(session.screenSurface?.handle, 2);
+      expect(identical(session.capture, capture), isTrue);
+    },
+  );
+
+  test('stopScreenShare clears the screen Send track; camera stays', () async {
+    final session =
+        ((await manager.start(cameraSend: true)) as StartReady).session;
+    sink.attach(session);
+    await session.startScreenShare('display-0');
+    expect(sink.localScreen, isNotNull);
+
+    await session.stopScreenShare();
+    expect(sink.localScreen, isNull);
+    expect(sink.localVideo?.id, 'video-1');
+    expect(session.isStopped, isFalse);
+  });
+
+  test(
+    'late screen Send track subscriber receives the current track',
+    () async {
+      final session = ((await manager.start()) as StartReady).session;
+      sink.attach(session);
+      await session.startScreenShare('display-0');
+      WebrtcSendTrack? seen;
+      final sub = sink.localScreens.listen((track) => seen = track);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen?.id, 'screen-1');
+      await sub.cancel();
+    },
+  );
 }

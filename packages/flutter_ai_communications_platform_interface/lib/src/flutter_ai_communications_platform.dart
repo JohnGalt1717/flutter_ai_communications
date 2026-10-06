@@ -10,6 +10,7 @@ import 'native_graph_start.dart';
 import 'native_processor_result.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
+import 'still_frame.dart';
 
 /// The platform seam for the Audio manager.
 ///
@@ -259,6 +260,28 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   /// Tears down the native consumer registered by
   /// [attachProductionVideoPathNative]. Idempotent for unknown tokens.
   Future<void> detachProductionVideoPathNative({required String token}) async {}
+
+  /// Native consumer of the screen-send Production video path.
+  ///
+  /// [token] identifies one Screen video sink. Default is a no-op so adapters
+  /// without a Transport plugin still load.
+  Future<void> attachScreenProductionVideoPathNative({
+    required String token,
+  }) async {}
+
+  /// Tears down the native consumer registered by
+  /// [attachScreenProductionVideoPathNative]. Idempotent for unknown tokens.
+  Future<void> detachScreenProductionVideoPathNative({
+    required String token,
+  }) async {}
+
+  /// One JPEG/PNG grab of the camera Production path after Isolation /
+  /// Video processor. Null when the path is not feeding.
+  Future<StillFrame?> captureStillNative() async => null;
+
+  /// One JPEG/PNG grab of the screen-send Production path. Null when
+  /// screen send is not running. Not a Screen preview.
+  Future<StillFrame?> captureScreenStillNative() async => null;
 
   /// Negotiated Native Video Format from the last camera start.
   VideoFormat? get lastNativeVideoFormat => null;

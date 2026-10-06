@@ -50,3 +50,13 @@ abstract interface class VideoSink {
   /// processor identity, or the Video surface changes.
   void onVideoPath(VideoPathSnapshot snapshot);
 }
+
+/// Observes the screen-send Production video path.
+///
+/// A Transport plugin implements this and binds natively via
+/// `attachScreenProductionVideoPathNative`. [VideoPathSnapshot.cameraOff]
+/// means screen send is not feeding. Frames do not copy through Dart.
+abstract interface class ScreenVideoSink {
+  /// Called on attach and whenever screen send starts, replaces, or stops.
+  void onScreenVideoPath(VideoPathSnapshot snapshot);
+}

@@ -161,6 +161,16 @@ final class MethodChannelScreenBackend {
     }
   }
 
+  Future<StillFrame?> captureStill() async {
+    try {
+      return StillFrame.fromChannel(
+        await _methods.invokeMethod<Object?>('captureScreenStillNative'),
+      );
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   Future<void> setCursor(bool cursor) async {
     try {
       await _methods.invokeMethod<void>('setScreenCursorNative', {

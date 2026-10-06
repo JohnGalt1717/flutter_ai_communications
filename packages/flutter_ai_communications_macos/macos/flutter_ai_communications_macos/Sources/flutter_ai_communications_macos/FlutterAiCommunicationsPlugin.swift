@@ -209,6 +209,10 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
     case "setScreenCursorNative":
       screen.setCursor((call.arguments as? [String: Any])?["cursor"] as? Bool ?? true)
       result(nil)
+    case "captureStillNative":
+      result(camera.captureStill())
+    case "captureScreenStillNative":
+      result(screen.captureStill())
     default:
       result(FlutterMethodNotImplemented)
     }

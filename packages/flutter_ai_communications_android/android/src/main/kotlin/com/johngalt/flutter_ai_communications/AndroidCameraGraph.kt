@@ -54,6 +54,7 @@ class AndroidCameraGraph(
     private var frameBitmap: Bitmap? = null
     private val frameCount = AtomicInteger(0)
     private val liveFrames = AtomicInteger(0)
+    @Volatile private var lastStill: Bitmap? = null
     var onFormat: ((Int, Int, Int) -> Unit)? = null
     private var watchingDisplay = false
     private var lastAppliedRotation = -1
@@ -400,6 +401,9 @@ class AndroidCameraGraph(
 
     fun setMuted(muted: Boolean) {
         videoMuted = muted
+        if (muted) {
+            lastStill = null
+        }
         val captureSession = session ?: return
         val device = camera ?: return
         val target = surface ?: return
@@ -427,6 +431,7 @@ class AndroidCameraGraph(
 
     fun stop(releaseTexture: Boolean = true) {
         startId.incrementAndGet()
+        lastStill = null
         stopRepeatingLocked()
         closeCameraLocked()
         surface = null
@@ -442,6 +447,23 @@ class AndroidCameraGraph(
         return mapOf(
             "frameCount" to frameCount.get(),
             "liveFrames" to liveFrames.get(),
+        )
+    }
+
+    fun captureStill(): Map<String, Any>? {
+        if (!cameraEnabled) {
+            return null
+        }
+        val bitmap = lastStill ?: return null
+        val stream = java.io.ByteArrayOutputStream()
+        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)) {
+            return null
+        }
+        return mapOf(
+            "bytes" to stream.toByteArray(),
+            "width" to bitmap.width,
+            "height" to bitmap.height,
+            "mime" to "image/jpeg",
         )
     }
 
@@ -470,6 +492,7 @@ class AndroidCameraGraph(
             }
             blit(processed, destProducer.surface)
             if (!videoMuted) {
+                lastStill = processed
                 liveFrames.incrementAndGet()
             }
         } catch (error: Exception) {

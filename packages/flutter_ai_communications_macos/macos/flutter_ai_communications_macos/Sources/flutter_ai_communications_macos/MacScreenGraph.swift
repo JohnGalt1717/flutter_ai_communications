@@ -49,6 +49,13 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     return Unmanaged.passRetained(buffer)
   }
 
+  func captureStill() -> [String: Any]? {
+    guard sendId != nil, let buffer = pixelBuffer ?? stitchBuffer else {
+      return nil
+    }
+    return StillEncoder.jpeg(from: buffer)
+  }
+
   private func ensureProductionTexture() {
     guard textureId < 0, let textures else {
       return
@@ -128,6 +135,8 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
     result: @escaping FlutterResult
   ) {
     stopStreams()
+    pixelBuffer = nil
+    stitchBuffer = nil
     includeAudio = includeSystemAudio
     self.cursor = cursor
     self.motion = motion

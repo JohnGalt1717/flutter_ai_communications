@@ -364,4 +364,7 @@ final class _RecordingCamera implements CameraBackend {
 
   @override
   Future<void> pollStats() async {}
+
+  @override
+  Future<StillFrame?> captureStill() async => null;
 }

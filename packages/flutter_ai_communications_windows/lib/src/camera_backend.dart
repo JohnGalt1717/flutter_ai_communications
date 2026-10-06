@@ -57,4 +57,7 @@ abstract class CameraBackend {
 
   /// Tears down [attachProductionPath]. Idempotent for unknown tokens.
   Future<void> detachProductionPath(String token) async {}
+
+  /// One JPEG/PNG grab of the camera Production path. Null when not feeding.
+  Future<StillFrame?> captureStill() async => null;
 }

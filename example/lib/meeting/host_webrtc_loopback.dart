@@ -11,8 +11,11 @@ abstract interface class HostWebRtcLoopback {
   /// Inbound video tile. Key [inboundKey] for the Orchestration harness.
   Widget inboundView({Key? key});
 
-  /// Adds, replaces, or removes the Send track on the host PeerConnection.
+  /// Adds, replaces, or removes the camera Send track on the host PeerConnection.
   Future<void> applySendTrack(WebrtcSendTrack? track);
+
+  /// Adds, replaces, or removes the screen Send track beside the camera track.
+  Future<void> applyScreenSendTrack(WebrtcSendTrack? track);
 
   /// Called when inbound video becomes ready (remote track).
   set inboundChanged(VoidCallback? callback);
@@ -29,11 +32,20 @@ final class FakeHostWebRtcLoopback implements HostWebRtcLoopback {
   /// Last Send track passed to [applySendTrack].
   WebrtcSendTrack? lastTrack;
 
+  /// Last screen Send track passed to [applyScreenSendTrack].
+  WebrtcSendTrack? lastScreenTrack;
+
   /// Send track ids that were added.
   final addedTrackIds = <String>[];
 
+  /// Screen Send track ids that were added.
+  final addedScreenTrackIds = <String>[];
+
   /// Send track ids that were removed.
   final removedTrackIds = <String>[];
+
+  /// Screen Send track ids that were removed.
+  final removedScreenTrackIds = <String>[];
 
   /// Whether [dispose] ran.
   var disposed = false;
@@ -79,11 +91,30 @@ final class FakeHostWebRtcLoopback implements HostWebRtcLoopback {
   }
 
   @override
+  Future<void> applyScreenSendTrack(WebrtcSendTrack? track) async {
+    if (disposed) {
+      return;
+    }
+    final previous = lastScreenTrack;
+    if (previous != null && (track == null || track.id != previous.id)) {
+      removedScreenTrackIds.add(previous.id);
+    }
+    if (track != null && track.id != previous?.id) {
+      addedScreenTrackIds.add(track.id);
+    }
+    lastScreenTrack = track;
+  }
+
+  @override
   Future<void> dispose() async {
     if (lastTrack != null) {
       removedTrackIds.add(lastTrack!.id);
     }
+    if (lastScreenTrack != null) {
+      removedScreenTrackIds.add(lastScreenTrack!.id);
+    }
     lastTrack = null;
+    lastScreenTrack = null;
     disposed = true;
   }
 }

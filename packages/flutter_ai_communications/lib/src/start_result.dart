@@ -182,3 +182,47 @@ final class ProcessorUnavailable extends ProcessorSetResult {
   /// Creates an unavailable result.
   const ProcessorUnavailable();
 }
+
+/// Outcome of [Session.captureStill] / [Session.captureScreenStill].
+sealed class StillResult {
+  /// Creates a still result.
+  const StillResult();
+}
+
+/// One native JPEG/PNG sample of a Production video path.
+final class StillReady extends StillResult {
+  /// Creates a ready still.
+  const StillReady(
+    this.bytes, {
+    required this.width,
+    required this.height,
+    this.mime = 'image/jpeg',
+  });
+
+  /// Encoded still bytes.
+  final Uint8List bytes;
+
+  /// Pixel width.
+  final int width;
+
+  /// Pixel height.
+  final int height;
+
+  /// `image/jpeg` or `image/png`.
+  final String mime;
+}
+
+/// The Production video path is not feeding. Fail closed.
+final class StillUnavailable extends StillResult {
+  /// Creates an unavailable still.
+  const StillUnavailable();
+}
+
+/// Native grab failed unexpectedly.
+final class StillFailed extends StillResult {
+  /// Creates a failed still.
+  const StillFailed([this.cause]);
+
+  /// Optional underlying cause.
+  final Object? cause;
+}

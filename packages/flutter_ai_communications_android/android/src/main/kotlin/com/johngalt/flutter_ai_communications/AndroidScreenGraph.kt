@@ -3,6 +3,7 @@ package com.johngalt.flutter_ai_communications
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.projection.MediaProjection
@@ -10,7 +11,9 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.PixelCopy
 import android.view.Surface
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
@@ -32,7 +35,11 @@ class AndroidScreenGraph(
     private var surface: Surface? = null
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
+    private var sendWidth = 0
+    private var sendHeight = 0
     private val playback = AndroidPlaybackCapture()
+    private val stillsThread = HandlerThread("fac-screen-still").also { it.start() }
+    private val stillsHandler = Handler(stillsThread.looper)
     private val startReplied = AtomicBoolean(true)
     private val requestCode = 0xFAC4
     private val projectionCallback =
@@ -116,6 +123,8 @@ class AndroidScreenGraph(
         includeAudio = false
         virtualDisplay?.release()
         virtualDisplay = null
+        sendWidth = 0
+        sendHeight = 0
         val live = projection
         projection = null
         if (live != null) {
@@ -206,6 +215,8 @@ class AndroidScreenGraph(
             return
         }
         this.projection = projection
+        sendWidth = width
+        sendHeight = height
         projection.registerCallback(projectionCallback, main)
         virtualDisplay =
             projection.createVirtualDisplay(
@@ -230,5 +241,44 @@ class AndroidScreenGraph(
                 "systemAudio" to systemAudio,
             ),
         )
+    }
+
+    fun captureStill(result: MethodChannel.Result) {
+        val live = surface
+        val width = sendWidth
+        val height = sendHeight
+        if (live == null || virtualDisplay == null || width <= 0 || height <= 0) {
+            result.success(null)
+            return
+        }
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        try {
+            PixelCopy.request(live, bitmap, { copyResult ->
+                if (copyResult != PixelCopy.SUCCESS) {
+                    result.success(null)
+                    return@request
+                }
+                stillsHandler.post {
+                    val stream = ByteArrayOutputStream()
+                    val ok = bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+                    main.post {
+                        if (!ok) {
+                            result.success(null)
+                        } else {
+                            result.success(
+                                mapOf(
+                                    "bytes" to stream.toByteArray(),
+                                    "width" to width,
+                                    "height" to height,
+                                    "mime" to "image/jpeg",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }, main)
+        } catch (_: IllegalArgumentException) {
+            result.success(null)
+        }
     }
 }

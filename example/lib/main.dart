@@ -173,6 +173,7 @@ final class _SessionPageState extends State<SessionPage> {
   EchoTransport? _echo;
   WebrtcVideoSink? _webrtc;
   StreamSubscription<WebrtcSendTrack?>? _webrtcSub;
+  StreamSubscription<WebrtcSendTrack?>? _webrtcScreenSub;
   EchoProof? _proof;
   String? _status;
   IsolationEvent? _isolation;
@@ -306,6 +307,7 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_catalogSub?.cancel());
     unawaited(_cameraCatalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
+    unawaited(_webrtcScreenSub?.cancel());
     _webrtc?.detach();
     unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
@@ -441,6 +443,9 @@ final class _SessionPageState extends State<SessionPage> {
       final sub = _webrtcSub;
       _webrtcSub = null;
       await sub?.cancel();
+      final screenSub = _webrtcScreenSub;
+      _webrtcScreenSub = null;
+      await screenSub?.cancel();
       _webrtc?.detach();
       _webrtc = null;
       await _manager.cameraPreview?.stop();
@@ -584,6 +589,12 @@ final class _SessionPageState extends State<SessionPage> {
           setState(() {});
         }
       });
+      _webrtcScreenSub = webrtc.localScreens.listen((track) {
+        unawaited(_webRtcLoopback.applyScreenSendTrack(track));
+        if (mounted) {
+          setState(() {});
+        }
+      });
     }
     session.isolation.listen((event) {
       if (mounted) {
@@ -659,6 +670,9 @@ final class _SessionPageState extends State<SessionPage> {
     final sub = _webrtcSub;
     _webrtcSub = null;
     unawaited(sub?.cancel());
+    final screenSub = _webrtcScreenSub;
+    _webrtcScreenSub = null;
+    unawaited(screenSub?.cancel());
     _webrtc?.detach();
     await _webRtcLoopback.dispose();
     await _echo?.dispose();
