@@ -371,6 +371,39 @@ void main() {
     await tester.pump(Duration.zero);
   });
 
+  testWidgets(
+    'Join start failure drops the stopped Session and enables Enter lobby',
+    (tester) async {
+      await tester.pumpWidget(ExampleApp(manager: manager));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('lobby-enter')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.byKey(const Key('lobby-join')), findsOneWidget);
+
+      platform.nativeStart = NativeGraphStart.failed;
+      await tester.tap(find.byKey(const Key('lobby-join')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+
+      expect(find.byKey(const Key('meeting')), findsNothing);
+      expect(manager.session, isNull);
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('lobby-enter')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('lobby-join')))
+            .onPressed,
+        isNull,
+      );
+    },
+  );
+
   testWidgets('mute and speaker-handset update Desired Applied Observed keys', (
     tester,
   ) async {

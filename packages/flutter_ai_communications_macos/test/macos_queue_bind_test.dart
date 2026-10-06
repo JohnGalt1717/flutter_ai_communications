@@ -58,4 +58,29 @@ void main() {
       isFalse,
     );
   });
+
+  test('UID lookup retries while the device is missing inside the window', () {
+    expect(
+      macosUidLookupShouldRetry(resolved: false, elapsed: Duration.zero),
+      isTrue,
+    );
+    expect(
+      macosUidLookupShouldRetry(
+        resolved: false,
+        elapsed: const Duration(milliseconds: 1999),
+      ),
+      isTrue,
+    );
+  });
+
+  test('UID lookup stops once resolved or the window elapses', () {
+    expect(
+      macosUidLookupShouldRetry(resolved: true, elapsed: Duration.zero),
+      isFalse,
+    );
+    expect(
+      macosUidLookupShouldRetry(resolved: false, elapsed: macosUidLookupRetry),
+      isFalse,
+    );
+  });
 }

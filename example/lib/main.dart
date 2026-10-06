@@ -501,6 +501,7 @@ final class _SessionPageState extends State<SessionPage> {
     if (!mounted) {
       return;
     }
+    setState(() => _session = null);
     try {
       await _applyStart(
         await _manager.start(
@@ -540,16 +541,19 @@ final class _SessionPageState extends State<SessionPage> {
         _bind(session, meeting: meeting);
       case StartDenied():
         setState(() {
+          _session = null;
           _status = 'denied';
           _phase = _HarnessPhase.idle;
         });
       case StartRestricted():
         setState(() {
+          _session = null;
           _status = 'restricted';
           _phase = _HarnessPhase.idle;
         });
       case StartUnavailable():
         setState(() {
+          _session = null;
           _status = 'unavailable';
           _phase = _HarnessPhase.idle;
         });
@@ -557,6 +561,7 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() => _status = 'alreadyActive');
       case StartFailed():
         setState(() {
+          _session = null;
           _status = 'failed';
           _phase = _HarnessPhase.idle;
         });

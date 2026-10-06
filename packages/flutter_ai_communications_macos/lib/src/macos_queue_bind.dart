@@ -35,3 +35,24 @@ bool postStartBindFailed({
   }
   return boundUid == null;
 }
+
+/// Window to wait for a Core Audio UID after graph or camera teardown.
+///
+/// USB composites (BRIO mic+camera) drop out of
+/// `kAudioHardwarePropertyDevices` after `stopCameraNative`. Join stop+start
+/// must wait or `deviceID(forUID:)` returns nil and #95 fails the start.
+const macosUidLookupRetry = Duration(seconds: 2);
+
+/// Pause between UID lookups while waiting for a USB composite to return.
+const macosUidLookupRetryStep = Duration(milliseconds: 50);
+
+/// Whether another Core Audio UID lookup should run.
+bool macosUidLookupShouldRetry({
+  required bool resolved,
+  required Duration elapsed,
+}) {
+  if (resolved) {
+    return false;
+  }
+  return elapsed < macosUidLookupRetry;
+}
