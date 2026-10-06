@@ -27,6 +27,7 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
   var _disposed = false;
   WebrtcSendTrack? _track;
   RTCRtpSender? _rtpSender;
+  RTCRtpSender? _screenRtpSender;
   Future<void> _queue = Future<void>.value();
   VoidCallback? _inboundChanged;
 
@@ -134,13 +135,27 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
   Future<void> applySendTrack(WebrtcSendTrack? track) {
     _track = track;
     _inboundChanged?.call();
-    return _run(() => _applySendTrack(track));
+    return _run(() => _applySendTrack(track, isScreen: false));
   }
 
-  Future<void> _applySendTrack(WebrtcSendTrack? track) async {
-    _track = track;
+  @override
+  Future<void> applyScreenSendTrack(WebrtcSendTrack? track) {
+    return _run(() => _applySendTrack(track, isScreen: true));
+  }
+
+  Future<void> _applySendTrack(
+    WebrtcSendTrack? track, {
+    required bool isScreen,
+  }) async {
+    if (!isScreen) {
+      _track = track;
+    }
     if (track == null) {
-      await _rtpSender?.replaceTrack(null);
+      if (isScreen) {
+        await _screenRtpSender?.replaceTrack(null);
+      } else {
+        await _rtpSender?.replaceTrack(null);
+      }
       return;
     }
     try {
@@ -154,13 +169,20 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
         if (sender == null) {
           return;
         }
-        if (_rtpSender == null) {
+        if (isScreen) {
+          if (_screenRtpSender == null) {
+            _screenRtpSender = await sender.addTrack(mapped);
+            await _negotiate();
+          } else {
+            await _screenRtpSender!.replaceTrack(mapped);
+          }
+        } else if (_rtpSender == null) {
           _rtpSender = await sender.addTrack(mapped);
           await _negotiate();
         } else {
           await _rtpSender!.replaceTrack(mapped);
         }
-      } else if (_rtpSender == null) {
+      } else if ((isScreen ? _screenRtpSender : _rtpSender) == null) {
         await _negotiate();
       }
     } on Object {
@@ -174,7 +196,9 @@ final class FlutterWebRtcLoopback implements HostWebRtcLoopback {
     _disposed = true;
     return _run(() async {
       await _rtpSender?.replaceTrack(null);
+      await _screenRtpSender?.replaceTrack(null);
       _rtpSender = null;
+      _screenRtpSender = null;
       _track = null;
       _hasRemote = false;
       _renderer.srcObject = null;

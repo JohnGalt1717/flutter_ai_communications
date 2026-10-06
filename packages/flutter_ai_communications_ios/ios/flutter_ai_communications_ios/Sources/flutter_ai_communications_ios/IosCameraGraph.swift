@@ -50,6 +50,19 @@ final class IosCameraGraph: NSObject, FlutterTexture, AVCaptureVideoDataOutputSa
     return Unmanaged.passRetained(buffer)
   }
 
+  func captureStill() -> [String: Any]? {
+    queue.sync {
+      guard enabled else {
+        return nil
+      }
+      let buffer = muted ? blackBuffer : pixelBuffer
+      guard let buffer else {
+        return nil
+      }
+      return StillEncoder.jpeg(from: buffer)
+    }
+  }
+
   func startCatalogWatch() {
     guard catalogObservers.isEmpty else {
       return

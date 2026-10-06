@@ -410,6 +410,12 @@ final class Session {
   final Map<VideoSink, String> _videoSinkTokens =
       Map<VideoSink, String>.identity();
   var _nextVideoSinkToken = 0;
+  var _screenPathGeneration = 0;
+  final Set<ScreenVideoSink> _screenVideoSinks =
+      Set<ScreenVideoSink>.identity();
+  final Map<ScreenVideoSink, String> _screenVideoSinkTokens =
+      Map<ScreenVideoSink, String>.identity();
+  var _nextScreenVideoSinkToken = 0;
   StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
   StreamSubscription<List<CameraEndpoint>>? _cameraCatalogSub;
   StreamSubscription<VideoSurface?>? _videoSurfaceSub;
@@ -629,6 +635,8 @@ final class Session {
       if (_screenPickOpen) {
         await endScreenPick();
       }
+      _screenPathGeneration++;
+      _notifyScreenVideoSinks();
       return const ScreenShareReady();
     } on Object catch (error) {
       await _clearScreenSend(reason: 'none');
@@ -654,6 +662,7 @@ final class Session {
     if (reason != null) {
       _publishStatus(SessionStatus.screenNotRunning(purpose: purpose));
     }
+    _notifyScreenVideoSinks();
     await _platform.stopScreenShareNative();
   }
 
@@ -788,6 +797,83 @@ final class Session {
     }
   }
 
+  /// Attaches [sink] to this Session's screen-send Production video path.
+  ///
+  /// Immediate snapshot, then updates on start, replace, and stop.
+  /// Duplicate attach is idempotent. Frames do not copy through Dart.
+  void attachScreenVideoSink(ScreenVideoSink sink) {
+    if (_stopped) {
+      return;
+    }
+    if (_screenVideoSinks.add(sink)) {
+      final token = 'screen-sink-$_nextScreenVideoSinkToken';
+      _nextScreenVideoSinkToken++;
+      _screenVideoSinkTokens[sink] = token;
+      _unawaitedNative(
+        _platform.attachScreenProductionVideoPathNative(token: token),
+      );
+    }
+    _deliverScreenVideoPath(sink, _screenPathSnapshot());
+  }
+
+  /// Detaches [sink]. Idempotent. Does not end the Session or replace
+  /// [capture].
+  void detachScreenVideoSink(ScreenVideoSink sink) {
+    if (!_screenVideoSinks.remove(sink)) {
+      return;
+    }
+    final token = _screenVideoSinkTokens.remove(sink);
+    if (token != null) {
+      _unawaitedNative(
+        _platform.detachScreenProductionVideoPathNative(token: token),
+      );
+    }
+  }
+
+  /// One JPEG/PNG grab of the camera Production path after Isolation /
+  /// Video processor. Fails closed when the path is not running.
+  Future<StillResult> captureStill() async {
+    if (_stopped || !_cameraEnabled || _videoSurface == null) {
+      return const StillUnavailable();
+    }
+    try {
+      final frame = await _platform.captureStillNative();
+      if (frame == null) {
+        return const StillUnavailable();
+      }
+      return StillReady(
+        frame.bytes,
+        width: frame.width,
+        height: frame.height,
+        mime: frame.mime,
+      );
+    } on Object catch (error) {
+      return StillFailed(error);
+    }
+  }
+
+  /// One JPEG/PNG grab of the screen-send Production path. Fails closed
+  /// when screen send is not running. Not a Screen preview.
+  Future<StillResult> captureScreenStill() async {
+    if (_stopped || !_screenSending) {
+      return const StillUnavailable();
+    }
+    try {
+      final frame = await _platform.captureScreenStillNative();
+      if (frame == null) {
+        return const StillUnavailable();
+      }
+      return StillReady(
+        frame.bytes,
+        width: frame.width,
+        height: frame.height,
+        mime: frame.mime,
+      );
+    } on Object catch (error) {
+      return StillFailed(error);
+    }
+  }
+
   VideoPathSnapshot _videoPathSnapshot() {
     return VideoPathSnapshot(
       generation: _videoPathGeneration,
@@ -826,6 +912,50 @@ final class Session {
     }
     _videoSinks.clear();
     _videoSinkTokens.clear();
+  }
+
+  VideoPathSnapshot _screenPathSnapshot() {
+    return VideoPathSnapshot(
+      generation: _screenPathGeneration,
+      muteVideo: false,
+      cameraOff: !_screenSending || _screenSurface == null,
+      processor: const NoneVideoProcessor(),
+      surface: _screenSurface,
+    );
+  }
+
+  void _notifyScreenVideoSinks() {
+    if (_screenVideoSinks.isEmpty) {
+      return;
+    }
+    final snapshot = _screenPathSnapshot();
+    for (final sink in List<ScreenVideoSink>.of(_screenVideoSinks)) {
+      _deliverScreenVideoPath(sink, snapshot);
+    }
+  }
+
+  void _deliverScreenVideoPath(
+    ScreenVideoSink sink,
+    VideoPathSnapshot snapshot,
+  ) {
+    try {
+      sink.onScreenVideoPath(snapshot);
+    } on Object catch (error, stack) {
+      _logger.warning(error, error, stack);
+    }
+  }
+
+  void _releaseScreenVideoSinks() {
+    _screenSending = false;
+    _screenSurface = null;
+    _notifyScreenVideoSinks();
+    for (final token in List<String>.of(_screenVideoSinkTokens.values)) {
+      _unawaitedNative(
+        _platform.detachScreenProductionVideoPathNative(token: token),
+      );
+    }
+    _screenVideoSinks.clear();
+    _screenVideoSinkTokens.clear();
   }
 
   void _unawaitedNative(Future<void> future) {
@@ -944,6 +1074,7 @@ final class Session {
         );
       }
       _releaseVideoSinks();
+      _releaseScreenVideoSinks();
       // Do not await cancel/close. Some Dart streams complete those Futures
       // on a Timer, which never fires under FakeAsync unless time is pumped.
       unawaited(_captureSub?.cancel());

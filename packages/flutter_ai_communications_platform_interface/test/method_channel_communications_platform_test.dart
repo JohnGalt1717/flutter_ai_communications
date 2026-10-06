@@ -655,4 +655,29 @@ void main() {
       expect(calls, isEmpty);
     },
   );
+
+  test('captureStillNative reads a JPEG map from the channel', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'captureStillNative') {
+        return {
+          'bytes': Uint8List.fromList(const [0xFF, 0xD8, 0xFF, 0xD9]),
+          'width': 1280,
+          'height': 720,
+          'mime': 'image/jpeg',
+        };
+      }
+      return null;
+    });
+    final still = await platform.captureStillNative();
+    expect(still, isNotNull);
+    expect(still!.bytes, [0xFF, 0xD8, 0xFF, 0xD9]);
+    expect(still.width, 1280);
+    expect(still.height, 720);
+    expect(still.mime, 'image/jpeg');
+  });
+
+  test('captureScreenStillNative is null when native returns null', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async => null);
+    expect(await platform.captureScreenStillNative(), isNull);
+  });
 }

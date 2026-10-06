@@ -51,4 +51,7 @@ abstract class CameraBackend {
 
   /// Refreshes [frameCount] and [liveFrames] from native.
   Future<void> pollStats();
+
+  /// One JPEG/PNG grab of the camera Production path. Null when not feeding.
+  Future<StillFrame?> captureStill() async => null;
 }

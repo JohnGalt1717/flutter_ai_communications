@@ -284,6 +284,15 @@ class FlutterAiCommunicationsPlugin :
                 )
             "setScreenMotionNative" -> result.success(null)
             "setScreenCursorNative" -> result.success(null)
+            "captureStillNative" -> result.success(cameraGraph?.captureStill())
+            "captureScreenStillNative" -> {
+                val graph = screenGraph
+                if (graph == null) {
+                    result.success(null)
+                } else {
+                    graph.captureStill(result)
+                }
+            }
             else -> result.notImplemented()
         }
     }

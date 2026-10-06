@@ -45,6 +45,15 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     return Unmanaged.passRetained(pixelBuffer)
   }
 
+  func captureStill() -> [String: Any]? {
+    queue.sync {
+      guard sending, let pixelBuffer else {
+        return nil
+      }
+      return StillEncoder.jpeg(from: pixelBuffer)
+    }
+  }
+
   func enumerate() -> [[String: Any]] {
     [
       [

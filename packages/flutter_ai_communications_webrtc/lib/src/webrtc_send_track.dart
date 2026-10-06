@@ -2,8 +2,10 @@ import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
 /// Outbound video handle a host addTracks on its own PeerConnection.
 ///
-/// Not a PeerConnection and not a MediaStream. Null on the sink while
-/// Camera-off. Mute-video keeps this handle.
+/// Not a PeerConnection and not a MediaStream. Camera and screen are
+/// two Send tracks. Null on the camera sink while Camera-off. Null on
+/// the screen sink while screen send is not running. Mute-video keeps
+/// the camera handle.
 final class WebrtcSendTrack {
   /// Creates a Send track snapshot.
   const WebrtcSendTrack({

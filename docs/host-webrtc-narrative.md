@@ -23,6 +23,14 @@ sink.localVideos.listen((track) {
   // frames. Same track.id until generation changes (replaceTrack).
   hostPeerConnection.addTrack(mapSendTrack(track))
 })
+sink.localScreens.listen((track) {
+  if (track == null) {
+    // Screen send stopped: host removeTrack
+    return
+  }
+  // Second Send track. Host addTracks it separately. The server never sees a PIP.
+  hostPeerConnection.addTrack(mapSendTrack(track))
+})
 session.capture.listen(hostPeerConnection.addAudio)  // same Capture stream
 ```
 
@@ -62,8 +70,15 @@ session.stop()
 
 Detach does not end the Session or replace the Capture stream.
 
+Server ingest for an interview file taps the same three edges: `session.capture`,
+the camera Send track, and the screen Send track. FAC does not write a local
+interview file. Stills (`session.captureStill` / `session.captureScreenStill`)
+are one native JPEG/PNG grab of those Production paths, not a JPEG pump on
+this bus.
+
 ## Out of this package
 
 - Creating `RTCPeerConnection`
 - Signaling, ICE, roster, chat, meeting grid
 - A second camera via `getUserMedia` (that would not be the Production path)
+- Client MP4, compositing camera and screen, continuous JPEG on the control plane

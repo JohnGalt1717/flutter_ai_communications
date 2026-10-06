@@ -54,6 +54,7 @@ class AndroidCameraGraph(
     private var frameBitmap: Bitmap? = null
     private val frameCount = AtomicInteger(0)
     private val liveFrames = AtomicInteger(0)
+    @Volatile private var lastStill: Bitmap? = null
     var onFormat: ((Int, Int, Int) -> Unit)? = null
     private var watchingDisplay = false
     private var lastAppliedRotation = -1
@@ -445,6 +446,23 @@ class AndroidCameraGraph(
         )
     }
 
+    fun captureStill(): Map<String, Any>? {
+        if (!cameraEnabled) {
+            return null
+        }
+        val bitmap = lastStill ?: return null
+        val stream = java.io.ByteArrayOutputStream()
+        if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)) {
+            return null
+        }
+        return mapOf(
+            "bytes" to stream.toByteArray(),
+            "width" to bitmap.width,
+            "height" to bitmap.height,
+            "mime" to "image/jpeg",
+        )
+    }
+
     private fun noneModeStatsCallback(): android.hardware.camera2.CameraCaptureSession.CaptureCallback? {
         return if (processor.mode is AndroidVideoProcessor.Mode.None) {
             statsCallback
@@ -469,6 +487,7 @@ class AndroidCameraGraph(
                 main.post { onFormat?.invoke(lastWidth, lastHeight, 0) }
             }
             blit(processed, destProducer.surface)
+            lastStill = processed.copy(processed.config ?: Bitmap.Config.ARGB_8888, false)
             if (!videoMuted) {
                 liveFrames.incrementAndGet()
             }

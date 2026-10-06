@@ -73,8 +73,8 @@ A companion package that binds Session edges to a wire protocol. First is WebRTC
 _Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package), PeerConnection (host-owned)
 
 **Send track**:
-The outbound video handle a Transport plugin yields from one Production video path so the host can addTrack on its own PeerConnection. Null while Camera-off. Mute-video keeps the handle. Not a PeerConnection, not a MediaStream, and not the local Video surface.
-_Avoid_: MediaStreamTrack (host flutter_webrtc type), MediaStream, PeerConnection, Video surface (local preview)
+The outbound video handle a Transport plugin yields from one Production video path so the host can addTrack on its own PeerConnection. Camera and screen are two Send tracks. Null while Camera-off or while screen send is not running. Mute-video keeps the camera handle. Not a PeerConnection, not a MediaStream, and not the local Video surface.
+_Avoid_: MediaStreamTrack (host flutter_webrtc type), MediaStream, PeerConnection, Video surface (local preview), PIP, stitch
 
 **Format**:
 The encoding, sample rate, and channel layout of a Session edge — capture out or playback in. Capture and playback Formats may differ.
@@ -153,8 +153,8 @@ The structured current readiness or failure state, including success, warning, o
 _Avoid_: error string, log state
 
 **Capture stream**:
-The Session byte stream — floor-applied, mute as silence, capture Format. Transport plugin, visualizer, VOD, and Test record subscribe to it. There is no second “pretty” tap. Camera preview has no Capture stream.
-_Avoid_: listen (as a distinct stream), visualizer stream (as a distinct stream)
+The Session byte stream — floor-applied, mute as silence, capture Format. Transport plugin, visualizer, VOD, and Test record subscribe to it. Server ingest for an interview file taps this stream together with the camera Send track and the screen Send track. There is no second “pretty” tap. Camera preview has no Capture stream.
+_Avoid_: listen (as a distinct stream), visualizer stream (as a distinct stream), mixdown
 
 **Start result**:
 The outcome of starting a Session, a Camera preview, or screen send — success, or typed failure. Expected microphone permission failures when audio capture was requested are values, not exceptions. Missing camera, camera permission denied, or no matching Video Format does not fail start(); Session status reports that video is not running and why. Screen permission denial or a failed startScreenShare does not end the Session; Session status reports that screen send is not running and why. The host decides whether that is a product failure (for example proctoring).
@@ -209,8 +209,12 @@ A Flutter-visible surface the library gives the host for local send preview, Cam
 _Avoid_: tile, RTCVideoView, Preview Texture (a Texture id is a handle, not the type)
 
 **Video sink**:
-A Session attachment that observes one Production video path: generation, Mute-video versus Camera-off, Video processor identity, and the local Video surface. Multiple sinks may attach. Detach does not end the Session or replace the Capture stream. A Transport plugin or disk package binds here and consumes frames natively; tests use a fake. Camera preview has no Video sink seam. Session has no PeerConnection or MediaStream types.
-_Avoid_: PeerConnection, MediaStream, RTCVideoView, sink (alone)
+A Session attachment that observes the camera Production video path: generation, Mute-video versus Camera-off, Video processor identity, and the local Video surface. Multiple sinks may attach. Detach does not end the Session or replace the Capture stream. A Transport plugin or disk package binds here and consumes frames natively; tests use a fake. Camera preview has no Video sink seam. Session has no PeerConnection or MediaStream types.
+_Avoid_: PeerConnection, MediaStream, RTCVideoView, sink (alone), Screen video sink
+
+**Screen video sink**:
+A Session attachment that observes the screen-send Production video path. Same snapshot shape as a Video sink. The Transport plugin yields a second Send track from this attachment so the host addTracks screen beside camera. Null while screen send is not running.
+_Avoid_: Video sink (that is camera), PIP, stitch, compositing
 
 **Video processor**:
 A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), web (MediaPipe selfie segmentation when the model loads), and Windows (WinML MediaPipe selfie segmentation). Linux, and web or Windows when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object.
@@ -239,3 +243,15 @@ _Avoid_: Setup, Session, Pre-join preview, audio preview (there is none), joinFr
 **Test record**:
 A bounded file of the lobby Session Capture stream (Session edge Format: the PCM a host Transport would send, and that a WebRTC plugin would encode). Playback is those bytes through that same Session’s playback on the selected render Endpoint. It is a subscriber to the one Capture stream, not a second tap. There is no in-call Test record and no in-call audio preview. Video Test record is out of v1.
 _Avoid_: pretty tap, RTP dump, VOD (VOD is any recording consumer; Test record is this diagnostics clip)
+
+**Still**:
+One JPEG or PNG sample of a Production video path, grabbed natively after Isolation and the Video processor — the same frame that path encodes onto a Send track. Requested or capped; not a continuous pump. The host publishes it on its control plane. FAC does not write an interview file.
+_Avoid_: MediaSnapshot (host type), screenshot, JPEG pump, calibration tap
+
+**captureStill**:
+Session method that samples the camera Production path. Fails closed when that path is not running.
+_Avoid_: snapshot (host), getUserMedia frame, calibration tap
+
+**captureScreenStill**:
+Session method that samples the screen-send Production path. Fails closed when screen send is not running. Not a Screen preview and not a picker thumb.
+_Avoid_: screenshot, picker preview, calibration tap

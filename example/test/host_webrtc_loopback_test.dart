@@ -84,6 +84,24 @@ void main() {
     expect(manager.session?.isStopped, isFalse);
   });
 
+  testWidgets('startScreenShare addTracks a screen Send track beside camera', (
+    tester,
+  ) async {
+    await pumpMeeting(tester);
+    expect(loopback.addedTrackIds, ['video-1']);
+    expect(loopback.addedScreenTrackIds, isEmpty);
+
+    expect(
+      await manager.session!.startScreenShare('display-0'),
+      isA<ScreenShareReady>(),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(loopback.addedScreenTrackIds, ['screen-1']);
+    expect(loopback.lastTrack?.id, 'video-1');
+    expect(loopback.lastScreenTrack?.id, 'screen-1');
+  });
+
   testWidgets('Leave detaches the loopback and does not leak the Session', (
     tester,
   ) async {

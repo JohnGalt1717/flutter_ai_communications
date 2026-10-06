@@ -12,3 +12,4 @@ export 'src/native_processor_result.dart';
 export 'src/video_processor_codec.dart';
 export 'src/platform_events.dart';
 export 'src/screen_permission.dart';
+export 'src/still_frame.dart';

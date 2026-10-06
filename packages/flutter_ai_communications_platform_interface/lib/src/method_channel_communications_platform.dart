@@ -13,6 +13,7 @@ import 'native_processor_result.dart';
 import 'video_processor_codec.dart';
 import 'platform_events.dart';
 import 'screen_permission.dart';
+import 'still_frame.dart';
 
 /// Method/EventChannel adapter shared by iOS and Android.
 ///
@@ -737,6 +738,28 @@ class MethodChannelCommunicationsPlatform
       });
     } on MissingPluginException {
       return;
+    }
+  }
+
+  @override
+  Future<StillFrame?> captureStillNative() async {
+    try {
+      return StillFrame.fromChannel(
+        await _methods.invokeMethod<Object?>('captureStillNative'),
+      );
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<StillFrame?> captureScreenStillNative() async {
+    try {
+      return StillFrame.fromChannel(
+        await _methods.invokeMethod<Object?>('captureScreenStillNative'),
+      );
+    } on MissingPluginException {
+      return null;
     }
   }
 

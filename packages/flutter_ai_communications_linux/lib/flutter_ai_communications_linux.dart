@@ -309,6 +309,9 @@ final class FlutterAiCommunicationsLinux
   Future<void> pollCameraNative() => _camera.pollStats();
 
   @override
+  Future<StillFrame?> captureStillNative() => _camera.captureStill();
+
+  @override
   Future<List<ScreenSource>> enumerateScreenSources() => _screen.enumerate();
 
   @override
@@ -343,6 +346,9 @@ final class FlutterAiCommunicationsLinux
       motion: motion,
     );
   }
+
+  @override
+  Future<StillFrame?> captureScreenStillNative() => _screen.captureStill();
 
   @override
   Future<void> stopScreenShareNative() => _screen.stop();
