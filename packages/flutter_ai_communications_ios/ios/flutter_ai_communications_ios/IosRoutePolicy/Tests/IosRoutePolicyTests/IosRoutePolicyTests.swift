@@ -74,8 +74,72 @@ import Testing
         outputRouteClass: "bluetooth",
         accessoryPairId: "airpods"
     )
+    #expect(ids.capture == nil)
+    #expect(ids.render == "airpods-out")
+}
+
+@Test func a2dpOutputWithBuiltinMicDoesNotInventAccessoryCapture() {
+    let ids = IosRoutePolicy.catalogIds(
+        output: IosObservedPort(
+            routeClass: "bluetooth",
+            pairId: "airpods",
+            portType: "BluetoothA2DP"
+        ),
+        input: IosObservedPort(
+            routeClass: "handset",
+            pairId: "handset",
+            portType: "MicrophoneBuiltIn"
+        )
+    )
+    #expect(ids.capture == "handset-in")
+    #expect(ids.render == "airpods-out")
+}
+
+@Test func hfpOutputWithHfpInputObservesPairedAccessoryIds() {
+    let ids = IosRoutePolicy.catalogIds(
+        output: IosObservedPort(
+            routeClass: "bluetooth",
+            pairId: "airpods",
+            portType: "BluetoothHFP"
+        ),
+        input: IosObservedPort(
+            routeClass: "bluetooth",
+            pairId: "airpods",
+            portType: "BluetoothHFP"
+        )
+    )
     #expect(ids.capture == "airpods-in")
     #expect(ids.render == "airpods-out")
+}
+
+@Test func outputOnlyPathWithNoInputsLeavesCaptureNil() {
+    let ids = IosRoutePolicy.catalogIds(
+        output: IosObservedPort(
+            routeClass: "bluetooth",
+            pairId: "airpods",
+            portType: "BluetoothA2DP"
+        ),
+        input: nil
+    )
+    #expect(ids.capture == nil)
+    #expect(ids.render == "airpods-out")
+}
+
+@Test func speakerphoneOutputWithBuiltinMicStillObservesSpeakerCapture() {
+    let ids = IosRoutePolicy.catalogIds(
+        output: IosObservedPort(
+            routeClass: "speakerphone",
+            pairId: "speakerphone",
+            portType: "Speaker"
+        ),
+        input: IosObservedPort(
+            routeClass: "handset",
+            pairId: "handset",
+            portType: "MicrophoneBuiltIn"
+        )
+    )
+    #expect(ids.capture == "speaker-in")
+    #expect(ids.render == "speaker-out")
 }
 
 @Test func hfpPortIsHeadsetFormFactor() {

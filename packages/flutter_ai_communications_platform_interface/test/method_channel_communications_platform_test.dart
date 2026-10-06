@@ -123,12 +123,15 @@ void main() {
     expect(calls.any((c) => c.method == 'openIsolationSettings'), isTrue);
   });
 
-  test('beginCatalogObservation and endCatalogObservation are forwarded', () async {
-    await platform.beginCatalogObservation();
-    await platform.endCatalogObservation();
-    expect(calls.any((c) => c.method == 'beginCatalogObservation'), isTrue);
-    expect(calls.any((c) => c.method == 'endCatalogObservation'), isTrue);
-  });
+  test(
+    'beginCatalogObservation and endCatalogObservation are forwarded',
+    () async {
+      await platform.beginCatalogObservation();
+      await platform.endCatalogObservation();
+      expect(calls.any((c) => c.method == 'beginCatalogObservation'), isTrue);
+      expect(calls.any((c) => c.method == 'endCatalogObservation'), isTrue);
+    },
+  );
 
   test('startNative forwards noiseCancelling', () async {
     await platform.startNative(noiseCancelling: false);
@@ -278,6 +281,54 @@ void main() {
       const AudioFormat.pcm16le(sampleRate: 48000),
     );
   });
+
+  test('selectEndpoints failed string surfaces as route_failed', () async {
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      calls.add(call);
+      if (call.method == 'selectEndpoints') {
+        return 'failed';
+      }
+      return null;
+    });
+    expect(
+      () => platform.selectEndpoints(
+        captureId: 'missing-in',
+        renderId: 'missing-out',
+      ),
+      throwsA(
+        isA<PlatformException>().having((e) => e.code, 'code', 'route_failed'),
+      ),
+    );
+  });
+
+  test(
+    'selectEndpoints PlatformException route_failed is not swallowed',
+    () async {
+      messenger.setMockMethodCallHandler(methods, (call) async {
+        calls.add(call);
+        if (call.method == 'selectEndpoints') {
+          throw PlatformException(
+            code: 'route_failed',
+            message: 'post-start bind failed',
+          );
+        }
+        return null;
+      });
+      expect(
+        () => platform.selectEndpoints(
+          captureId: 'missing-in',
+          renderId: 'missing-out',
+        ),
+        throwsA(
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'route_failed',
+          ),
+        ),
+      );
+    },
+  );
 
   test('isolation payload required maps to IsolationState.required', () async {
     await platform.dispose();
