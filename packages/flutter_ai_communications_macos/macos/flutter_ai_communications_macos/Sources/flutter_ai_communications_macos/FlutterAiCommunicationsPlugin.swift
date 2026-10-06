@@ -15,6 +15,16 @@ private enum MacAudioEngineError: LocalizedError {
   }
 }
 
+extension FlutterAiCommunicationsPlugin {
+  fileprivate static var routeFailedError: FlutterError {
+    FlutterError(
+      code: "route_failed",
+      message: "post-start bind failed",
+      details: nil
+    )
+  }
+}
+
 /// One duplex AVAudioEngine for capture and playback.
 ///
 /// Isolation is unavailable on macOS. The Session still emits Isolation
@@ -917,14 +927,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
           } catch {
             DispatchQueue.main.async {
               self.emitPath(alive: false)
-              result("failed")
+              result(Self.routeFailedError)
             }
             return
           }
         } else {
           DispatchQueue.main.async {
             self.emitPath(alive: false)
-            result("failed")
+            result(Self.routeFailedError)
           }
           return
         }

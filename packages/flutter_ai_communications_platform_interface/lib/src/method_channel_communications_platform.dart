@@ -284,6 +284,13 @@ class MethodChannelCommunicationsPlatform
     });
     if (value is Map) {
       _adoptReport(Map<Object?, Object?>.from(value));
+      return;
+    }
+    if (value == 'failed' || value == 'route_failed') {
+      throw PlatformException(
+        code: 'route_failed',
+        message: 'selectEndpoints failed',
+      );
     }
   }
 
