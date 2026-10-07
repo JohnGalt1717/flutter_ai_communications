@@ -72,7 +72,10 @@ void main() {
         ((await manager.start(purpose: 'meeting', cameraSend: true))
                 as StartReady)
             .session;
-    expect(await session.startScreenShare('display-0'), isA<ScreenShareReady>());
+    expect(
+      await session.startScreenShare('display-0'),
+      isA<ScreenShareReady>(),
+    );
     expect(session.screenSurface?.width, 1920);
     expect(session.screenSurface?.height, 1080);
     final seen = <VideoSurface?>[];

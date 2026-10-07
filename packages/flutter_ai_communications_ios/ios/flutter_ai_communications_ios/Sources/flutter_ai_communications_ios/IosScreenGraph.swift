@@ -1,3 +1,4 @@
+import Accelerate
 import CoreMedia
 import Flutter
 import Foundation
@@ -209,14 +210,29 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     if let dest = CVPixelBufferGetBaseAddress(buffer) {
       let destStride = CVPixelBufferGetBytesPerRow(buffer)
       let srcStride = width * 4
-      let rowBytes = min(srcStride, destStride)
-      let rows = min(height, size.1)
       pixels.withUnsafeBytes { raw in
         guard let src = raw.baseAddress else {
           return
         }
-        for row in 0..<rows {
-          memcpy(dest + row * destStride, src + row * srcStride, rowBytes)
+        if size.0 == width, size.1 == height {
+          let rowBytes = min(srcStride, destStride)
+          for row in 0..<height {
+            memcpy(dest + row * destStride, src + row * srcStride, rowBytes)
+          }
+        } else {
+          var srcBuffer = vImage_Buffer(
+            data: UnsafeMutableRawPointer(mutating: src),
+            height: vImagePixelCount(height),
+            width: vImagePixelCount(width),
+            rowBytes: srcStride
+          )
+          var destBuffer = vImage_Buffer(
+            data: dest,
+            height: vImagePixelCount(size.1),
+            width: vImagePixelCount(size.0),
+            rowBytes: destStride
+          )
+          vImageScale_ARGB8888(&srcBuffer, &destBuffer, nil, vImage_Flags(kvImageNoFlags))
         }
       }
     }
@@ -289,14 +305,17 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     return buffer
   }
 
+  /// ADR-0027: at most 1920 on the long edge and 1080 on the short edge,
+  /// keeping aspect. Portrait iPhone is 1080×1920-class, not 1920×1080.
   private func cappedSize(width: Int, height: Int) -> (Int, Int) {
     let w = max(width, 1)
     let h = max(height, 1)
     let long = max(w, h)
-    if long <= 1920 {
+    let short = min(w, h)
+    if long <= 1920, short <= 1080 {
       return (w, h)
     }
-    let scale = 1920.0 / Double(long)
+    let scale = min(1920.0 / Double(long), 1080.0 / Double(short))
     return (
       max(Int((Double(w) * scale).rounded()), 1),
       max(Int((Double(h) * scale).rounded()), 1)

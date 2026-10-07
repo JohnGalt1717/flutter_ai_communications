@@ -719,7 +719,6 @@ final class Session {
     }
     _screenSurface = surface;
     _screenNativeFormat = _platform.lastScreenNativeFormat;
-    _notifyScreenVideoSinks();
   }
 
   void _onScreenCatalog(List<ScreenSource> sources) {
