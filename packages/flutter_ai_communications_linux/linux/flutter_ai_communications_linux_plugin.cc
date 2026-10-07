@@ -3,6 +3,7 @@
 #include "camera_graph.h"
 #include "screen_graph.h"
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -20,6 +21,7 @@ struct _FlutterAiCommunicationsLinuxPlugin {
   ScreenGraph* screen;
   FlEventChannel* events;
   gboolean events_listening;
+  std::shared_ptr<std::atomic<bool>>* dispatch_alive;
 };
 
 struct _FlutterAiCommunicationsLinuxPluginClass {
@@ -45,33 +47,42 @@ static void SetMarksAllowed(FlutterAiCommunicationsLinuxPlugin* plugin,
   }
 }
 
-static gboolean OnWindowFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) {
+static gboolean OnWindowMap(GtkWidget*, GdkEventAny*, gpointer data) {
+  FlutterAiCommunicationsLinuxPlugin* plugin =
+      FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data);
+  SetMarksAllowed(plugin, true);
+  if (plugin->camera != nullptr) {
+    plugin->camera->RefreshTexture();
+  }
+  if (plugin->screen != nullptr) {
+    plugin->screen->RefreshTexture();
+  }
+  return FALSE;
+}
+
+static gboolean OnWindowUnmap(GtkWidget*, GdkEventAny*, gpointer data) {
   SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data), false);
   return FALSE;
 }
 
-static gboolean OnWindowFocusIn(GtkWidget*, GdkEventFocus*, gpointer data) {
-  SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data), true);
-  return FALSE;
-}
-
-static void OnWindowIsActive(GObject* object, GParamSpec*, gpointer data) {
-  SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data),
-                  gtk_window_is_active(GTK_WINDOW(object)) != FALSE);
-}
-
 static void EmitProcessorUnavailable(
     FlutterAiCommunicationsLinuxPlugin* plugin) {
+  if (plugin == nullptr || plugin->dispatch_alive == nullptr ||
+      !(*plugin->dispatch_alive)->load()) {
+    return;
+  }
   struct Emit {
     FlutterAiCommunicationsLinuxPlugin* plugin;
+    std::shared_ptr<std::atomic<bool>> alive;
   };
-  auto* emit = new Emit{plugin};
+  auto* emit = new Emit{plugin, *plugin->dispatch_alive};
   g_object_ref(plugin);
   g_idle_add(
       [](gpointer data) -> gboolean {
         auto* emit = static_cast<Emit*>(data);
         FlutterAiCommunicationsLinuxPlugin* plugin = emit->plugin;
-        if (plugin->events_listening && plugin->events != nullptr) {
+        if (emit->alive->load() && plugin->events_listening &&
+            plugin->events != nullptr) {
           g_autoptr(FlValue) map = fl_value_new_map();
           fl_value_set_string_take(map, "type",
                                    fl_value_new_string("processor"));
@@ -268,6 +279,9 @@ static void HandleMethodCall(FlMethodChannel* channel,
 static void flutter_ai_communications_linux_plugin_dispose(GObject* object) {
   FlutterAiCommunicationsLinuxPlugin* self =
       FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(object);
+  if (self->dispatch_alive != nullptr) {
+    (*self->dispatch_alive)->store(false);
+  }
   if (self->camera != nullptr) {
     self->camera->SetOnProcessorUnavailable(nullptr);
   }
@@ -278,6 +292,8 @@ static void flutter_ai_communications_linux_plugin_dispose(GObject* object) {
   self->events_listening = FALSE;
   g_clear_object(&self->events);
   g_clear_object(&self->registrar);
+  delete self->dispatch_alive;
+  self->dispatch_alive = nullptr;
   G_OBJECT_CLASS(flutter_ai_communications_linux_plugin_parent_class)
       ->dispose(object);
 }
@@ -295,6 +311,7 @@ static void flutter_ai_communications_linux_plugin_init(
   self->screen = nullptr;
   self->events = nullptr;
   self->events_listening = FALSE;
+  self->dispatch_alive = nullptr;
 }
 
 void flutter_ai_communications_linux_plugin_register_with_registrar(
@@ -303,24 +320,27 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
       FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(g_object_new(
           flutter_ai_communications_linux_plugin_get_type(), nullptr));
   plugin->registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
+  plugin->dispatch_alive = new std::shared_ptr<std::atomic<bool>>(
+      std::make_shared<std::atomic<bool>>(true));
+  const auto dispatch_alive = *plugin->dispatch_alive;
   plugin->camera = new CameraGraph(
       fl_plugin_registrar_get_texture_registrar(registrar));
   plugin->camera->SetOnProcessorUnavailable(
-      [plugin]() { EmitProcessorUnavailable(plugin); });
+      [plugin, dispatch_alive]() {
+        if (!dispatch_alive->load()) {
+          return;
+        }
+        EmitProcessorUnavailable(plugin);
+      });
   plugin->screen = new ScreenGraph(
       fl_plugin_registrar_get_texture_registrar(registrar),
       fl_plugin_registrar_get_view(registrar));
   FlView* view = fl_plugin_registrar_get_view(registrar);
   if (view != nullptr) {
     GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(view));
-    g_signal_connect(top, "focus-out-event", G_CALLBACK(OnWindowFocusOut),
-                     plugin);
-    g_signal_connect(top, "focus-in-event", G_CALLBACK(OnWindowFocusIn),
-                     plugin);
-    if (GTK_IS_WINDOW(top)) {
-      g_signal_connect(top, "notify::is-active", G_CALLBACK(OnWindowIsActive),
-                       plugin);
-    }
+    g_signal_connect(top, "map-event", G_CALLBACK(OnWindowMap), plugin);
+    g_signal_connect(top, "unmap-event", G_CALLBACK(OnWindowUnmap), plugin);
+    SetMarksAllowed(plugin, gtk_widget_get_mapped(top) != FALSE);
   }
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(

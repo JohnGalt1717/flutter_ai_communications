@@ -44,6 +44,7 @@ final class PulseAudioBackend implements AudioBackend {
   SendPort? _loopbackControl;
   var _loopbackGeneration = 0;
   var _loopbackRunning = false;
+  var _loopbackWanted = false;
   var _noiseCancelling = true;
   NativeFormatReport _nativeFormats = const NativeFormatReport();
   final StreamController<void> _deviceChanges =
@@ -62,7 +63,18 @@ final class PulseAudioBackend implements AudioBackend {
 
   @override
   bool startLoopback() {
-    stopLoopback();
+    _loopbackWanted = true;
+    return _restartLoopback();
+  }
+
+  @override
+  void stopLoopback() {
+    _loopbackWanted = false;
+    _teardownLoopback();
+  }
+
+  bool _restartLoopback() {
+    _teardownLoopback();
     final device = _monitorSourceForRender();
     if (device == null || device.isEmpty) {
       return false;
@@ -90,8 +102,7 @@ final class PulseAudioBackend implements AudioBackend {
     return true;
   }
 
-  @override
-  void stopLoopback() {
+  void _teardownLoopback() {
     _loopbackGeneration++;
     _loopbackRunning = false;
     final isolate = _loopbackIsolate;
@@ -100,9 +111,7 @@ final class PulseAudioBackend implements AudioBackend {
     _loopbackIsolate = null;
     _loopbackPort = null;
     _loopbackControl = null;
-    control?.send(const _StopCommand());
-    isolate?.kill(priority: Isolate.immediate);
-    port?.close();
+    _releaseCaptureIsolate(isolate: isolate, port: port, control: control);
   }
 
   @override
@@ -180,6 +189,9 @@ final class PulseAudioBackend implements AudioBackend {
     }
     if (_running) {
       _startGraph();
+    }
+    if (_loopbackWanted) {
+      _restartLoopback();
     }
   }
 
@@ -342,13 +354,31 @@ final class PulseAudioBackend implements AudioBackend {
     _captureIsolate = null;
     _capturePort = null;
     _captureControl = null;
-    control?.send(const _StopCommand());
-    isolate?.kill(priority: Isolate.immediate);
-    port?.close();
+    _releaseCaptureIsolate(isolate: isolate, port: port, control: control);
     if (_render != nullptr) {
       _simple.freeStream(_render);
       _render = nullptr;
     }
+  }
+
+  void _releaseCaptureIsolate({
+    Isolate? isolate,
+    ReceivePort? port,
+    SendPort? control,
+  }) {
+    control?.send(const _StopCommand());
+    if (isolate == null) {
+      port?.close();
+      return;
+    }
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      isolate.kill(priority: Isolate.immediate);
+      try {
+        port?.close();
+      } on Object {
+        // Closed on _StoppedAck.
+      }
+    });
   }
 
   void _startCaptureIsolate() {
@@ -356,6 +386,14 @@ final class PulseAudioBackend implements AudioBackend {
     final port = ReceivePort();
     _capturePort = port;
     port.listen((message) {
+      if (message is _StoppedAck) {
+        try {
+          port.close();
+        } on Object {
+          // Already closed by the bounded shutdown.
+        }
+        return;
+      }
       if (generation != _captureGeneration) {
         return;
       }
@@ -392,6 +430,14 @@ final class PulseAudioBackend implements AudioBackend {
     final port = ReceivePort();
     _loopbackPort = port;
     port.listen((message) {
+      if (message is _StoppedAck) {
+        try {
+          port.close();
+        } on Object {
+          // Already closed by the bounded shutdown.
+        }
+        return;
+      }
       if (generation != _loopbackGeneration) {
         return;
       }
@@ -421,7 +467,7 @@ final class PulseAudioBackend implements AudioBackend {
 
   String? _monitorSourceForRender() {
     final monitors = _sinkMonitors();
-    final want = _presentId(_renderId);
+    final want = _presentId(_renderId) ?? _defaultSinkName();
     if (want != null) {
       final named = monitors[want];
       if (named != null && named.isNotEmpty) {
@@ -657,6 +703,91 @@ final class PulseAudioBackend implements AudioBackend {
     _async.mainloopFree(loop);
     return monitors;
   }
+
+  String? _defaultSinkName() {
+    final loop = _async.mainloopNew();
+    if (loop == nullptr) {
+      return null;
+    }
+    final api = _async.mainloopGetApi(loop);
+    final name = 'flutter_ai_communications'.toNativeUtf8();
+    final context = _async.contextNew(api, name.cast());
+    malloc.free(name);
+    if (context == nullptr) {
+      _async.mainloopFree(loop);
+      return null;
+    }
+    if (_async.contextConnect(context, nullptr, 0, nullptr) < 0) {
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return null;
+    }
+    if (!_waitReady(loop, context)) {
+      _async.contextDisconnect(context);
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return null;
+    }
+    String? sink;
+    late final NativeCallable<
+      Void Function(
+        Pointer<PaContext>,
+        Pointer<PaNamedDevice>,
+        Int32,
+        Pointer<Void>,
+      )
+    >
+    callable;
+    callable =
+        NativeCallable<
+          Void Function(
+            Pointer<PaContext>,
+            Pointer<PaNamedDevice>,
+            Int32,
+            Pointer<Void>,
+          )
+        >.isolateLocal((
+          Pointer<PaContext> _,
+          Pointer<PaNamedDevice> info,
+          int eol,
+          Pointer<Void> userdata,
+        ) {
+          if (eol != 0 || info == nullptr || sink != null) {
+            return;
+          }
+          final id = pulseString(info.ref.name) ?? '';
+          if (id.isNotEmpty) {
+            sink = id;
+          }
+        });
+    final query = '@DEFAULT_SINK@'.toNativeUtf8();
+    final op = _async.getSinkInfoByName(
+      context,
+      query.cast(),
+      callable.nativeFunction,
+      nullptr,
+    );
+    malloc.free(query);
+    if (op == nullptr) {
+      callable.close();
+      _async.contextDisconnect(context);
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return null;
+    }
+    for (var i = 0; i < 200; i++) {
+      if (_async.operationGetState(op) == paOperationDone) {
+        break;
+      }
+      _async.mainloopIterate(loop, 1, nullptr);
+    }
+    _async.operationUnref(op);
+    callable.close();
+    _async.contextDisconnect(context);
+    _async.contextUnref(context);
+    _async.mainloopFree(loop);
+    return sink;
+  }
 }
 
 final class _CaptureStart {
@@ -679,6 +810,10 @@ sealed class _CaptureCommand {
 
 final class _StopCommand extends _CaptureCommand {
   const _StopCommand();
+}
+
+final class _StoppedAck {
+  const _StoppedAck();
 }
 
 final class _PauseCommand extends _CaptureCommand {
@@ -713,6 +848,7 @@ Future<void> _captureMain(_CaptureStart start) async {
   calloc.free(spec);
   if (stream == nullptr) {
     control.close();
+    start.sendPort.send(const _StoppedAck());
     return;
   }
   final aec = start.aec ? SpeexAec.tryStart() : null;
@@ -755,6 +891,7 @@ Future<void> _captureMain(_CaptureStart start) async {
     calloc.free(buffer);
     calloc.free(error);
     control.close();
+    start.sendPort.send(const _StoppedAck());
   }
 }
 

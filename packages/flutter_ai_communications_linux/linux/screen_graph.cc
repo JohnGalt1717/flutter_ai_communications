@@ -245,6 +245,8 @@ void ScreenGraph::CloseDisplay() {
 }
 
 ScreenGraph::~ScreenGraph() {
+  alive_->store(false);
+  CancelPendingMark();
   Stop();
   EndPick();
   HideFrame();
@@ -562,10 +564,19 @@ void ScreenGraph::Stop() {
   running_ = false;
   texture_epoch_.fetch_add(1);
   pw_mark_pending_.store(false);
+  CancelPendingMark();
   CancelPortal();
   StopPipeWire();
   if (capture_thread_.joinable()) {
     capture_thread_.join();
+  }
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    staging_ready_ = false;
+    staging_width_ = 0;
+    staging_height_ = 0;
+    published_width_ = 0;
+    published_height_ = 0;
   }
   HideFrame();
   send_id_.clear();
@@ -794,8 +805,18 @@ void ScreenGraph::SetMarksAllowed(bool allowed) {
   marks_allowed_.store(allowed);
 }
 
+void ScreenGraph::RefreshTexture() { RequestTextureMark(); }
+
+void ScreenGraph::CancelPendingMark() {
+  const guint id = mark_source_.exchange(0);
+  if (id != 0) {
+    g_source_remove(id);
+  }
+  pw_mark_pending_.store(false);
+}
+
 void ScreenGraph::RequestTextureMark() {
-  if (!marks_allowed_.load()) {
+  if (!alive_->load() || !marks_allowed_.load()) {
     return;
   }
   bool expected = false;
@@ -804,14 +825,19 @@ void ScreenGraph::RequestTextureMark() {
   }
   struct Mark {
     ScreenGraph* graph;
+    std::shared_ptr<std::atomic<bool>> alive;
     uint64_t epoch;
   };
-  auto* mark = new Mark{this, texture_epoch_.load()};
-  g_idle_add(
+  auto* mark = new Mark{this, alive_, texture_epoch_.load()};
+  const guint id = g_idle_add(
       [](gpointer data) -> gboolean {
         auto* mark = static_cast<Mark*>(data);
-        mark->graph->pw_mark_pending_.store(false);
-        if (mark->graph->marks_allowed_.load() &&
+        if (mark->graph != nullptr) {
+          mark->graph->mark_source_.store(0);
+          mark->graph->pw_mark_pending_.store(false);
+        }
+        if (mark->alive && mark->alive->load() && mark->graph != nullptr &&
+            mark->graph->marks_allowed_.load() &&
             mark->graph->texture_epoch_.load() == mark->epoch &&
             mark->graph->textures_ != nullptr &&
             mark->graph->texture_ != nullptr) {
@@ -822,6 +848,7 @@ void ScreenGraph::RequestTextureMark() {
         return G_SOURCE_REMOVE;
       },
       mark);
+  mark_source_.store(id);
 }
 
 void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
@@ -1071,7 +1098,8 @@ gboolean ScreenGraph::CopyPixels(const uint8_t** buffer, uint32_t* width,
     *height = static_cast<uint32_t>(published_height_);
     return TRUE;
   }
-  if (front_.empty()) {
+  if (!running_.load() || front_.empty() || send_width_ < 1 ||
+      send_height_ < 1) {
     if (error != nullptr) {
       *error = g_error_new(G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
     }

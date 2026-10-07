@@ -404,6 +404,39 @@ final class PulseAsync {
               Pointer<Void>,
             )
           >('pa_context_get_sink_info_list'),
+      getSinkInfoByName = lib
+          .lookupFunction<
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              Pointer<Char>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Pointer<PaNamedDevice>,
+                    Int32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            ),
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              Pointer<Char>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Pointer<PaNamedDevice>,
+                    Int32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            )
+          >('pa_context_get_sink_info_by_name'),
       operationGetState = lib
           .lookupFunction<
             Int32 Function(Pointer<PaOperation>),
@@ -528,6 +561,24 @@ final class PulseAsync {
     Pointer<Void>,
   )
   getSinkInfoList;
+
+  /// Looks up one sink, including `@DEFAULT_SINK@`.
+  final Pointer<PaOperation> Function(
+    Pointer<PaContext>,
+    Pointer<Char>,
+    Pointer<
+      NativeFunction<
+        Void Function(
+          Pointer<PaContext>,
+          Pointer<PaNamedDevice>,
+          Int32,
+          Pointer<Void>,
+        )
+      >
+    >,
+    Pointer<Void>,
+  )
+  getSinkInfoByName;
 
   /// Operation state.
   final int Function(Pointer<PaOperation>) operationGetState;

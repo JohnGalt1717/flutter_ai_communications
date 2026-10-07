@@ -45,9 +45,10 @@ void FacLog(const char* fmt, ...) {
 }
 
 // UVC VIDIOC_S_FMT / STREAMON can block the GTK thread forever (LifeCam).
-// Close the fd from this side so a stuck ioctl returns and Start can fail
-// as unavailable instead of wedging Session start.
-int IoctlTimed(int* fd, unsigned long request, void* arg, int timeout_ms) {
+// The worker owns a heap copy of the ioctl argument and, on timeout, the
+// descriptor. The caller copies results back only after a timely completion.
+int IoctlTimed(int* fd, unsigned long request, void* arg, size_t arg_size,
+               int timeout_ms) {
   if (fd == nullptr || *fd < 0) {
     errno = EBADF;
     return -1;
@@ -57,21 +58,36 @@ int IoctlTimed(int* fd, unsigned long request, void* arg, int timeout_ms) {
     std::condition_variable cv;
     int result = -1;
     bool finished = false;
+    bool timed_out = false;
+    int fd = -1;
+    std::vector<uint8_t> storage;
+    void* arg = nullptr;
   };
   const auto job = std::make_shared<Job>();
-  const int local_fd = *fd;
-  std::thread worker([job, local_fd, request, arg] {
-    const int r = ioctl(local_fd, request, arg);
+  job->fd = *fd;
+  if (arg != nullptr && arg_size > 0) {
+    job->storage.resize(arg_size);
+    std::memcpy(job->storage.data(), arg, arg_size);
+    job->arg = job->storage.data();
+  }
+  std::thread worker([job, request] {
+    const int r = ioctl(job->fd, request, job->arg);
+    bool abandon = false;
     {
       std::lock_guard<std::mutex> lock(job->mu);
       job->result = r;
       job->finished = true;
+      abandon = job->timed_out;
     }
     job->cv.notify_one();
+    if (abandon && job->fd >= 0) {
+      close(job->fd);
+    }
   });
   std::unique_lock<std::mutex> lock(job->mu);
   if (!job->cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
                         [&] { return job->finished; })) {
+    job->timed_out = true;
     lock.unlock();
     // Do not close() here: close on a fd with a stuck UVC ioctl blocks
     // this thread until the driver returns, which is the hang we bound.
@@ -80,9 +96,13 @@ int IoctlTimed(int* fd, unsigned long request, void* arg, int timeout_ms) {
     errno = ETIMEDOUT;
     return -1;
   }
+  const int result = job->result;
   lock.unlock();
   worker.join();
-  return job->result;
+  if (arg != nullptr && arg_size > 0 && job->storage.size() == arg_size) {
+    std::memcpy(arg, job->storage.data(), arg_size);
+  }
+  return result;
 }
 
 std::string ToLower(std::string value) {
@@ -100,7 +120,7 @@ bool Contains(const std::string& haystack, const char* needle) {
 
 bool IsCaptureDevice(int* fd, v4l2_capability* out = nullptr) {
   v4l2_capability cap = {};
-  if (IoctlTimed(fd, VIDIOC_QUERYCAP, &cap, 250) < 0) {
+  if (IoctlTimed(fd, VIDIOC_QUERYCAP, &cap, sizeof(cap), 250) < 0) {
     return false;
   }
   const uint32_t caps =
@@ -300,6 +320,11 @@ NativeMode NearestMode(const std::vector<NativeMode>& modes, int req_w,
     if (da != db) {
       return da < db;
     }
+    const bool a_fps_hi = a.frame_rate >= want_fps;
+    const bool b_fps_hi = b.frame_rate >= want_fps;
+    if (a_fps_hi != b_fps_hi) {
+      return a_fps_hi;
+    }
     return FourccRank(a.fourcc) < FourccRank(b.fourcc);
   };
   for (const auto& mode : modes) {
@@ -388,6 +413,8 @@ static void fac_pixel_texture_init(FacPixelTexture* self) {
 CameraGraph::CameraGraph(FlTextureRegistrar* textures) : textures_(textures) {}
 
 CameraGraph::~CameraGraph() {
+  alive_->store(false);
+  CancelPendingMark();
   Stop();
   if (textures_ != nullptr && texture_ != nullptr) {
     fl_texture_registrar_unregister_texture(textures_, FL_TEXTURE(texture_));
@@ -441,6 +468,7 @@ std::string CameraGraph::FacingFor(const std::string& name,
 }
 
 FlValue* CameraGraph::Enumerate() {
+  std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   FlValue* cameras = fl_value_new_list();
   const bool streaming = running_.load();
   for (int i = 0; i < 64; i++) {
@@ -517,14 +545,25 @@ std::string CameraGraph::RequestPermission() {
   return "granted";
 }
 
+bool CameraGraph::StartCancelled(uint64_t epoch) const {
+  return epoch != lifecycle_epoch_.load();
+}
+
 FlValue* CameraGraph::Start(const std::string& camera_id,
                             int width,
                             int height,
                             int frame_rate,
                             bool enabled,
                             bool muted) {
-  EnsureTexture();
+  const uint64_t epoch = lifecycle_epoch_.load();
+  std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   FlValue* result = fl_value_new_map();
+  if (StartCancelled(epoch)) {
+    fl_value_set_string_take(result, "status",
+                             fl_value_new_string("unavailable"));
+    return result;
+  }
+  EnsureTexture();
   if (texture_id_ < 0) {
     fl_value_set_string_take(result, "status", fl_value_new_string("failed"));
     return result;
@@ -561,6 +600,12 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
                              fl_value_new_string("unavailable"));
     return result;
   }
+  if (StartCancelled(epoch)) {
+    StopCapture();
+    fl_value_set_string_take(result, "status",
+                             fl_value_new_string("unavailable"));
+    return result;
+  }
   fl_value_set_string_take(result, "status", fl_value_new_string("started"));
   fl_value_set_string_take(result, "textureId", fl_value_new_int(texture_id_));
   fl_value_set_string_take(result, "width", fl_value_new_int(width_));
@@ -569,7 +614,11 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   return result;
 }
 
-void CameraGraph::Stop() { StopCapture(); }
+void CameraGraph::Stop() {
+  lifecycle_epoch_.fetch_add(1);
+  std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
+  StopCapture();
+}
 
 std::string CameraGraph::SetProcessor(FlValue* args) {
   processor_.SetOnUnavailable(on_processor_unavailable_);
@@ -589,6 +638,10 @@ void CameraGraph::Select(const std::string& camera_id) {
 }
 
 void CameraGraph::SetEnabled(bool enabled) {
+  if (!enabled) {
+    lifecycle_epoch_.fetch_add(1);
+  }
+  std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   enabled_.store(enabled);
   if (!enabled) {
     StopCapture();
@@ -623,8 +676,18 @@ void CameraGraph::SetMarksAllowed(bool allowed) {
   marks_allowed_.store(allowed);
 }
 
+void CameraGraph::RefreshTexture() { RequestTextureMark(); }
+
+void CameraGraph::CancelPendingMark() {
+  const guint id = mark_source_.exchange(0);
+  if (id != 0) {
+    g_source_remove(id);
+  }
+  mark_pending_.store(false);
+}
+
 void CameraGraph::RequestTextureMark() {
-  if (!marks_allowed_.load()) {
+  if (!alive_->load() || !marks_allowed_.load()) {
     return;
   }
   bool expected = false;
@@ -633,14 +696,19 @@ void CameraGraph::RequestTextureMark() {
   }
   struct Mark {
     CameraGraph* graph;
+    std::shared_ptr<std::atomic<bool>> alive;
     uint64_t epoch;
   };
-  auto* mark = new Mark{this, texture_epoch_.load()};
-  g_idle_add(
+  auto* mark = new Mark{this, alive_, texture_epoch_.load()};
+  const guint id = g_idle_add(
       [](gpointer data) -> gboolean {
         auto* mark = static_cast<Mark*>(data);
-        mark->graph->mark_pending_.store(false);
-        if (mark->graph->marks_allowed_.load() &&
+        if (mark->graph != nullptr) {
+          mark->graph->mark_source_.store(0);
+          mark->graph->mark_pending_.store(false);
+        }
+        if (mark->alive && mark->alive->load() && mark->graph != nullptr &&
+            mark->graph->marks_allowed_.load() &&
             mark->graph->texture_epoch_.load() == mark->epoch &&
             mark->graph->textures_ != nullptr &&
             mark->graph->texture_ != nullptr) {
@@ -651,6 +719,7 @@ void CameraGraph::RequestTextureMark() {
         return G_SOURCE_REMOVE;
       },
       mark);
+  mark_source_.store(id);
 }
 
 void CameraGraph::StopCapture() {
@@ -763,12 +832,12 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   frame_rate_ = frame_rate;
   v4l2_streamparm parm = {};
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (IoctlTimed(&fd_, VIDIOC_G_PARM, &parm, 250) == 0 &&
+  if (IoctlTimed(&fd_, VIDIOC_G_PARM, &parm, sizeof(parm), 250) == 0 &&
       (parm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME)) {
     parm.parm.capture.timeperframe.numerator = 1;
     parm.parm.capture.timeperframe.denominator =
         static_cast<uint32_t>(frame_rate);
-    IoctlTimed(&fd_, VIDIOC_S_PARM, &parm, 250);
+    IoctlTimed(&fd_, VIDIOC_S_PARM, &parm, sizeof(parm), 250);
     if (fd_ >= 0 && parm.parm.capture.timeperframe.numerator != 0) {
       frame_rate_ = static_cast<int>(
           parm.parm.capture.timeperframe.denominator /
@@ -782,7 +851,8 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   req.count = 4;
   req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   req.memory = V4L2_MEMORY_MMAP;
-  if (IoctlTimed(&fd_, VIDIOC_REQBUFS, &req, 750) < 0 || req.count < 2) {
+  if (IoctlTimed(&fd_, VIDIOC_REQBUFS, &req, sizeof(req), 750) < 0 ||
+      req.count < 2) {
     if (fd_ >= 0) {
       close(fd_);
       fd_ = -1;
@@ -795,7 +865,7 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
     buf.index = i;
-    if (IoctlTimed(&fd_, VIDIOC_QUERYBUF, &buf, 250) < 0) {
+    if (IoctlTimed(&fd_, VIDIOC_QUERYBUF, &buf, sizeof(buf), 250) < 0) {
       StopCapture();
       return false;
     }
@@ -807,13 +877,13 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
       StopCapture();
       return false;
     }
-    if (IoctlTimed(&fd_, VIDIOC_QBUF, &buf, 250) < 0) {
+    if (IoctlTimed(&fd_, VIDIOC_QBUF, &buf, sizeof(buf), 250) < 0) {
       StopCapture();
       return false;
     }
   }
   v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (IoctlTimed(&fd_, VIDIOC_STREAMON, &type, 750) < 0) {
+  if (IoctlTimed(&fd_, VIDIOC_STREAMON, &type, sizeof(type), 750) < 0) {
     StopCapture();
     return false;
   }
@@ -838,7 +908,7 @@ bool CameraGraph::TrySetFormat(uint32_t fourcc, int width, int height,
     fmt.fmt.pix.width = static_cast<uint32_t>(width);
     fmt.fmt.pix.height = static_cast<uint32_t>(height);
   }
-  if (IoctlTimed(&fd_, VIDIOC_S_FMT, &fmt, 750) < 0) {
+  if (IoctlTimed(&fd_, VIDIOC_S_FMT, &fmt, sizeof(fmt), 750) < 0) {
     return false;
   }
   if (fmt.fmt.pix.pixelformat != fourcc) {
@@ -893,7 +963,9 @@ void CameraGraph::CaptureLoop() {
       if (decoded_.size() == bytes) {
         processor_.Process(decoded_.data(), proc_w, proc_h);
         std::lock_guard<std::mutex> lock(mutex_);
-        if (width_ == proc_w && height_ == proc_h) {
+        if (muted_.load() || !enabled_.load()) {
+          FillBlackLocked();
+        } else if (width_ == proc_w && height_ == proc_h) {
           front_.swap(decoded_);
           if (front_.size() != bytes) {
             front_.assign(bytes, 0);

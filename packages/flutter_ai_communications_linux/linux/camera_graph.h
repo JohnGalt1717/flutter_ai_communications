@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -44,6 +45,7 @@ class CameraGraph {
   void SetOnProcessorUnavailable(std::function<void()> callback);
   FlValue* Stats() const;
   void SetMarksAllowed(bool allowed);
+  void RefreshTexture();
   gboolean CopyPixels(const uint8_t** buffer,
                       uint32_t* width,
                       uint32_t* height,
@@ -56,7 +58,9 @@ class CameraGraph {
   void CaptureLoop();
   void ConvertFrame(const uint8_t* src, size_t src_len);
   void RequestTextureMark();
+  void CancelPendingMark();
   void FillBlackLocked();
+  bool StartCancelled(uint64_t epoch) const;
   bool TrySetFormat(uint32_t fourcc, int width, int height, v4l2_format* out);
   static std::string FacingFor(const std::string& name,
                                const std::string& bus_info);
@@ -64,6 +68,11 @@ class CameraGraph {
   FlTextureRegistrar* textures_;
   FlPixelBufferTexture* texture_ = nullptr;
   int64_t texture_id_ = -1;
+  std::recursive_mutex lifecycle_;
+  std::atomic<uint64_t> lifecycle_epoch_{0};
+  std::shared_ptr<std::atomic<bool>> alive_ =
+      std::make_shared<std::atomic<bool>>(true);
+  std::atomic<guint> mark_source_{0};
   std::mutex mutex_;
   std::vector<uint8_t> front_;
   std::vector<uint8_t> decoded_;

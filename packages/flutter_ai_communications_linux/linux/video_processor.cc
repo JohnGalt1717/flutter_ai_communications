@@ -530,7 +530,10 @@ struct PersonBackgroundProcessor::Impl {
 
   ~Impl() {
 #ifdef FAC_HAS_ONNXRUNTIME
-    stop_.store(true);
+    {
+      std::lock_guard<std::mutex> lock(work_mutex_);
+      stop_.store(true);
+    }
     cv_.notify_all();
     if (worker_.joinable()) {
       worker_.join();

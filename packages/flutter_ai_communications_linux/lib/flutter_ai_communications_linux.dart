@@ -56,6 +56,7 @@ final class FlutterAiCommunicationsLinux
   var _catalogListeners = 0;
   var _running = false;
   var _generation = 0;
+  var _includeSound = false;
 
   @override
   String get platformName => 'linux';
@@ -154,6 +155,9 @@ final class FlutterAiCommunicationsLinux
   @override
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
+    if (_includeSound && !_backend.startLoopback()) {
+      _includeSound = false;
+    }
     if (_running) {
       _lastNativeFormats = _backend.nativeFormats;
       _emitObserved(force: true);
@@ -330,6 +334,8 @@ final class FlutterAiCommunicationsLinux
     bool cursor = true,
     bool motion = false,
   }) {
+    _includeSound = false;
+    _backend.stopLoopback();
     return _screen.start(
       sourceId: sourceId,
       includeSystemAudio: includeSystemAudio,
@@ -343,6 +349,7 @@ final class FlutterAiCommunicationsLinux
 
   @override
   Future<void> stopScreenShareNative() async {
+    _includeSound = false;
     _backend.stopLoopback();
     await _screen.stop();
   }
@@ -350,10 +357,13 @@ final class FlutterAiCommunicationsLinux
   @override
   Future<bool> setIncludeSystemAudioNative(bool enabled) async {
     if (!enabled) {
+      _includeSound = false;
       _backend.stopLoopback();
       return false;
     }
-    return _backend.startLoopback();
+    final ok = _backend.startLoopback();
+    _includeSound = ok;
+    return ok;
   }
 
   @override

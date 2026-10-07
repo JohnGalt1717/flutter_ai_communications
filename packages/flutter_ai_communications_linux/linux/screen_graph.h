@@ -40,6 +40,7 @@ class ScreenGraph {
                              uint32_t* width, uint32_t* height, GError** error);
   FlValue* PortalStartedMap();
   void SetMarksAllowed(bool allowed);
+  void RefreshTexture();
   struct PortalState;
 
  private:
@@ -82,10 +83,14 @@ class ScreenGraph {
   void CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h, int stride,
                          uint32_t spa_format, const uint8_t* uv, int uv_stride);
   void RequestTextureMark();
+  void CancelPendingMark();
   static void OnPwProcess(void* data);
   static void OnPwParamChanged(void* data, uint32_t id, const void* param);
 
   FlTextureRegistrar* textures_;
+  std::shared_ptr<std::atomic<bool>> alive_ =
+      std::make_shared<std::atomic<bool>>(true);
+  std::atomic<guint> mark_source_{0};
   FlView* view_ = nullptr;
   std::string parent_window_;
   Display* display_ = nullptr;
