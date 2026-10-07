@@ -20,8 +20,14 @@ const paContextFailed = 5;
 /// Context terminated.
 const paContextTerminated = 6;
 
-/// Operation done.
-const paOperationDone = 2;
+/// Operation still running (`PA_OPERATION_RUNNING`).
+const paOperationRunning = 0;
+
+/// Operation completed (`PA_OPERATION_DONE`).
+const paOperationDone = 1;
+
+/// Operation cancelled (`PA_OPERATION_CANCELLED`).
+const paOperationCancelled = 2;
 
 /// Pulse sample spec used by `pa_simple_new`.
 final class PaSampleSpec extends Struct {
@@ -234,10 +240,12 @@ final class PulseSimple {
     required int direction,
     String? device,
     required Pointer<PaSampleSpec> spec,
+    String? streamName,
   }) {
     final name = 'flutter_ai_communications'.toNativeUtf8();
-    final stream = (direction == paStreamRecord ? 'capture' : 'render')
-        .toNativeUtf8();
+    final stream =
+        (streamName ?? (direction == paStreamRecord ? 'capture' : 'render'))
+            .toNativeUtf8();
     final devicePtr = device?.toNativeUtf8();
     final error = calloc<Int32>();
     try {
@@ -402,6 +410,39 @@ final class PulseAsync {
               Pointer<Void>,
             )
           >('pa_context_get_sink_info_list'),
+      getSinkInfoByName = lib
+          .lookupFunction<
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              Pointer<Char>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Pointer<PaNamedDevice>,
+                    Int32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            ),
+            Pointer<PaOperation> Function(
+              Pointer<PaContext>,
+              Pointer<Char>,
+              Pointer<
+                NativeFunction<
+                  Void Function(
+                    Pointer<PaContext>,
+                    Pointer<PaNamedDevice>,
+                    Int32,
+                    Pointer<Void>,
+                  )
+                >
+              >,
+              Pointer<Void>,
+            )
+          >('pa_context_get_sink_info_by_name'),
       operationGetState = lib
           .lookupFunction<
             Int32 Function(Pointer<PaOperation>),
@@ -526,6 +567,24 @@ final class PulseAsync {
     Pointer<Void>,
   )
   getSinkInfoList;
+
+  /// Looks up one sink, including `@DEFAULT_SINK@`.
+  final Pointer<PaOperation> Function(
+    Pointer<PaContext>,
+    Pointer<Char>,
+    Pointer<
+      NativeFunction<
+        Void Function(
+          Pointer<PaContext>,
+          Pointer<PaNamedDevice>,
+          Int32,
+          Pointer<Void>,
+        )
+      >
+    >,
+    Pointer<Void>,
+  )
+  getSinkInfoByName;
 
   /// Operation state.
   final int Function(Pointer<PaOperation>) operationGetState;

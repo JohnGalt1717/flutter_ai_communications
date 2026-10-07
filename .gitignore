@@ -44,6 +44,9 @@ packages/**/pubspec.lock
 # Local Orchestration screenshots (may contain desktop contents)
 .scratch/screen-proof/
 
+# Local PipeWire/SPA headers when libpipewire-0.3-dev is not installed
+packages/flutter_ai_communications_linux/linux/third_party/pipewire-sysroot/
+
 # Codebase-memory graph snapshot (regenerate locally; see DEVELOPER.md)
 .codebase-memory/graph.db.zst
 .codebase-memory/*.db

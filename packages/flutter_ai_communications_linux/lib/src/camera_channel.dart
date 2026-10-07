@@ -7,18 +7,41 @@ import 'package:flutter_ai_communications_shared/flutter_ai_communications_share
 
 import 'camera_backend.dart';
 
+/// Whether a `/dev` inotify event should re-enumerate Camera Endpoints.
+///
+/// V4L2 streaming writes `/dev/video*` as MODIFY; those must not re-enter
+/// `enumerateCameras` on the GTK thread while capture holds the device.
+bool linuxVideoNodeCatalogChange({required String path, required int type}) {
+  final name = path.split('/').last;
+  if (!name.startsWith('video')) {
+    return false;
+  }
+  return type == FileSystemEvent.create ||
+      type == FileSystemEvent.delete ||
+      type == FileSystemEvent.move;
+}
+
 /// MethodChannel camera graph. Audio stays on Pulse FFI.
-/// Camera hotplug is `/dev/video*` inotify; Linux native has no EventChannel.
+/// Camera hotplug is `/dev/video*` inotify. EventChannel carries
+/// processorUnavailable only (ADR-0017).
 final class MethodChannelCameraBackend implements CameraBackend {
   /// Creates a channel backend.
-  MethodChannelCameraBackend({MethodChannel? methods})
+  MethodChannelCameraBackend({MethodChannel? methods, EventChannel? events})
     : _methods =
-          methods ?? const MethodChannel('flutter_ai_communications/methods');
+          methods ?? const MethodChannel('flutter_ai_communications/methods'),
+      _events =
+          events ?? const EventChannel('flutter_ai_communications/events');
 
   final MethodChannel _methods;
+  final EventChannel _events;
+  final StreamController<void> _processorUnavailableOut =
+      StreamController<void>.broadcast();
+  StreamSubscription<dynamic>? _eventsSub;
   final StreamController<List<CameraEndpoint>> _catalogOut =
       StreamController<List<CameraEndpoint>>.broadcast();
   StreamSubscription<FileSystemEvent>? _devWatch;
+  var _catalogBusy = false;
+  var _catalogQueued = false;
   VideoSurface? _lastSurface;
   VideoFormat? _lastFormat;
   var _frameCount = 0;
@@ -37,6 +60,25 @@ final class MethodChannelCameraBackend implements CameraBackend {
   int get liveFrames => _liveFrames;
 
   @override
+  Stream<void> get processorUnavailable {
+    _ensureEvents();
+    return _processorUnavailableOut.stream;
+  }
+
+  void _ensureEvents() {
+    _eventsSub ??= _events.receiveBroadcastStream().listen(_onEvent);
+  }
+
+  void _onEvent(dynamic event) {
+    if (event is! Map) {
+      return;
+    }
+    if (event['type'] == 'processor' && event['payload'] == 'unavailable') {
+      _processorUnavailableOut.add(null);
+    }
+  }
+
+  @override
   Stream<List<CameraEndpoint>> get catalog async* {
     _ensureWatch();
     yield await enumerate();
@@ -46,7 +88,7 @@ final class MethodChannelCameraBackend implements CameraBackend {
   void _ensureWatch() {
     try {
       _devWatch ??= Directory('/dev').watch().listen((change) {
-        if (change.path.contains('video')) {
+        if (linuxVideoNodeCatalogChange(path: change.path, type: change.type)) {
           unawaited(_emitDevCatalog());
         }
       });
@@ -56,7 +98,19 @@ final class MethodChannelCameraBackend implements CameraBackend {
   }
 
   Future<void> _emitDevCatalog() async {
-    _catalogOut.add(await enumerate());
+    if (_catalogBusy) {
+      _catalogQueued = true;
+      return;
+    }
+    _catalogBusy = true;
+    try {
+      do {
+        _catalogQueued = false;
+        _catalogOut.add(await enumerate());
+      } while (_catalogQueued);
+    } finally {
+      _catalogBusy = false;
+    }
   }
 
   @override

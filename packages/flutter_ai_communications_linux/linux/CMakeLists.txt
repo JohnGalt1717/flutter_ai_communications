@@ -29,7 +29,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
 pkg_check_modules(GDKPIXBUF REQUIRED IMPORTED_TARGET gdk-pixbuf-2.0)
-pkg_check_modules(PIPEWIRE libpipewire-0.3)
+pkg_check_modules(PIPEWIRE IMPORTED_TARGET libpipewire-0.3)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
@@ -38,10 +38,34 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::X11)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GDKPIXBUF)
 target_link_libraries(${PLUGIN_NAME} PRIVATE Threads::Threads)
 target_link_libraries(${PLUGIN_NAME} PRIVATE ${CMAKE_DL_LIBS})
+set(_pw_sysroot "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pipewire-sysroot")
 if(PIPEWIRE_FOUND)
   target_compile_definitions(${PLUGIN_NAME} PRIVATE FAC_HAS_PIPEWIRE=1)
-  target_include_directories(${PLUGIN_NAME} PRIVATE ${PIPEWIRE_INCLUDE_DIRS})
-  target_link_libraries(${PLUGIN_NAME} PRIVATE ${PIPEWIRE_LIBRARIES})
+  target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::PIPEWIRE)
+else()
+  find_library(PIPEWIRE_LIB
+    NAMES pipewire-0.3 libpipewire-0.3.so.0
+    PATHS /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu)
+  find_path(PIPEWIRE_INCLUDE pipewire/pipewire.h
+    PATHS
+      /usr/include/pipewire-0.3
+      "${_pw_sysroot}/usr/include/pipewire-0.3")
+  find_path(SPA_INCLUDE spa/param/video/raw.h
+    PATHS
+      /usr/include/spa-0.2
+      "${_pw_sysroot}/usr/include/spa-0.2")
+  if(PIPEWIRE_LIB AND PIPEWIRE_INCLUDE AND SPA_INCLUDE)
+    message(STATUS
+      "FAC PipeWire fallback ${PIPEWIRE_LIB} ${PIPEWIRE_INCLUDE}")
+    target_compile_definitions(${PLUGIN_NAME} PRIVATE
+      FAC_HAS_PIPEWIRE=1 _REENTRANT)
+    target_include_directories(${PLUGIN_NAME} PRIVATE
+      "${PIPEWIRE_INCLUDE}" "${SPA_INCLUDE}")
+    target_link_libraries(${PLUGIN_NAME} PRIVATE ${PIPEWIRE_LIB})
+  else()
+    message(STATUS
+      "FAC PipeWire skipped lib=${PIPEWIRE_LIB} include=${PIPEWIRE_INCLUDE}")
+  endif()
 endif()
 
 find_library(ONNXRUNTIME_LIB NAMES onnxruntime)

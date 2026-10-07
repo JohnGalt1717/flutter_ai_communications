@@ -734,9 +734,72 @@ final class _SessionPageState extends State<SessionPage> {
     await _applyStart(await _startForPhase(meeting: true), meeting: true);
   }
 
+  Future<bool?> _osShareOptions() {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Share'),
+              content: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilterChip(
+                    key: const Key('screen-sound'),
+                    label: const Text('Include sound'),
+                    selected: _includeSound,
+                    onSelected: (value) {
+                      setState(() => _includeSound = value);
+                      setDialogState(() {});
+                    },
+                  ),
+                  FilterChip(
+                    key: const Key('screen-motion'),
+                    label: const Text('Optimize'),
+                    selected: _screenMotion,
+                    onSelected: (value) {
+                      setState(() => _screenMotion = value);
+                      setDialogState(() {});
+                    },
+                  ),
+                  FilterChip(
+                    key: const Key('screen-cursor'),
+                    label: const Text('Cursor'),
+                    selected: _screenCursor,
+                    onSelected: (value) {
+                      setState(() => _screenCursor = value);
+                      setDialogState(() {});
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  key: const Key('share-cancel'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  key: const Key('share-continue'),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Share'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openSharePicker(Session session) async {
     if (_osPickerCatalog) {
-      await _shareScreen(session);
+      final proceed = await _osShareOptions();
+      if (proceed == true && mounted) {
+        await _shareScreen(session);
+      }
       return;
     }
     final pick = session.beginScreenPick();

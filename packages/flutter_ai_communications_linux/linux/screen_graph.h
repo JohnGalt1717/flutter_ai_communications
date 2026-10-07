@@ -15,7 +15,7 @@
 
 class ScreenGraph {
  public:
-  explicit ScreenGraph(FlTextureRegistrar* textures);
+  explicit ScreenGraph(FlTextureRegistrar* textures, FlView* view = nullptr);
   ~ScreenGraph();
 
   ScreenGraph(const ScreenGraph&) = delete;
@@ -39,6 +39,8 @@ class ScreenGraph {
   gboolean CopyPreviewPixels(const std::string& id, const uint8_t** buffer,
                              uint32_t* width, uint32_t* height, GError** error);
   FlValue* PortalStartedMap();
+  void SetMarksAllowed(bool allowed);
+  void RefreshTexture();
   struct PortalState;
 
  private:
@@ -74,23 +76,42 @@ class ScreenGraph {
   void HideFrame();
   bool StartPortal(FlMethodCall* pending, bool cursor, bool motion);
   void CancelPortal();
+  void ExportParentWindow();
   void StopPipeWire();
-  bool ConnectPipeWire(int fd, uint32_t node_id, int width, int height);
+  bool ConnectPipeWire(int fd, uint32_t node_id, int width, int height,
+                       const std::string& serial);
   void CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h, int stride,
                          uint32_t spa_format, const uint8_t* uv, int uv_stride);
+  void RequestTextureMark();
+  void CancelPendingMark();
   static void OnPwProcess(void* data);
   static void OnPwParamChanged(void* data, uint32_t id, const void* param);
 
   FlTextureRegistrar* textures_;
+  std::shared_ptr<std::atomic<bool>> alive_ =
+      std::make_shared<std::atomic<bool>>(true);
+  std::atomic<guint> mark_source_{0};
+  FlView* view_ = nullptr;
+  std::string parent_window_;
   Display* display_ = nullptr;
   FlPixelBufferTexture* texture_ = nullptr;
   int64_t texture_id_ = -1;
   std::mutex mutex_;
   std::vector<uint8_t> front_;
+  std::vector<uint8_t> staging_;
+  std::vector<uint8_t> published_;
+  int published_width_ = 0;
+  int published_height_ = 0;
+  int staging_width_ = 0;
+  int staging_height_ = 0;
+  bool staging_ready_ = false;
   std::vector<Source> sources_;
   std::atomic<bool> running_{false};
   std::atomic<bool> motion_{false};
   std::atomic<bool> cursor_{true};
+  std::atomic<bool> pw_mark_pending_{false};
+  std::atomic<uint64_t> texture_epoch_{0};
+  std::atomic<bool> marks_allowed_{true};
   std::thread capture_thread_;
   std::thread portal_thread_;
   std::shared_ptr<PortalState> portal_state_;

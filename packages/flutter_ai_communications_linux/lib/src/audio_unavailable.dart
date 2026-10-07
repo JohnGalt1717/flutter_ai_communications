@@ -19,8 +19,11 @@ final class UnavailableAudioBackend
   MicrophonePermission probePermission() => MicrophonePermission.denied;
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) =>
-      NativeGraphStart.unavailable;
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) => NativeGraphStart.unavailable;
 
   @override
   void stop() {}
@@ -39,6 +42,9 @@ final class UnavailableAudioBackend
 
   @override
   PairingSnapshot get observed => const PairingSnapshot();
+
+  @override
+  NativeFormatReport get nativeFormats => const NativeFormatReport();
 
   @override
   void flush() {}
