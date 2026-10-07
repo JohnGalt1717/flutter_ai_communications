@@ -22,6 +22,7 @@ struct _FlutterAiCommunicationsLinuxPlugin {
   FlEventChannel* events;
   gboolean events_listening;
   std::shared_ptr<std::atomic<bool>>* dispatch_alive;
+  GtkWidget* window;
 };
 
 struct _FlutterAiCommunicationsLinuxPluginClass {
@@ -282,6 +283,10 @@ static void flutter_ai_communications_linux_plugin_dispose(GObject* object) {
   if (self->dispatch_alive != nullptr) {
     (*self->dispatch_alive)->store(false);
   }
+  if (self->window != nullptr) {
+    g_signal_handlers_disconnect_by_data(self->window, self);
+    self->window = nullptr;
+  }
   if (self->camera != nullptr) {
     self->camera->SetOnProcessorUnavailable(nullptr);
   }
@@ -312,6 +317,7 @@ static void flutter_ai_communications_linux_plugin_init(
   self->events = nullptr;
   self->events_listening = FALSE;
   self->dispatch_alive = nullptr;
+  self->window = nullptr;
 }
 
 void flutter_ai_communications_linux_plugin_register_with_registrar(
@@ -338,8 +344,11 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
   FlView* view = fl_plugin_registrar_get_view(registrar);
   if (view != nullptr) {
     GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(view));
-    g_signal_connect(top, "map-event", G_CALLBACK(OnWindowMap), plugin);
-    g_signal_connect(top, "unmap-event", G_CALLBACK(OnWindowUnmap), plugin);
+    plugin->window = top;
+    g_signal_connect_object(top, "map-event", G_CALLBACK(OnWindowMap), plugin,
+                            static_cast<GConnectFlags>(0));
+    g_signal_connect_object(top, "unmap-event", G_CALLBACK(OnWindowUnmap),
+                            plugin, static_cast<GConnectFlags>(0));
     SetMarksAllowed(plugin, gtk_widget_get_mapped(top) != FALSE);
   }
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();

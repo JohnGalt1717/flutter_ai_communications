@@ -30,7 +30,7 @@ namespace {
 void FacLog(const char* fmt, ...) {
   const char* path = std::getenv("FAC_NATIVE_LOG");
   if (path == nullptr || path[0] == '\0') {
-    path = "/tmp/fac-crash/plugin.log";
+    return;
   }
   FILE* file = std::fopen(path, "a");
   if (file == nullptr) {
@@ -791,6 +791,7 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   }
   bool formatted = false;
   v4l2_format fmt = {};
+  int stream_fps = frame_rate > 0 ? frame_rate : 30;
   if (!available.empty()) {
     const NativeMode pick =
         NearestMode(available, width, height, frame_rate);
@@ -800,6 +801,9 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
         CanConvert(fmt.fmt.pix.pixelformat)) {
       formatted = true;
       pixelformat_ = fmt.fmt.pix.pixelformat;
+      if (pick.frame_rate > 0) {
+        stream_fps = pick.frame_rate;
+      }
     }
   }
   const uint32_t candidates[] = {
@@ -829,14 +833,14 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   width_ = static_cast<int>(fmt.fmt.pix.width);
   height_ = static_cast<int>(fmt.fmt.pix.height);
   bytesperline_ = static_cast<int>(fmt.fmt.pix.bytesperline);
-  frame_rate_ = frame_rate;
+  frame_rate_ = stream_fps;
   v4l2_streamparm parm = {};
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   if (IoctlTimed(&fd_, VIDIOC_G_PARM, &parm, sizeof(parm), 250) == 0 &&
       (parm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME)) {
     parm.parm.capture.timeperframe.numerator = 1;
     parm.parm.capture.timeperframe.denominator =
-        static_cast<uint32_t>(frame_rate);
+        static_cast<uint32_t>(stream_fps);
     IoctlTimed(&fd_, VIDIOC_S_PARM, &parm, sizeof(parm), 250);
     if (fd_ >= 0 && parm.parm.capture.timeperframe.numerator != 0) {
       frame_rate_ = static_cast<int>(

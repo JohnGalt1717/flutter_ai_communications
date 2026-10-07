@@ -765,13 +765,16 @@ struct PersonBackgroundProcessor::Impl {
         continue;
       }
       if (!Segment(rgba.data(), width, height)) {
-        const int failures = consecutive_failures_.fetch_add(1) + 1;
-        if (failures < kFailureLimit) {
-          continue;
-        }
         std::function<void()> callback;
         {
           std::lock_guard<std::mutex> lock(mutex_);
+          if (generation_.load() != gen) {
+            continue;
+          }
+          const int failures = consecutive_failures_.fetch_add(1) + 1;
+          if (failures < kFailureLimit) {
+            continue;
+          }
           if (kind_ == Kind::None) {
             consecutive_failures_.store(0);
             continue;

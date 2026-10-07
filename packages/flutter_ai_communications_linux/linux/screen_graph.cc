@@ -50,9 +50,8 @@ namespace {
 void FacLog(const char* fmt, ...) {
   const char* path = std::getenv("FAC_NATIVE_LOG");
   if (path == nullptr || path[0] == '\0') {
-    path = "/tmp/fac-crash/plugin.log";
+    return;
   }
-  mkdir("/tmp/fac-crash", 0777);
   FILE* file = std::fopen(path, "a");
   if (file == nullptr) {
     return;
