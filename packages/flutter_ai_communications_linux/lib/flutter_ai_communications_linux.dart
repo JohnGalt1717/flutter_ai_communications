@@ -106,14 +106,15 @@ final class FlutterAiCommunicationsLinux
   }) async {
     _lastIsolation = const IsolationEvent(IsolationState.unavailable);
     _isolation.add(_lastIsolation);
-    final started = _backend.start(captureId: captureId, renderId: renderId);
+    final started = _backend.start(
+      captureId: captureId,
+      renderId: renderId,
+      noiseCancelling: noiseCancelling,
+    );
     if (started == NativeGraphStart.started) {
       _running = true;
       _generation++;
-      _lastNativeFormats = _formatsFor(
-        captureId: captureId,
-        renderId: renderId,
-      );
+      _lastNativeFormats = _backend.nativeFormats;
       _path.add(const CoverageHint.ok());
       _emitObserved(force: true);
       _ensureCatalogWatch();
@@ -122,6 +123,7 @@ final class FlutterAiCommunicationsLinux
     } else {
       _running = false;
       _lastNativeFormats = const NativeFormatReport();
+      _path.add(const CoverageHint.dead());
       _emitObserved(force: true);
       _maybeStopCatalogWatch();
     }
@@ -153,23 +155,9 @@ final class FlutterAiCommunicationsLinux
   Future<void> selectEndpoints({String? captureId, String? renderId}) async {
     _backend.select(captureId: captureId, renderId: renderId);
     if (_running) {
-      _lastNativeFormats = _formatsFor(
-        captureId: captureId ?? _backend.observed.captureId,
-        renderId: renderId ?? _backend.observed.renderId,
-      );
+      _lastNativeFormats = _backend.nativeFormats;
       _emitObserved(force: true);
     }
-  }
-
-  NativeFormatReport _formatsFor({String? captureId, String? renderId}) {
-    final capture = captureId == null || captureId.isEmpty ? null : captureId;
-    final render = renderId == null || renderId.isEmpty ? null : renderId;
-    final wantCapture = capture != null || render == null;
-    final wantPlayback = render != null || capture == null;
-    return NativeFormatReport(
-      capture: wantCapture ? AudioFormat.pcm16le24k : null,
-      playback: wantPlayback ? AudioFormat.pcm16le24k : null,
-    );
   }
 
   void _ensureCatalogWatch() {
@@ -294,6 +282,9 @@ final class FlutterAiCommunicationsLinux
   ) => _camera.setVideoProcessor(processor);
 
   @override
+  Stream<void> get processorUnavailable => _camera.processorUnavailable;
+
+  @override
   VideoSurface? get lastVideoSurface => _camera.lastSurface;
 
   @override
@@ -351,11 +342,19 @@ final class FlutterAiCommunicationsLinux
   Future<StillFrame?> captureScreenStillNative() => _screen.captureStill();
 
   @override
-  Future<void> stopScreenShareNative() => _screen.stop();
+  Future<void> stopScreenShareNative() async {
+    _backend.stopLoopback();
+    await _screen.stop();
+  }
 
   @override
-  Future<bool> setIncludeSystemAudioNative(bool enabled) =>
-      _screen.setIncludeSystemAudio(enabled);
+  Future<bool> setIncludeSystemAudioNative(bool enabled) async {
+    if (!enabled) {
+      _backend.stopLoopback();
+      return false;
+    }
+    return _backend.startLoopback();
+  }
 
   @override
   Future<void> setScreenMotionNative(bool motion) => _screen.setMotion(motion);

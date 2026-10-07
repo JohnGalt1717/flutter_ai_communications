@@ -1,5 +1,7 @@
+
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_linux/flutter_ai_communications_linux.dart';
+import 'package:flutter_ai_communications_linux/src/audio_backend.dart';
 import 'package:flutter_ai_communications_linux/src/screen_channel.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
@@ -137,4 +139,122 @@ void main() {
     );
     expect(adapter.lastScreenSurface?.handle, 11);
   });
+
+  test('Linux startScreenShare maps PipeWire miss as unavailable', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'startScreenShareNative') {
+            return {'status': 'unavailable', 'reason': 'pipewire'};
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final adapter = FlutterAiCommunicationsLinux(
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(
+      await adapter.startScreenShareNative(sourceId: 'system-picker'),
+      NativeGraphStart.unavailable,
+    );
+    expect(adapter.lastScreenSurface, isNull);
+    expect(adapter.lastScreenUnavailableReason, 'pipewire');
+  });
+
+  test('Include sound uses Pulse loopback, not the screen channel', () async {
+    var screenAudioCalls = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'setIncludeSystemAudioNative') {
+            screenAudioCalls++;
+            return true;
+          }
+          if (call.method == 'stopScreenShareNative') {
+            return null;
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    final backend = _LoopbackPulse();
+    final adapter = FlutterAiCommunicationsLinux(
+      backend: backend,
+      screen: MethodChannelScreenBackend(methods: channel),
+    );
+    expect(await adapter.setIncludeSystemAudioNative(true), isTrue);
+    expect(backend.starts, 1);
+    expect(screenAudioCalls, 0);
+    await adapter.stopScreenShareNative();
+    expect(backend.stops, 1);
+  });
+
+  test('Include sound off stops Pulse loopback', () async {
+    final backend = _LoopbackPulse();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    expect(await adapter.setIncludeSystemAudioNative(true), isTrue);
+    expect(await adapter.setIncludeSystemAudioNative(false), isFalse);
+    expect(backend.starts, 1);
+    expect(backend.stops, 1);
+  });
+}
+
+final class _LoopbackPulse with DeviceWatchSupport implements AudioBackend {
+  var starts = 0;
+  var stops = 0;
+
+  @override
+  List<Endpoint> enumerate() => const [];
+
+  @override
+  MicrophonePermission probePermission() => MicrophonePermission.granted;
+
+  @override
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) => NativeGraphStart.unavailable;
+
+  @override
+  void stop() {}
+
+  @override
+  void pause() {}
+
+  @override
+  void resume() {}
+
+  @override
+  void play(Uint8List bytes) {}
+
+  @override
+  void select({String? captureId, String? renderId}) {}
+
+  @override
+  PairingSnapshot get observed => const PairingSnapshot();
+
+  @override
+  void flush() {}
+
+  @override
+  Stream<Uint8List> get capture => const Stream.empty();
+
+  @override
+  bool startLoopback() {
+    starts++;
+    return true;
+  }
+
+  @override
+  void stopLoopback() => stops++;
+
+  @override
+  Stream<Uint8List> get loopback => const Stream.empty();
+
+  @override
+  void dispose() {}
 }

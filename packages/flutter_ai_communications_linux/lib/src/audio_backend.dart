@@ -13,6 +13,18 @@ mixin DeviceWatchSupport {
 
   /// Stops listening for [deviceChanges].
   void stopDeviceWatch() {}
+
+  /// Include sound. Never mixed into capture.
+  bool startLoopback() => false;
+
+  /// Tears down loopback. Mic capture is unchanged.
+  void stopLoopback() {}
+
+  /// Loopback PCM, independent of capture. Empty when unused.
+  Stream<Uint8List> get loopback => const Stream.empty();
+
+  /// Native Formats from the last successful start or select.
+  NativeFormatReport get nativeFormats => const NativeFormatReport();
 }
 
 /// Pulse / PipeWire graph used by the Linux adapter.
@@ -24,7 +36,14 @@ abstract class AudioBackend {
   MicrophonePermission probePermission();
 
   /// Starts capture and render. Same subscription must survive restarts.
-  NativeGraphStart start({String? captureId, String? renderId});
+  ///
+  /// [noiseCancelling] asks Speex for AEC/NS/AGC on capture. Missing Speex
+  /// is pass-through and does not fail start.
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  });
 
   /// Tears down the graph. Does not close Session streams.
   void stop();
@@ -46,11 +65,26 @@ abstract class AudioBackend {
   /// Bound capture/render after the last successful start or select.
   PairingSnapshot get observed;
 
+  /// Native Formats from the last successful start or select.
+  NativeFormatReport get nativeFormats;
+
   /// Drops queued playback.
   void flush();
 
   /// Raw capture frames, including silence on restart.
   Stream<Uint8List> get capture;
+
+  /// Starts Pulse monitor loopback on the current render Endpoint.
+  ///
+  /// Include sound for screen send. Never mixed into [capture]. Mute does
+  /// not stop this graph. Returns false when loopback cannot start.
+  bool startLoopback() => false;
+
+  /// Tears down loopback. Mic capture is unchanged.
+  void stopLoopback() {}
+
+  /// Loopback PCM, independent of [capture]. Empty when unused.
+  Stream<Uint8List> get loopback => const Stream.empty();
 
   /// Releases native resources.
   void dispose();

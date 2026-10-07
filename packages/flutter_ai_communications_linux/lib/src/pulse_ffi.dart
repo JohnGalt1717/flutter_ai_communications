@@ -234,10 +234,12 @@ final class PulseSimple {
     required int direction,
     String? device,
     required Pointer<PaSampleSpec> spec,
+    String? streamName,
   }) {
     final name = 'flutter_ai_communications'.toNativeUtf8();
-    final stream = (direction == paStreamRecord ? 'capture' : 'render')
-        .toNativeUtf8();
+    final stream =
+        (streamName ?? (direction == paStreamRecord ? 'capture' : 'render'))
+            .toNativeUtf8();
     final devicePtr = device?.toNativeUtf8();
     final error = calloc<Int32>();
     try {

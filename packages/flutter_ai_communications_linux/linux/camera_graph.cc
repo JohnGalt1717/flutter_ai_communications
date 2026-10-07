@@ -2,16 +2,88 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <gio/gio.h>
 #include <linux/videodev2.h>
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <condition_variable>
 #include <cstring>
+#include <cstdlib>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <thread>
+#include <tuple>
 #include <vector>
 
 namespace {
+
+void FacLog(const char* fmt, ...) {
+  const char* path = std::getenv("FAC_NATIVE_LOG");
+  if (path == nullptr || path[0] == '\0') {
+    path = "/tmp/fac-crash/plugin.log";
+  }
+  FILE* file = std::fopen(path, "a");
+  if (file == nullptr) {
+    return;
+  }
+  va_list args;
+  va_start(args, fmt);
+  std::vfprintf(file, fmt, args);
+  va_end(args);
+  std::fputc('\n', file);
+  std::fclose(file);
+}
+
+// UVC VIDIOC_S_FMT / STREAMON can block the GTK thread forever (LifeCam).
+// Close the fd from this side so a stuck ioctl returns and Start can fail
+// as unavailable instead of wedging Session start.
+int IoctlTimed(int* fd, unsigned long request, void* arg, int timeout_ms) {
+  if (fd == nullptr || *fd < 0) {
+    errno = EBADF;
+    return -1;
+  }
+  struct Job {
+    std::mutex mu;
+    std::condition_variable cv;
+    int result = -1;
+    bool finished = false;
+  };
+  const auto job = std::make_shared<Job>();
+  const int local_fd = *fd;
+  std::thread worker([job, local_fd, request, arg] {
+    const int r = ioctl(local_fd, request, arg);
+    {
+      std::lock_guard<std::mutex> lock(job->mu);
+      job->result = r;
+      job->finished = true;
+    }
+    job->cv.notify_one();
+  });
+  std::unique_lock<std::mutex> lock(job->mu);
+  if (!job->cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                        [&] { return job->finished; })) {
+    lock.unlock();
+    // Do not close() here: close on a fd with a stuck UVC ioctl blocks
+    // this thread until the driver returns, which is the hang we bound.
+    *fd = -1;
+    worker.detach();
+    errno = ETIMEDOUT;
+    return -1;
+  }
+  lock.unlock();
+  worker.join();
+  return job->result;
+}
 
 std::string ToLower(std::string value) {
   for (char& ch : value) {
@@ -26,20 +98,243 @@ bool Contains(const std::string& haystack, const char* needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
-bool IsCaptureDevice(int fd) {
+bool IsCaptureDevice(int* fd, v4l2_capability* out = nullptr) {
   v4l2_capability cap = {};
-  if (ioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
+  if (IoctlTimed(fd, VIDIOC_QUERYCAP, &cap, 250) < 0) {
     return false;
   }
   const uint32_t caps =
       cap.device_caps != 0 ? cap.device_caps : cap.capabilities;
-  return (caps & V4L2_CAP_VIDEO_CAPTURE) != 0 &&
-         (caps & V4L2_CAP_STREAMING) != 0;
+  if ((caps & V4L2_CAP_VIDEO_CAPTURE) == 0 ||
+      (caps & V4L2_CAP_STREAMING) == 0) {
+    return false;
+  }
+  if (out != nullptr) {
+    *out = cap;
+  }
+  return true;
 }
 
 bool CanConvert(uint32_t fourcc) {
   return fourcc == V4L2_PIX_FMT_YUYV || fourcc == V4L2_PIX_FMT_NV12 ||
-         fourcc == V4L2_PIX_FMT_RGB24 || fourcc == V4L2_PIX_FMT_BGR24;
+         fourcc == V4L2_PIX_FMT_RGB24 || fourcc == V4L2_PIX_FMT_BGR24 ||
+         fourcc == V4L2_PIX_FMT_MJPEG || fourcc == V4L2_PIX_FMT_JPEG;
+}
+
+int FourccRank(uint32_t fourcc) {
+  switch (fourcc) {
+    case V4L2_PIX_FMT_YUYV:
+      return 0;
+    case V4L2_PIX_FMT_NV12:
+      return 1;
+    case V4L2_PIX_FMT_RGB24:
+      return 2;
+    case V4L2_PIX_FMT_BGR24:
+      return 3;
+    case V4L2_PIX_FMT_MJPEG:
+    case V4L2_PIX_FMT_JPEG:
+      return 4;
+    default:
+      return 9;
+  }
+}
+
+struct NativeMode {
+  int width = 0;
+  int height = 0;
+  int frame_rate = 30;
+  uint32_t fourcc = 0;
+};
+
+int ModePixels(const NativeMode& mode) { return mode.width * mode.height; }
+
+int IntervalFps(const v4l2_fract& fract) {
+  if (fract.numerator == 0) {
+    return 30;
+  }
+  const int fps = static_cast<int>(fract.denominator / fract.numerator);
+  return fps < 1 ? 1 : fps;
+}
+
+std::vector<NativeMode> CollectModes(int fd) {
+  std::vector<NativeMode> modes;
+  if (fd < 0) {
+    return modes;
+  }
+  v4l2_fmtdesc desc = {};
+  desc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+  for (desc.index = 0; ioctl(fd, VIDIOC_ENUM_FMT, &desc) == 0; desc.index++) {
+    if (!CanConvert(desc.pixelformat)) {
+      continue;
+    }
+    v4l2_frmsizeenum size = {};
+    size.pixel_format = desc.pixelformat;
+    for (size.index = 0; ioctl(fd, VIDIOC_ENUM_FRAMESIZES, &size) == 0;
+         size.index++) {
+      std::vector<std::pair<int, int>> dims;
+      if (size.type == V4L2_FRMSIZE_TYPE_DISCRETE) {
+        dims.emplace_back(static_cast<int>(size.discrete.width),
+                          static_cast<int>(size.discrete.height));
+      } else {
+        const auto& sw = size.stepwise;
+        dims.emplace_back(static_cast<int>(sw.min_width),
+                          static_cast<int>(sw.min_height));
+        dims.emplace_back(static_cast<int>(sw.max_width),
+                          static_cast<int>(sw.max_height));
+        if (sw.min_width <= 1280 && 1280 <= sw.max_width &&
+            sw.min_height <= 720 && 720 <= sw.max_height) {
+          dims.emplace_back(1280, 720);
+        }
+      }
+      for (const auto& dim : dims) {
+        v4l2_frmivalenum ival = {};
+        ival.pixel_format = desc.pixelformat;
+        ival.width = static_cast<uint32_t>(dim.first);
+        ival.height = static_cast<uint32_t>(dim.second);
+        bool any = false;
+        for (ival.index = 0; ioctl(fd, VIDIOC_ENUM_FRAMEINTERVALS, &ival) == 0;
+             ival.index++) {
+          int fps = 30;
+          if (ival.type == V4L2_FRMIVAL_TYPE_DISCRETE) {
+            fps = IntervalFps(ival.discrete);
+          }
+          modes.push_back({dim.first, dim.second, fps, desc.pixelformat});
+          any = true;
+        }
+        if (!any) {
+          modes.push_back({dim.first, dim.second, 30, desc.pixelformat});
+        }
+      }
+    }
+  }
+  return modes;
+}
+
+// UVC MJPEG often omits Huffman tables. gdk-pixbuf needs them.
+const uint8_t kJpegDht[] = {
+    0xff, 0xc4, 0x01, 0xa2, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02,
+    0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x01, 0x00, 0x03,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+    0x0a, 0x0b, 0x10, 0x00, 0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05,
+    0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7d, 0x01, 0x02, 0x03, 0x00, 0x04,
+    0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22,
+    0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15,
+    0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17,
+    0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35, 0x36,
+    0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a,
+    0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a,
+    0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95,
+    0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8,
+    0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2,
+    0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5,
+    0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7,
+    0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,
+    0xfa, 0x11, 0x00, 0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05,
+    0x04, 0x04, 0x00, 0x01, 0x02, 0x77, 0x00, 0x01, 0x02, 0x03, 0x11, 0x04,
+    0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13, 0x22,
+    0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33,
+    0x52, 0xf0, 0x15, 0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25,
+    0xf1, 0x17, 0x18, 0x19, 0x1a, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x35, 0x36,
+    0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a,
+    0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a,
+    0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94,
+    0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7,
+    0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba,
+    0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4,
+    0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7,
+    0xe8, 0xe9, 0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa};
+
+std::vector<uint8_t> JpegWithDht(const uint8_t* src, size_t len) {
+  std::vector<uint8_t> out;
+  if (src == nullptr || len < 4) {
+    return out;
+  }
+  bool has_dht = false;
+  size_t sos = len;
+  for (size_t i = 0; i + 1 < len; i++) {
+    if (src[i] != 0xff) {
+      continue;
+    }
+    const uint8_t marker = src[i + 1];
+    if (marker == 0xc4) {
+      has_dht = true;
+    }
+    if (marker == 0xda) {
+      sos = i;
+      break;
+    }
+  }
+  if (has_dht || sos >= len) {
+    out.assign(src, src + len);
+    return out;
+  }
+  out.reserve(len + sizeof(kJpegDht));
+  out.insert(out.end(), src, src + sos);
+  out.insert(out.end(), kJpegDht, kJpegDht + sizeof(kJpegDht));
+  out.insert(out.end(), src + sos, src + len);
+  return out;
+}
+
+NativeMode NearestMode(const std::vector<NativeMode>& modes, int req_w,
+                       int req_h, int req_fps) {
+  NativeMode best = modes.front();
+  const int req = std::max(1, req_w * req_h);
+  const int want_fps = req_fps > 0 ? req_fps : 30;
+  auto better = [&](const NativeMode& a, const NativeMode& b) {
+    const int pa = ModePixels(a);
+    const int pb = ModePixels(b);
+    const bool a_hi = pa >= req;
+    const bool b_hi = pb >= req;
+    if (a_hi != b_hi) {
+      return a_hi;
+    }
+    if (pa != pb) {
+      return a_hi ? pa < pb : pa > pb;
+    }
+    const int da = std::abs(a.frame_rate - want_fps);
+    const int db = std::abs(b.frame_rate - want_fps);
+    if (da != db) {
+      return da < db;
+    }
+    return FourccRank(a.fourcc) < FourccRank(b.fourcc);
+  };
+  for (const auto& mode : modes) {
+    if (better(mode, best)) {
+      best = mode;
+    }
+  }
+  return best;
+}
+
+FlValue* ModesToValue(const std::vector<NativeMode>& modes) {
+  FlValue* list = fl_value_new_list();
+  std::set<std::tuple<int, int, int>> seen;
+  for (const auto& mode : modes) {
+    if (mode.width < 1 || mode.height < 1) {
+      continue;
+    }
+    if (!seen.insert({mode.width, mode.height, mode.frame_rate}).second) {
+      continue;
+    }
+    FlValue* item = fl_value_new_map();
+    fl_value_set_string_take(item, "width", fl_value_new_int(mode.width));
+    fl_value_set_string_take(item, "height", fl_value_new_int(mode.height));
+    fl_value_set_string_take(item, "frameRate",
+                             fl_value_new_int(mode.frame_rate));
+    fl_value_append_take(list, item);
+  }
+  if (fl_value_get_length(list) == 0) {
+    FlValue* item = fl_value_new_map();
+    fl_value_set_string_take(item, "width", fl_value_new_int(1280));
+    fl_value_set_string_take(item, "height", fl_value_new_int(720));
+    fl_value_set_string_take(item, "frameRate", fl_value_new_int(30));
+    fl_value_append_take(list, item);
+  }
+  return list;
 }
 
 uint8_t Clamp(int value) {
@@ -117,6 +412,16 @@ void CameraGraph::EnsureTexture() {
     return;
   }
   texture_id_ = fl_texture_get_id(FL_TEXTURE(texture_));
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (front_.empty()) {
+    if (width_ < 1) {
+      width_ = 1280;
+    }
+    if (height_ < 1) {
+      height_ = 720;
+    }
+    FillBlackLocked();
+  }
 }
 
 std::string CameraGraph::FacingFor(const std::string& name,
@@ -137,34 +442,46 @@ std::string CameraGraph::FacingFor(const std::string& name,
 
 FlValue* CameraGraph::Enumerate() {
   FlValue* cameras = fl_value_new_list();
+  const bool streaming = running_.load();
   for (int i = 0; i < 64; i++) {
     const std::string path = "/dev/video" + std::to_string(i);
-    const int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
-    if (fd < 0) {
-      continue;
+    std::string name;
+    std::string facing;
+    std::vector<NativeMode> native_modes;
+    if (streaming && path == camera_id_ && !cached_name_.empty()) {
+      name = cached_name_;
+      facing = cached_facing_;
+      for (const auto& mode : cached_modes_) {
+        native_modes.push_back(
+            {mode.width, mode.height, mode.frame_rate, 0});
+      }
+    } else {
+      int fd = open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+      if (fd < 0) {
+        continue;
+      }
+      v4l2_capability cap = {};
+      if (!IsCaptureDevice(&fd, &cap)) {
+        if (fd >= 0) {
+          close(fd);
+        }
+        continue;
+      }
+      native_modes = CollectModes(fd);
+      if (fd >= 0) {
+        close(fd);
+      }
+      name = reinterpret_cast<const char*>(cap.card);
+      const std::string bus = reinterpret_cast<const char*>(cap.bus_info);
+      facing = FacingFor(name, bus);
     }
-    if (!IsCaptureDevice(fd)) {
-      close(fd);
-      continue;
-    }
-    v4l2_capability cap = {};
-    ioctl(fd, VIDIOC_QUERYCAP, &cap);
-    close(fd);
-    const std::string name = reinterpret_cast<const char*>(cap.card);
-    const std::string bus = reinterpret_cast<const char*>(cap.bus_info);
     FlValue* camera = fl_value_new_map();
     fl_value_set_string_take(camera, "id", fl_value_new_string(path.c_str()));
     fl_value_set_string_take(camera, "name",
                              fl_value_new_string(name.c_str()));
     fl_value_set_string_take(camera, "facing",
-                             fl_value_new_string(FacingFor(name, bus).c_str()));
-    FlValue* mode = fl_value_new_map();
-    fl_value_set_string_take(mode, "width", fl_value_new_int(1280));
-    fl_value_set_string_take(mode, "height", fl_value_new_int(720));
-    fl_value_set_string_take(mode, "frameRate", fl_value_new_int(30));
-    FlValue* modes = fl_value_new_list();
-    fl_value_append_take(modes, mode);
-    fl_value_set_string_take(camera, "modes", modes);
+                             fl_value_new_string(facing.c_str()));
+    fl_value_set_string_take(camera, "modes", ModesToValue(native_modes));
     fl_value_append_take(cameras, camera);
   }
   return cameras;
@@ -176,15 +493,17 @@ std::string CameraGraph::RequestPermission() {
   bool denied = false;
   for (int i = 0; i < 64; i++) {
     const std::string path = "/dev/video" + std::to_string(i);
-    const int fd = open(path.c_str(), O_RDWR | O_NONBLOCK);
+    int fd = open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) {
       if (errno == EACCES || errno == EPERM) {
         denied = true;
       }
       continue;
     }
-    if (!IsCaptureDevice(fd)) {
-      close(fd);
+    if (!IsCaptureDevice(&fd)) {
+      if (fd >= 0) {
+        close(fd);
+      }
       continue;
     }
     saw_capture = true;
@@ -226,10 +545,7 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
     StopCapture();
     frame_count_.store(0);
     live_frames_.store(0);
-    if (textures_ != nullptr && texture_ != nullptr) {
-      fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                        FL_TEXTURE(texture_));
-    }
+    RequestTextureMark();
     fl_value_set_string_take(result, "status", fl_value_new_string("started"));
     fl_value_set_string_take(result, "textureId",
                              fl_value_new_int(texture_id_));
@@ -256,7 +572,13 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
 void CameraGraph::Stop() { StopCapture(); }
 
 std::string CameraGraph::SetProcessor(FlValue* args) {
+  processor_.SetOnUnavailable(on_processor_unavailable_);
   return processor_.Apply(args);
+}
+
+void CameraGraph::SetOnProcessorUnavailable(std::function<void()> callback) {
+  on_processor_unavailable_ = std::move(callback);
+  processor_.SetOnUnavailable(on_processor_unavailable_);
 }
 
 void CameraGraph::Select(const std::string& camera_id) {
@@ -272,10 +594,7 @@ void CameraGraph::SetEnabled(bool enabled) {
     StopCapture();
     std::lock_guard<std::mutex> lock(mutex_);
     FillBlackLocked();
-    if (textures_ != nullptr && texture_ != nullptr) {
-      fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                        FL_TEXTURE(texture_));
-    }
+    RequestTextureMark();
     return;
   }
   StartCapture(camera_id_, request_width_, request_height_,
@@ -297,13 +616,46 @@ void CameraGraph::SetMuted(bool muted) {
     std::lock_guard<std::mutex> lock(mutex_);
     FillBlackLocked();
   }
-  if (textures_ != nullptr && texture_ != nullptr) {
-    fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                      FL_TEXTURE(texture_));
+  RequestTextureMark();
+}
+
+void CameraGraph::SetMarksAllowed(bool allowed) {
+  marks_allowed_.store(allowed);
+}
+
+void CameraGraph::RequestTextureMark() {
+  if (!marks_allowed_.load()) {
+    return;
   }
+  bool expected = false;
+  if (!mark_pending_.compare_exchange_strong(expected, true)) {
+    return;
+  }
+  struct Mark {
+    CameraGraph* graph;
+    uint64_t epoch;
+  };
+  auto* mark = new Mark{this, texture_epoch_.load()};
+  g_idle_add(
+      [](gpointer data) -> gboolean {
+        auto* mark = static_cast<Mark*>(data);
+        mark->graph->mark_pending_.store(false);
+        if (mark->graph->marks_allowed_.load() &&
+            mark->graph->texture_epoch_.load() == mark->epoch &&
+            mark->graph->textures_ != nullptr &&
+            mark->graph->texture_ != nullptr) {
+          fl_texture_registrar_mark_texture_frame_available(
+              mark->graph->textures_, FL_TEXTURE(mark->graph->texture_));
+        }
+        delete mark;
+        return G_SOURCE_REMOVE;
+      },
+      mark);
 }
 
 void CameraGraph::StopCapture() {
+  texture_epoch_.fetch_add(1);
+  mark_pending_.store(false);
   running_.store(false);
   if (fd_ >= 0) {
     v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -344,8 +696,9 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   if (path.empty()) {
     return false;
   }
-  fd_ = open(path.c_str(), O_RDWR);
-  if (fd_ < 0 || !IsCaptureDevice(fd_)) {
+  fd_ = open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
+  v4l2_capability cap = {};
+  if (fd_ < 0 || !IsCaptureDevice(&fd_, &cap)) {
     if (fd_ >= 0) {
       close(fd_);
       fd_ = -1;
@@ -353,22 +706,50 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
     return false;
   }
   camera_id_ = path;
-  const uint32_t candidates[] = {V4L2_PIX_FMT_YUYV, V4L2_PIX_FMT_NV12,
-                                 V4L2_PIX_FMT_RGB24, V4L2_PIX_FMT_BGR24};
-  const int sizes[][2] = {{width, height}, {1280, 720}, {640, 480}, {0, 0}};
+  cached_name_ = reinterpret_cast<const char*>(cap.card);
+  cached_facing_ = FacingFor(cached_name_,
+                             reinterpret_cast<const char*>(cap.bus_info));
+  const auto available = CollectModes(fd_);
+  cached_modes_.clear();
+  {
+    std::set<std::tuple<int, int, int>> seen;
+    for (const auto& mode : available) {
+      if (!seen.insert({mode.width, mode.height, mode.frame_rate}).second) {
+        continue;
+      }
+      cached_modes_.push_back({mode.width, mode.height, mode.frame_rate});
+    }
+  }
   bool formatted = false;
   v4l2_format fmt = {};
-  for (uint32_t fourcc : candidates) {
-    for (const auto& size : sizes) {
-      if (TrySetFormat(fourcc, size[0], size[1], &fmt) &&
-          CanConvert(fmt.fmt.pix.pixelformat)) {
-        formatted = true;
-        pixelformat_ = fmt.fmt.pix.pixelformat;
+  if (!available.empty()) {
+    const NativeMode pick =
+        NearestMode(available, width, height, frame_rate);
+    FacLog("StartCapture pick %dx%d@%d fourcc=%u modes=%zu", pick.width,
+           pick.height, pick.frame_rate, pick.fourcc, available.size());
+    if (TrySetFormat(pick.fourcc, pick.width, pick.height, &fmt) &&
+        CanConvert(fmt.fmt.pix.pixelformat)) {
+      formatted = true;
+      pixelformat_ = fmt.fmt.pix.pixelformat;
+    }
+  }
+  const uint32_t candidates[] = {
+      V4L2_PIX_FMT_YUYV, V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_RGB24,
+      V4L2_PIX_FMT_BGR24, V4L2_PIX_FMT_MJPEG, V4L2_PIX_FMT_JPEG};
+  const int sizes[][2] = {{width, height}, {1280, 720}, {640, 480}, {0, 0}};
+  if (!formatted) {
+    for (uint32_t fourcc : candidates) {
+      for (const auto& size : sizes) {
+        if (TrySetFormat(fourcc, size[0], size[1], &fmt) &&
+            CanConvert(fmt.fmt.pix.pixelformat)) {
+          formatted = true;
+          pixelformat_ = fmt.fmt.pix.pixelformat;
+          break;
+        }
+      }
+      if (formatted) {
         break;
       }
-    }
-    if (formatted) {
-      break;
     }
   }
   if (!formatted) {
@@ -382,25 +763,30 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   frame_rate_ = frame_rate;
   v4l2_streamparm parm = {};
   parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (ioctl(fd_, VIDIOC_G_PARM, &parm) == 0 &&
+  if (IoctlTimed(&fd_, VIDIOC_G_PARM, &parm, 250) == 0 &&
       (parm.parm.capture.capability & V4L2_CAP_TIMEPERFRAME)) {
     parm.parm.capture.timeperframe.numerator = 1;
     parm.parm.capture.timeperframe.denominator =
         static_cast<uint32_t>(frame_rate);
-    ioctl(fd_, VIDIOC_S_PARM, &parm);
-    if (parm.parm.capture.timeperframe.numerator != 0) {
+    IoctlTimed(&fd_, VIDIOC_S_PARM, &parm, 250);
+    if (fd_ >= 0 && parm.parm.capture.timeperframe.numerator != 0) {
       frame_rate_ = static_cast<int>(
           parm.parm.capture.timeperframe.denominator /
           parm.parm.capture.timeperframe.numerator);
     }
   }
+  if (fd_ < 0) {
+    return false;
+  }
   v4l2_requestbuffers req = {};
   req.count = 4;
   req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   req.memory = V4L2_MEMORY_MMAP;
-  if (ioctl(fd_, VIDIOC_REQBUFS, &req) < 0 || req.count < 2) {
-    close(fd_);
-    fd_ = -1;
+  if (IoctlTimed(&fd_, VIDIOC_REQBUFS, &req, 750) < 0 || req.count < 2) {
+    if (fd_ >= 0) {
+      close(fd_);
+      fd_ = -1;
+    }
     return false;
   }
   buffers_.resize(req.count);
@@ -409,7 +795,7 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
     buf.index = i;
-    if (ioctl(fd_, VIDIOC_QUERYBUF, &buf) < 0) {
+    if (IoctlTimed(&fd_, VIDIOC_QUERYBUF, &buf, 250) < 0) {
       StopCapture();
       return false;
     }
@@ -421,13 +807,13 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
       StopCapture();
       return false;
     }
-    if (ioctl(fd_, VIDIOC_QBUF, &buf) < 0) {
+    if (IoctlTimed(&fd_, VIDIOC_QBUF, &buf, 250) < 0) {
       StopCapture();
       return false;
     }
   }
   v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  if (ioctl(fd_, VIDIOC_STREAMON, &type) < 0) {
+  if (IoctlTimed(&fd_, VIDIOC_STREAMON, &type, 750) < 0) {
     StopCapture();
     return false;
   }
@@ -452,7 +838,7 @@ bool CameraGraph::TrySetFormat(uint32_t fourcc, int width, int height,
     fmt.fmt.pix.width = static_cast<uint32_t>(width);
     fmt.fmt.pix.height = static_cast<uint32_t>(height);
   }
-  if (ioctl(fd_, VIDIOC_S_FMT, &fmt) < 0) {
+  if (IoctlTimed(&fd_, VIDIOC_S_FMT, &fmt, 750) < 0) {
     return false;
   }
   if (fmt.fmt.pix.pixelformat != fourcc) {
@@ -492,25 +878,72 @@ void CameraGraph::CaptureLoop() {
       std::lock_guard<std::mutex> lock(mutex_);
       FillBlackLocked();
     } else if (buf.index < buffers_.size()) {
-      ConvertFrame(static_cast<const uint8_t*>(buffers_[buf.index].start));
+      ConvertFrame(static_cast<const uint8_t*>(buffers_[buf.index].start),
+                   buf.bytesused);
     }
     ioctl(fd_, VIDIOC_QBUF, &buf);
-    if (textures_ != nullptr && texture_ != nullptr) {
-      fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                        FL_TEXTURE(texture_));
+    // ConvertFrame writes decoded_. Process that buffer, then swap into
+    // front_ so the next V4L2 convert cannot clobber pixels CopyPixels
+    // has not consumed yet.
+    if (!decoded_.empty() && !muted_.load() && enabled_.load()) {
+      const int proc_w = width_;
+      const int proc_h = height_;
+      const size_t bytes =
+          static_cast<size_t>(proc_w) * static_cast<size_t>(proc_h) * 4;
+      if (decoded_.size() == bytes) {
+        processor_.Process(decoded_.data(), proc_w, proc_h);
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (width_ == proc_w && height_ == proc_h) {
+          front_.swap(decoded_);
+          if (front_.size() != bytes) {
+            front_.assign(bytes, 0);
+          }
+        }
+      }
     }
+    RequestTextureMark();
   }
 }
 
-void CameraGraph::ConvertFrame(const uint8_t* src) {
+void CameraGraph::ConvertFrame(const uint8_t* src, size_t src_len) {
   std::lock_guard<std::mutex> lock(mutex_);
   const size_t bytes = static_cast<size_t>(width_) * height_ * 4;
-  if (front_.size() != bytes) {
-    front_.assign(bytes, 0);
+  if (decoded_.size() != bytes) {
+    decoded_.assign(bytes, 0);
   }
-  uint8_t* dst = front_.data();
+  uint8_t* dst = decoded_.data();
   const int stride = bytesperline_ > 0 ? bytesperline_ : width_ * 2;
-  if (pixelformat_ == V4L2_PIX_FMT_RGB24) {
+  if (pixelformat_ == V4L2_PIX_FMT_MJPEG || pixelformat_ == V4L2_PIX_FMT_JPEG) {
+    if (src != nullptr && src_len > 0) {
+      const std::vector<uint8_t> jpeg = JpegWithDht(src, src_len);
+      g_autoptr(GBytes) bytes = g_bytes_new(jpeg.data(), jpeg.size());
+      g_autoptr(GMemoryInputStream) stream =
+          G_MEMORY_INPUT_STREAM(g_memory_input_stream_new_from_bytes(bytes));
+      g_autoptr(GError) error = nullptr;
+      g_autoptr(GdkPixbuf) pixbuf = gdk_pixbuf_new_from_stream(
+          G_INPUT_STREAM(stream), nullptr, &error);
+      if (pixbuf != nullptr) {
+        const int pw = gdk_pixbuf_get_width(pixbuf);
+        const int ph = gdk_pixbuf_get_height(pixbuf);
+        const int channels = gdk_pixbuf_get_n_channels(pixbuf);
+        const int row_stride = gdk_pixbuf_get_rowstride(pixbuf);
+        const uint8_t* pixels = gdk_pixbuf_get_pixels(pixbuf);
+        const int copy_w = std::min(width_, pw);
+        const int copy_h = std::min(height_, ph);
+        for (int y = 0; y < copy_h; y++) {
+          const uint8_t* row =
+              pixels + static_cast<ptrdiff_t>(row_stride) * y;
+          uint8_t* out = dst + static_cast<size_t>(y) * width_ * 4;
+          for (int x = 0; x < copy_w; x++) {
+            out[x * 4 + 0] = row[x * channels + 0];
+            out[x * 4 + 1] = row[x * channels + 1];
+            out[x * 4 + 2] = row[x * channels + 2];
+            out[x * 4 + 3] = 255;
+          }
+        }
+      }
+    }
+  } else if (pixelformat_ == V4L2_PIX_FMT_RGB24) {
     const int row_stride = bytesperline_ > 0 ? bytesperline_ : width_ * 3;
     for (int y = 0; y < height_; y++) {
       const uint8_t* row = src + static_cast<ptrdiff_t>(row_stride) * y;
@@ -576,9 +1009,8 @@ void CameraGraph::ConvertFrame(const uint8_t* src) {
       }
     }
   }
-  processor_.Process(front_.data(), width_, height_);
-  for (size_t i = 0; i + 3 < front_.size(); i += 64) {
-    if (front_[i] > 8 || front_[i + 1] > 8 || front_[i + 2] > 8) {
+  for (size_t i = 0; i + 3 < decoded_.size(); i += 64) {
+    if (decoded_[i] > 8 || decoded_[i + 1] > 8 || decoded_[i + 2] > 8) {
       live_frames_.fetch_add(1);
       break;
     }

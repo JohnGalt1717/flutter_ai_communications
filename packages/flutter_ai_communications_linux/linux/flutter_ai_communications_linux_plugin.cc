@@ -5,6 +5,8 @@
 
 #include <cstring>
 #include <memory>
+#include <string>
+#include <thread>
 
 typedef struct _FlutterAiCommunicationsLinuxPlugin
     FlutterAiCommunicationsLinuxPlugin;
@@ -16,6 +18,8 @@ struct _FlutterAiCommunicationsLinuxPlugin {
   FlPluginRegistrar* registrar;
   CameraGraph* camera;
   ScreenGraph* screen;
+  FlEventChannel* events;
+  gboolean events_listening;
 };
 
 struct _FlutterAiCommunicationsLinuxPluginClass {
@@ -30,6 +34,73 @@ struct _FlutterAiCommunicationsLinuxPluginClass {
 G_DEFINE_TYPE(FlutterAiCommunicationsLinuxPlugin,
               flutter_ai_communications_linux_plugin,
               g_object_get_type())
+
+static void SetMarksAllowed(FlutterAiCommunicationsLinuxPlugin* plugin,
+                            bool allowed) {
+  if (plugin->camera != nullptr) {
+    plugin->camera->SetMarksAllowed(allowed);
+  }
+  if (plugin->screen != nullptr) {
+    plugin->screen->SetMarksAllowed(allowed);
+  }
+}
+
+static gboolean OnWindowFocusOut(GtkWidget*, GdkEventFocus*, gpointer data) {
+  SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data), false);
+  return FALSE;
+}
+
+static gboolean OnWindowFocusIn(GtkWidget*, GdkEventFocus*, gpointer data) {
+  SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data), true);
+  return FALSE;
+}
+
+static void OnWindowIsActive(GObject* object, GParamSpec*, gpointer data) {
+  SetMarksAllowed(FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(data),
+                  gtk_window_is_active(GTK_WINDOW(object)) != FALSE);
+}
+
+static void EmitProcessorUnavailable(
+    FlutterAiCommunicationsLinuxPlugin* plugin) {
+  struct Emit {
+    FlutterAiCommunicationsLinuxPlugin* plugin;
+  };
+  auto* emit = new Emit{plugin};
+  g_object_ref(plugin);
+  g_idle_add(
+      [](gpointer data) -> gboolean {
+        auto* emit = static_cast<Emit*>(data);
+        FlutterAiCommunicationsLinuxPlugin* plugin = emit->plugin;
+        if (plugin->events_listening && plugin->events != nullptr) {
+          g_autoptr(FlValue) map = fl_value_new_map();
+          fl_value_set_string_take(map, "type",
+                                   fl_value_new_string("processor"));
+          fl_value_set_string_take(map, "payload",
+                                   fl_value_new_string("unavailable"));
+          fl_event_channel_send(plugin->events, map, nullptr, nullptr);
+        }
+        g_object_unref(plugin);
+        delete emit;
+        return G_SOURCE_REMOVE;
+      },
+      emit);
+}
+
+static FlMethodErrorResponse* OnEventsListen(FlEventChannel*, FlValue*,
+                                             gpointer user_data) {
+  FlutterAiCommunicationsLinuxPlugin* plugin =
+      FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(user_data);
+  plugin->events_listening = TRUE;
+  return nullptr;
+}
+
+static FlMethodErrorResponse* OnEventsCancel(FlEventChannel*, FlValue*,
+                                             gpointer user_data) {
+  FlutterAiCommunicationsLinuxPlugin* plugin =
+      FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(user_data);
+  plugin->events_listening = FALSE;
+  return nullptr;
+}
 
 static const gchar* ReadString(FlValue* args, const char* key) {
   if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
@@ -64,6 +135,29 @@ static bool ReadBool(FlValue* args, const char* key, bool fallback) {
   return fl_value_get_bool(value);
 }
 
+static void RespondOnIdle(FlutterAiCommunicationsLinuxPlugin* plugin,
+                          FlMethodCall* method_call, FlValue* value) {
+  struct Done {
+    FlutterAiCommunicationsLinuxPlugin* plugin;
+    FlMethodCall* pending;
+    FlValue* map;
+  };
+  auto* done = new Done{plugin, method_call, fl_value_ref(value)};
+  g_idle_add(
+      [](gpointer data) -> gboolean {
+        auto* done = static_cast<Done*>(data);
+        g_autoptr(FlMethodResponse) response =
+            FL_METHOD_RESPONSE(fl_method_success_response_new(done->map));
+        fl_method_call_respond(done->pending, response, nullptr);
+        g_object_unref(done->pending);
+        fl_value_unref(done->map);
+        g_object_unref(done->plugin);
+        delete done;
+        return G_SOURCE_REMOVE;
+      },
+      done);
+}
+
 static void HandleMethodCall(FlMethodChannel* channel,
                              FlMethodCall* method_call,
                              gpointer user_data) {
@@ -73,20 +167,39 @@ static void HandleMethodCall(FlMethodChannel* channel,
   FlValue* args = fl_method_call_get_args(method_call);
   g_autoptr(FlMethodResponse) response = nullptr;
   if (strcmp(method, "enumerateCameras") == 0) {
-    g_autoptr(FlValue) cameras = self->camera->Enumerate();
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(cameras));
+    g_object_ref(method_call);
+    g_object_ref(self);
+    std::thread([self, method_call]() {
+      g_autoptr(FlValue) cameras = self->camera->Enumerate();
+      RespondOnIdle(self, method_call, cameras);
+    }).detach();
+    return;
   } else if (strcmp(method, "requestCameraPermission") == 0) {
-    g_autoptr(FlValue) value =
-        fl_value_new_string(self->camera->RequestPermission().c_str());
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+    g_object_ref(method_call);
+    g_object_ref(self);
+    std::thread([self, method_call]() {
+      g_autoptr(FlValue) value =
+          fl_value_new_string(self->camera->RequestPermission().c_str());
+      RespondOnIdle(self, method_call, value);
+    }).detach();
+    return;
   } else if (strcmp(method, "startCameraNative") == 0) {
-    g_autoptr(FlValue) value = self->camera->Start(
-        ReadString(args, "cameraId"),
-        static_cast<int>(ReadInt(args, "width", 1280)),
-        static_cast<int>(ReadInt(args, "height", 720)),
-        static_cast<int>(ReadInt(args, "frameRate", 30)),
-        ReadBool(args, "enabled", true), ReadBool(args, "muted", false));
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(value));
+    const std::string camera_id = ReadString(args, "cameraId");
+    const int width = static_cast<int>(ReadInt(args, "width", 1280));
+    const int height = static_cast<int>(ReadInt(args, "height", 720));
+    const int frame_rate = static_cast<int>(ReadInt(args, "frameRate", 30));
+    const bool enabled = ReadBool(args, "enabled", true);
+    const bool muted = ReadBool(args, "muted", false);
+    self->camera->EnsureTexture();
+    g_object_ref(method_call);
+    g_object_ref(self);
+    std::thread([self, method_call, camera_id, width, height, frame_rate,
+                 enabled, muted]() {
+      g_autoptr(FlValue) value = self->camera->Start(
+          camera_id, width, height, frame_rate, enabled, muted);
+      RespondOnIdle(self, method_call, value);
+    }).detach();
+    return;
   } else if (strcmp(method, "stopCameraNative") == 0) {
     self->camera->Stop();
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
@@ -155,10 +268,15 @@ static void HandleMethodCall(FlMethodChannel* channel,
 static void flutter_ai_communications_linux_plugin_dispose(GObject* object) {
   FlutterAiCommunicationsLinuxPlugin* self =
       FLUTTER_AI_COMMUNICATIONS_LINUX_PLUGIN(object);
+  if (self->camera != nullptr) {
+    self->camera->SetOnProcessorUnavailable(nullptr);
+  }
   delete self->camera;
   self->camera = nullptr;
   delete self->screen;
   self->screen = nullptr;
+  self->events_listening = FALSE;
+  g_clear_object(&self->events);
   g_clear_object(&self->registrar);
   G_OBJECT_CLASS(flutter_ai_communications_linux_plugin_parent_class)
       ->dispose(object);
@@ -175,6 +293,8 @@ static void flutter_ai_communications_linux_plugin_init(
   self->registrar = nullptr;
   self->camera = nullptr;
   self->screen = nullptr;
+  self->events = nullptr;
+  self->events_listening = FALSE;
 }
 
 void flutter_ai_communications_linux_plugin_register_with_registrar(
@@ -185,13 +305,33 @@ void flutter_ai_communications_linux_plugin_register_with_registrar(
   plugin->registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
   plugin->camera = new CameraGraph(
       fl_plugin_registrar_get_texture_registrar(registrar));
+  plugin->camera->SetOnProcessorUnavailable(
+      [plugin]() { EmitProcessorUnavailable(plugin); });
   plugin->screen = new ScreenGraph(
-      fl_plugin_registrar_get_texture_registrar(registrar));
+      fl_plugin_registrar_get_texture_registrar(registrar),
+      fl_plugin_registrar_get_view(registrar));
+  FlView* view = fl_plugin_registrar_get_view(registrar);
+  if (view != nullptr) {
+    GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(view));
+    g_signal_connect(top, "focus-out-event", G_CALLBACK(OnWindowFocusOut),
+                     plugin);
+    g_signal_connect(top, "focus-in-event", G_CALLBACK(OnWindowFocusIn),
+                     plugin);
+    if (GTK_IS_WINDOW(top)) {
+      g_signal_connect(top, "notify::is-active", G_CALLBACK(OnWindowIsActive),
+                       plugin);
+    }
+  }
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_plugin_registrar_get_messenger(registrar),
       "flutter_ai_communications/methods", FL_METHOD_CODEC(codec));
   fl_method_channel_set_method_call_handler(
       channel, HandleMethodCall, g_object_ref(plugin), g_object_unref);
+  plugin->events = fl_event_channel_new(
+      fl_plugin_registrar_get_messenger(registrar),
+      "flutter_ai_communications/events", FL_METHOD_CODEC(codec));
+  fl_event_channel_set_stream_handlers(plugin->events, OnEventsListen,
+                                       OnEventsCancel, plugin, nullptr);
   g_object_unref(plugin);
 }

@@ -80,6 +80,36 @@ jobs:
         working-directory: packages/flutter_ai_communications_webrtc
         run: flutter test
 
+  linux-native:
+    name: Linux native compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev \
+            libpulse-dev libpipewire-0.3-dev libspa-0.2-dev \
+            libgdk-pixbuf-2.0-dev libx11-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get (workspace)
+        run: flutter pub get
+
+      - name: Build Linux example
+        working-directory: example
+        run: flutter build linux --debug
+
   ios-route-policy:
     name: iOS route policy (Swift)
     runs-on: macos-latest

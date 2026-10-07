@@ -126,6 +126,75 @@ void main() {
     expect(seen.last.renderId, 'built-in-out');
   });
 
+  test('requested 16 kHz still reports Native Format pcm16le24k', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.startNative(
+        captureId: 'usb-in',
+        renderId: 'usb-out',
+        captureFormat: const AudioFormat.pcm16le(sampleRate: 16000),
+        playbackFormat: const AudioFormat.pcm16le(sampleRate: 16000),
+      ),
+      NativeGraphStart.started,
+    );
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(adapter.lastNativeFormats.playback, AudioFormat.pcm16le24k);
+  });
+
+  test(
+    'failed start emits CoverageHint.dead and clears Native Formats',
+    () async {
+      final backend = _RecordingBackend()..failStart = true;
+      final adapter = FlutterAiCommunicationsLinux(backend: backend);
+      addTearDown(adapter.stopNative);
+      final seen = <CoverageHint>[];
+      final sub = adapter.pathCoverage.listen(seen.add);
+      addTearDown(sub.cancel);
+      expect(
+        await adapter.startNative(captureId: 'usb-in', renderId: 'usb-out'),
+        NativeGraphStart.failed,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(adapter.lastNativeFormats.capture, isNull);
+      expect(adapter.lastNativeFormats.playback, isNull);
+      expect(seen, isNotEmpty);
+      expect(seen.last.alive, isFalse);
+    },
+  );
+
+  test('noiseCancelling off does not fail start', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.startNative(
+        captureId: 'usb-in',
+        renderId: 'usb-out',
+        noiseCancelling: false,
+      ),
+      NativeGraphStart.started,
+    );
+    expect(adapter.lastNativeFormats.capture, AudioFormat.pcm16le24k);
+    expect(backend.lastNoiseCancelling, isFalse);
+  });
+
+  test('noiseCancelling on is forwarded to the audio backend', () async {
+    final backend = _RecordingBackend();
+    final adapter = FlutterAiCommunicationsLinux(backend: backend);
+    addTearDown(adapter.stopNative);
+    expect(
+      await adapter.startNative(
+        captureId: 'usb-in',
+        renderId: 'usb-out',
+        noiseCancelling: true,
+      ),
+      NativeGraphStart.started,
+    );
+    expect(backend.lastNoiseCancelling, isTrue);
+  });
+
   test('capture-only start does not bind render', () async {
     final backend = _RecordingBackend();
     final adapter = FlutterAiCommunicationsLinux(backend: backend);
@@ -359,11 +428,11 @@ void main() {
   );
 }
 
-final class _RecordingBackend
-    with DeviceWatchSupport
-    implements AudioBackend {
+final class _RecordingBackend with DeviceWatchSupport implements AudioBackend {
   PairingSnapshot bound = const PairingSnapshot();
   var started = false;
+  var failStart = false;
+  var lastNoiseCancelling = true;
   final deviceEvents = StreamController<void>.broadcast();
 
   @override
@@ -405,8 +474,17 @@ final class _RecordingBackend
   MicrophonePermission probePermission() => MicrophonePermission.granted;
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) {
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) {
     started = true;
+    lastNoiseCancelling = noiseCancelling;
+    if (failStart) {
+      bound = const PairingSnapshot();
+      return NativeGraphStart.failed;
+    }
     final capture = captureId == null || captureId.isEmpty ? null : captureId;
     final render = renderId == null || renderId.isEmpty ? null : renderId;
     final wantCapture = capture != null || render == null;
@@ -442,6 +520,12 @@ final class _RecordingBackend
   PairingSnapshot get observed => bound;
 
   @override
+  NativeFormatReport get nativeFormats => NativeFormatReport(
+    capture: bound.captureId == null ? null : AudioFormat.pcm16le24k,
+    playback: bound.renderId == null ? null : AudioFormat.pcm16le24k,
+  );
+
+  @override
   void flush() {}
 
   @override
@@ -470,8 +554,15 @@ final class _FlakyCatalogBackend
   MicrophonePermission probePermission() => _inner.probePermission();
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) =>
-      _inner.start(captureId: captureId, renderId: renderId);
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) => _inner.start(
+    captureId: captureId,
+    renderId: renderId,
+    noiseCancelling: noiseCancelling,
+  );
 
   @override
   void stop() => _inner.stop();
@@ -491,6 +582,9 @@ final class _FlakyCatalogBackend
 
   @override
   PairingSnapshot get observed => _inner.observed;
+
+  @override
+  NativeFormatReport get nativeFormats => _inner.nativeFormats;
 
   @override
   void flush() => _inner.flush();
@@ -522,9 +616,7 @@ final class _FixedBluetoothSource implements BluetoothIdentitySource {
   Future<void> prepare() async {}
 }
 
-final class _BluetoothBackend
-    with DeviceWatchSupport
-    implements AudioBackend {
+final class _BluetoothBackend with DeviceWatchSupport implements AudioBackend {
   final _RecordingBackend _inner = _RecordingBackend();
 
   @override
@@ -550,8 +642,15 @@ final class _BluetoothBackend
   MicrophonePermission probePermission() => _inner.probePermission();
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) =>
-      _inner.start(captureId: captureId, renderId: renderId);
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) => _inner.start(
+    captureId: captureId,
+    renderId: renderId,
+    noiseCancelling: noiseCancelling,
+  );
 
   @override
   void stop() => _inner.stop();
@@ -571,6 +670,9 @@ final class _BluetoothBackend
 
   @override
   PairingSnapshot get observed => _inner.observed;
+
+  @override
+  NativeFormatReport get nativeFormats => _inner.nativeFormats;
 
   @override
   void flush() => _inner.flush();

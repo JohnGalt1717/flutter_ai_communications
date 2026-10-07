@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:ffi';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -8,6 +7,7 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter_ai_communications_platform_interface/flutter_ai_communications_platform_interface.dart';
 import 'package:flutter_ai_communications_shared/flutter_ai_communications_shared.dart';
 
+import 'aec_processor.dart';
 import 'audio_backend.dart';
 import 'pulse_ffi.dart';
 import 'route_class.dart';
@@ -39,14 +39,71 @@ final class PulseAudioBackend implements AudioBackend {
   ReceivePort? _deviceWatchPort;
   SendPort? _deviceWatchControl;
   var _deviceWatchGeneration = 0;
+  Isolate? _loopbackIsolate;
+  ReceivePort? _loopbackPort;
+  SendPort? _loopbackControl;
+  var _loopbackGeneration = 0;
+  var _loopbackRunning = false;
+  var _noiseCancelling = true;
+  NativeFormatReport _nativeFormats = const NativeFormatReport();
   final StreamController<void> _deviceChanges =
       StreamController<void>.broadcast();
 
   final StreamController<Uint8List> _captureOut =
       StreamController<Uint8List>.broadcast();
+  final StreamController<Uint8List> _loopbackOut =
+      StreamController<Uint8List>.broadcast();
 
   @override
   Stream<Uint8List> get capture => _captureOut.stream;
+
+  @override
+  Stream<Uint8List> get loopback => _loopbackOut.stream;
+
+  @override
+  bool startLoopback() {
+    stopLoopback();
+    final device = _monitorSourceForRender();
+    if (device == null || device.isEmpty) {
+      return false;
+    }
+    final spec = calloc<PaSampleSpec>();
+    try {
+      spec.ref
+        ..format = paSampleS16le
+        ..rate = _sampleRate
+        ..channels = 1;
+      final probe = _simple.open(
+        direction: paStreamRecord,
+        device: device,
+        spec: spec,
+        streamName: 'loopback',
+      );
+      if (probe == nullptr) {
+        return false;
+      }
+      _simple.freeStream(probe);
+    } finally {
+      calloc.free(spec);
+    }
+    _startLoopbackIsolate(device);
+    return true;
+  }
+
+  @override
+  void stopLoopback() {
+    _loopbackGeneration++;
+    _loopbackRunning = false;
+    final isolate = _loopbackIsolate;
+    final port = _loopbackPort;
+    final control = _loopbackControl;
+    _loopbackIsolate = null;
+    _loopbackPort = null;
+    _loopbackControl = null;
+    control?.send(const _StopCommand());
+    isolate?.kill(priority: Isolate.immediate);
+    port?.close();
+  }
 
   @override
   List<Endpoint> enumerate() => _enumerateSync();
@@ -65,9 +122,14 @@ final class PulseAudioBackend implements AudioBackend {
   }
 
   @override
-  NativeGraphStart start({String? captureId, String? renderId}) {
+  NativeGraphStart start({
+    String? captureId,
+    String? renderId,
+    bool noiseCancelling = true,
+  }) {
     _captureId = captureId;
     _renderId = renderId;
+    _noiseCancelling = noiseCancelling;
     return _startGraph() ? NativeGraphStart.started : NativeGraphStart.failed;
   }
 
@@ -103,6 +165,9 @@ final class PulseAudioBackend implements AudioBackend {
       calloc.free(data);
       calloc.free(error);
     }
+    if (_noiseCancelling) {
+      _captureControl?.send(_PlaybackCommand(Uint8List.fromList(bytes)));
+    }
   }
 
   @override
@@ -123,6 +188,9 @@ final class PulseAudioBackend implements AudioBackend {
     captureId: _wantCapture ? _presentId(_captureId) ?? _captureId : null,
     renderId: _wantRender ? _presentId(_renderId) ?? _renderId : null,
   );
+
+  @override
+  NativeFormatReport get nativeFormats => _nativeFormats;
 
   @override
   void flush() {
@@ -213,8 +281,10 @@ final class PulseAudioBackend implements AudioBackend {
   @override
   void dispose() {
     stopDeviceWatch();
+    stopLoopback();
     stop();
     unawaited(_captureOut.close());
+    unawaited(_loopbackOut.close());
     unawaited(_deviceChanges.close());
   }
 
@@ -252,6 +322,10 @@ final class PulseAudioBackend implements AudioBackend {
       if (_wantCapture) {
         _startCaptureIsolate();
       }
+      _nativeFormats = NativeFormatReport(
+        capture: _wantCapture ? AudioFormat.pcm16le24k : null,
+        playback: _wantRender ? AudioFormat.pcm16le24k : null,
+      );
       return true;
     } finally {
       calloc.free(spec);
@@ -261,6 +335,7 @@ final class PulseAudioBackend implements AudioBackend {
   void _stopGraph() {
     _captureGeneration++;
     _running = false;
+    _nativeFormats = const NativeFormatReport();
     final isolate = _captureIsolate;
     final port = _capturePort;
     final control = _captureControl;
@@ -297,7 +372,11 @@ final class PulseAudioBackend implements AudioBackend {
     });
     Isolate.spawn(
       _captureMain,
-      _CaptureStart(sendPort: port.sendPort, device: _captureId),
+      _CaptureStart(
+        sendPort: port.sendPort,
+        device: _captureId,
+        aec: _noiseCancelling,
+      ),
     ).then((isolate) {
       if (generation != _captureGeneration || !_running) {
         isolate.kill(priority: Isolate.immediate);
@@ -305,6 +384,57 @@ final class PulseAudioBackend implements AudioBackend {
       }
       _captureIsolate = isolate;
     });
+  }
+
+  void _startLoopbackIsolate(String device) {
+    final generation = ++_loopbackGeneration;
+    _loopbackRunning = true;
+    final port = ReceivePort();
+    _loopbackPort = port;
+    port.listen((message) {
+      if (generation != _loopbackGeneration) {
+        return;
+      }
+      if (message is SendPort) {
+        _loopbackControl = message;
+        return;
+      }
+      if (message is Uint8List && _loopbackRunning) {
+        _loopbackOut.add(message);
+      }
+    });
+    Isolate.spawn(
+      _captureMain,
+      _CaptureStart(
+        sendPort: port.sendPort,
+        device: device,
+        streamName: 'loopback',
+      ),
+    ).then((isolate) {
+      if (generation != _loopbackGeneration || !_loopbackRunning) {
+        isolate.kill(priority: Isolate.immediate);
+        return;
+      }
+      _loopbackIsolate = isolate;
+    });
+  }
+
+  String? _monitorSourceForRender() {
+    final monitors = _sinkMonitors();
+    final want = _presentId(_renderId);
+    if (want != null) {
+      final named = monitors[want];
+      if (named != null && named.isNotEmpty) {
+        return named;
+      }
+      return '$want.monitor';
+    }
+    for (final name in monitors.values) {
+      if (name.isNotEmpty) {
+        return name;
+      }
+    }
+    return null;
   }
 
   void _emitSilence() {
@@ -443,13 +573,104 @@ final class PulseAudioBackend implements AudioBackend {
     callable.close();
     return collected;
   }
+
+  Map<String, String> _sinkMonitors() {
+    final monitors = <String, String>{};
+    final loop = _async.mainloopNew();
+    if (loop == nullptr) {
+      return monitors;
+    }
+    final api = _async.mainloopGetApi(loop);
+    final name = 'flutter_ai_communications'.toNativeUtf8();
+    final context = _async.contextNew(api, name.cast());
+    malloc.free(name);
+    if (context == nullptr) {
+      _async.mainloopFree(loop);
+      return monitors;
+    }
+    if (_async.contextConnect(context, nullptr, 0, nullptr) < 0) {
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return monitors;
+    }
+    if (!_waitReady(loop, context)) {
+      _async.contextDisconnect(context);
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return monitors;
+    }
+    late final NativeCallable<
+      Void Function(
+        Pointer<PaContext>,
+        Pointer<PaNamedDevice>,
+        Int32,
+        Pointer<Void>,
+      )
+    >
+    callable;
+    callable =
+        NativeCallable<
+          Void Function(
+            Pointer<PaContext>,
+            Pointer<PaNamedDevice>,
+            Int32,
+            Pointer<Void>,
+          )
+        >.isolateLocal((
+          Pointer<PaContext> _,
+          Pointer<PaNamedDevice> info,
+          int eol,
+          Pointer<Void> userdata,
+        ) {
+          if (eol != 0 || info == nullptr) {
+            return;
+          }
+          final id = pulseString(info.ref.name) ?? '';
+          if (id.isEmpty) {
+            return;
+          }
+          final monitor = pulseString(info.ref.monitorName) ?? '$id.monitor';
+          monitors[id] = monitor;
+        });
+    final op = _async.getSinkInfoList(
+      context,
+      callable.nativeFunction,
+      nullptr,
+    );
+    if (op == nullptr) {
+      callable.close();
+      _async.contextDisconnect(context);
+      _async.contextUnref(context);
+      _async.mainloopFree(loop);
+      return monitors;
+    }
+    for (var i = 0; i < 200; i++) {
+      if (_async.operationGetState(op) == paOperationDone) {
+        break;
+      }
+      _async.mainloopIterate(loop, 1, nullptr);
+    }
+    _async.operationUnref(op);
+    callable.close();
+    _async.contextDisconnect(context);
+    _async.contextUnref(context);
+    _async.mainloopFree(loop);
+    return monitors;
+  }
 }
 
 final class _CaptureStart {
-  const _CaptureStart({required this.sendPort, this.device});
+  const _CaptureStart({
+    required this.sendPort,
+    this.device,
+    this.streamName,
+    this.aec = false,
+  });
 
   final SendPort sendPort;
   final String? device;
+  final String? streamName;
+  final bool aec;
 }
 
 sealed class _CaptureCommand {
@@ -468,7 +689,13 @@ final class _ResumeCommand extends _CaptureCommand {
   const _ResumeCommand();
 }
 
-void _captureMain(_CaptureStart start) {
+final class _PlaybackCommand extends _CaptureCommand {
+  const _PlaybackCommand(this.bytes);
+
+  final Uint8List bytes;
+}
+
+Future<void> _captureMain(_CaptureStart start) async {
   final control = ReceivePort();
   start.sendPort.send(control.sendPort);
   final simple = PulseSimple(DynamicLibrary.open('libpulse-simple.so.0'));
@@ -481,12 +708,14 @@ void _captureMain(_CaptureStart start) {
     direction: paStreamRecord,
     device: start.device,
     spec: spec,
+    streamName: start.streamName,
   );
   calloc.free(spec);
   if (stream == nullptr) {
     control.close();
     return;
   }
+  final aec = start.aec ? SpeexAec.tryStart() : null;
   var running = true;
   var paused = false;
   control.listen((message) {
@@ -497,23 +726,31 @@ void _captureMain(_CaptureStart start) {
         paused = true;
       case _ResumeCommand():
         paused = false;
+      case _PlaybackCommand(:final bytes):
+        aec?.playback(bytes);
     }
   });
   final error = calloc<Int32>();
   final buffer = calloc<Uint8>(_frameBytes);
   try {
     while (running) {
+      await Future<void>.delayed(Duration.zero);
+      if (!running) {
+        break;
+      }
       if (paused) {
-        sleep(const Duration(milliseconds: 10));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
         continue;
       }
       final status = simple.read(stream, buffer.cast(), _frameBytes, error);
       if (status < 0) {
         break;
       }
-      start.sendPort.send(Uint8List.fromList(buffer.asTypedList(_frameBytes)));
+      final raw = Uint8List.fromList(buffer.asTypedList(_frameBytes));
+      start.sendPort.send(aec == null ? raw : aec.process(raw));
     }
   } finally {
+    aec?.dispose();
     simple.freeStream(stream);
     calloc.free(buffer);
     calloc.free(error);

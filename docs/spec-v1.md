@@ -80,7 +80,7 @@ A federated Flutter plugin. The host constructs an Audio manager, calls `start()
 - Shipping SignalR or WebRTC.
 - ISpect as a dependency.
 - User-facing localization in the library.
-- Linux Isolation, handset, and communications-module AEC/NS are documented gaps, not iOS/Android parity.
+- Linux Isolation and handset are documented gaps, not iOS/Android parity. Speex AEC/NS/AGC runs when `noiseCancelling` is on and `libspeexdsp.so.1` is present.
 - Matching Scribe’s public type names.
 
 ## Further Notes

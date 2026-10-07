@@ -86,7 +86,10 @@ Windows privacy grant.
 ## Linux (compile + camera receipt remaining)
 
 1. Install `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`,
-   `liblzma-dev`, PulseAudio or PipeWire, and `v4l-utils`.
+   `liblzma-dev`, PulseAudio or PipeWire, `libpipewire-0.3-dev`,
+   `libspa-0.2-dev`, and `v4l-utils`. Wayland screen send needs the
+   PipeWire headers; without them `startScreenShare` is `unavailable`
+   with reason `pipewire`.
 2. `flutter devices` lists `linux`.
 3. Compile first, then receipts:
 

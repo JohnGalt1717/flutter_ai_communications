@@ -2,9 +2,17 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <gdk/gdk.h>
+#ifdef GDK_WINDOWING_X11
+#include <gdk/gdkx.h>
+#endif
 #include <gio/gio.h>
 #include <gio/gunixfdlist.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 #include <unistd.h>
+#include <cstdarg>
+#include <cstdio>
 #include <mutex>
 #include <algorithm>
 #include <cstdlib>
@@ -15,6 +23,8 @@
 
 #ifdef FAC_HAS_PIPEWIRE
 #include <pipewire/pipewire.h>
+#include <spa/buffer/buffer.h>
+#include <spa/param/buffers.h>
 #include <spa/param/video/format-utils.h>
 #include <spa/param/video/raw.h>
 #include <spa/pod/builder.h>
@@ -27,6 +37,8 @@ struct ScreenGraph::PwCapture {
   pw_core* core = nullptr;
   pw_stream* stream = nullptr;
   spa_hook listener{};
+  // pw_stream_add_listener stores this pointer; it must outlive the stream.
+  pw_stream_events stream_events{};
   uint32_t spa_format = 0;
   int src_w = 0;
   int src_h = 0;
@@ -34,6 +46,29 @@ struct ScreenGraph::PwCapture {
 };
 
 namespace {
+
+void FacLog(const char* fmt, ...) {
+  const char* path = std::getenv("FAC_NATIVE_LOG");
+  if (path == nullptr || path[0] == '\0') {
+    path = "/tmp/fac-crash/plugin.log";
+  }
+  mkdir("/tmp/fac-crash", 0777);
+  FILE* file = std::fopen(path, "a");
+  if (file == nullptr) {
+    return;
+  }
+  timeval tv{};
+  gettimeofday(&tv, nullptr);
+  std::fprintf(file, "%ld.%06ld [%d] ", static_cast<long>(tv.tv_sec),
+               static_cast<long>(tv.tv_usec), static_cast<int>(getpid()));
+  va_list args;
+  va_start(args, fmt);
+  std::vfprintf(file, fmt, args);
+  va_end(args);
+  std::fputc('\n', file);
+  std::fflush(file);
+  std::fclose(file);
+}
 
 std::string WindowTitle(Display* display, Window window, Atom net_wm_name,
                         Atom utf8) {
@@ -185,7 +220,8 @@ static void fac_preview_texture_init(FacPreviewTexture* self) {
   self->id = nullptr;
 }
 
-ScreenGraph::ScreenGraph(FlTextureRegistrar* textures) : textures_(textures) {
+ScreenGraph::ScreenGraph(FlTextureRegistrar* textures, FlView* view)
+    : textures_(textures), view_(view) {
   XInitThreads();
   XSetErrorHandler(IgnoreXError);
 }
@@ -438,9 +474,33 @@ void ScreenGraph::EnsureTexture() {
   texture_id_ = fl_texture_get_id(FL_TEXTURE(texture_));
 }
 
+void ScreenGraph::ExportParentWindow() {
+  if (view_ == nullptr || !parent_window_.empty()) {
+    return;
+  }
+  GtkWidget* top = gtk_widget_get_toplevel(GTK_WIDGET(view_));
+  if (top == nullptr || !gtk_widget_get_realized(top)) {
+    return;
+  }
+  GdkWindow* gdk = gtk_widget_get_window(top);
+  if (gdk == nullptr) {
+    return;
+  }
+#ifdef GDK_WINDOWING_X11
+  if (GDK_IS_X11_WINDOW(gdk)) {
+    char buf[64];
+    g_snprintf(buf, sizeof(buf), "x11:%lx",
+               static_cast<unsigned long>(gdk_x11_window_get_xid(gdk)));
+    parent_window_ = buf;
+  }
+#endif
+}
+
 FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
                             bool motion, FlMethodCall* pending) {
   Stop();
+  ExportParentWindow();
+  EnsureTexture();
   std::lock_guard<std::mutex> lock(mutex_);
   RefreshSources();
   const Source* found = nullptr;
@@ -455,13 +515,16 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
   if (found != nullptr && found->kind == "systemPicker") {
     cursor_ = cursor;
     motion_ = motion;
+#ifdef FAC_HAS_PIPEWIRE
     if (StartPortal(pending, cursor, motion)) {
       fl_value_unref(result);
       return nullptr;
     }
+#endif
     fl_value_set_string_take(result, "status",
                              fl_value_new_string("unavailable"));
-    fl_value_set_string_take(result, "reason", fl_value_new_string("none"));
+    fl_value_set_string_take(result, "reason",
+                             fl_value_new_string("pipewire"));
     return result;
   }
   if (found == nullptr) {
@@ -497,6 +560,8 @@ FlValue* ScreenGraph::Start(const std::string& source_id, bool, bool cursor,
 
 void ScreenGraph::Stop() {
   running_ = false;
+  texture_epoch_.fetch_add(1);
+  pw_mark_pending_.store(false);
   CancelPortal();
   StopPipeWire();
   if (capture_thread_.joinable()) {
@@ -589,6 +654,7 @@ void ScreenGraph::StopPipeWire() {
   if (!pw_) {
     return;
   }
+  FacLog("StopPipeWire loop=%p stream=%p", pw_->loop, pw_->stream);
   if (pw_->loop != nullptr) {
     pw_thread_loop_lock(pw_->loop);
     if (pw_->stream != nullptr) {
@@ -628,6 +694,7 @@ void ScreenGraph::OnPwParamChanged(void* data, uint32_t id, const void* param) {
   self->pw_->spa_format = raw.format;
   self->pw_->src_w = static_cast<int>(raw.size.width);
   self->pw_->src_h = static_cast<int>(raw.size.height);
+  FacLog("pw format=%u %dx%d", raw.format, self->pw_->src_w, self->pw_->src_h);
   int out_w = self->pw_->src_w;
   int out_h = self->pw_->src_h;
   if (out_w > 1920 || out_h > 1080) {
@@ -635,10 +702,33 @@ void ScreenGraph::OnPwParamChanged(void* data, uint32_t id, const void* param) {
     out_w = std::max(1, static_cast<int>(out_w * scale));
     out_h = std::max(1, static_cast<int>(out_h * scale));
   }
-  std::lock_guard<std::mutex> lock(self->mutex_);
-  self->send_width_ = out_w;
-  self->send_height_ = out_h;
-  self->front_.assign(static_cast<size_t>(out_w) * out_h * 4, 0);
+  {
+    std::lock_guard<std::mutex> lock(self->mutex_);
+    self->send_width_ = out_w;
+    self->send_height_ = out_h;
+  }
+  if (self->pw_->stream != nullptr) {
+    const int blocks =
+        raw.format == SPA_VIDEO_FORMAT_NV12 ? 2 : 1;
+    const int stride = std::max(1, self->pw_->src_w) *
+                       (raw.format == SPA_VIDEO_FORMAT_NV12 ? 1 : 4);
+    const int size = stride * std::max(1, self->pw_->src_h);
+    uint8_t params_buf[1024];
+    spa_pod_builder builder = SPA_POD_BUILDER_INIT(params_buf, sizeof(params_buf));
+    const spa_pod* params[] = {
+        static_cast<spa_pod*>(spa_pod_builder_add_object(
+            &builder, SPA_TYPE_OBJECT_ParamBuffers, SPA_PARAM_Buffers,
+            SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(8, 2, 16),
+            SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(blocks),
+            SPA_PARAM_BUFFERS_size, SPA_POD_Int(size),
+            SPA_PARAM_BUFFERS_stride, SPA_POD_Int(stride),
+            SPA_PARAM_BUFFERS_dataType,
+            SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_MemPtr) |
+                                     (1 << SPA_DATA_MemFd)))),
+    };
+    const int updated = pw_stream_update_params(self->pw_->stream, params, 1);
+    FacLog("pw_stream_update_params %d", updated);
+  }
 #else
   (void)data;
   (void)id;
@@ -655,20 +745,29 @@ void ScreenGraph::OnPwProcess(void* data) {
   pw_buffer* buffer = pw_stream_dequeue_buffer(self->pw_->stream);
   if (buffer == nullptr || buffer->buffer == nullptr ||
       buffer->buffer->n_datas < 1) {
+    FacLog("OnPwProcess empty dequeue");
     return;
   }
   spa_data* datas = buffer->buffer->datas;
-  if (datas[0].data == nullptr) {
+  if (datas[0].data == nullptr || datas[0].chunk == nullptr ||
+      self->pw_->src_w < 1 || self->pw_->src_h < 1) {
+    FacLog("OnPwProcess skip type=%u data=%p src=%dx%d", datas[0].type,
+           datas[0].data, self->pw_->src_w, self->pw_->src_h);
     pw_stream_queue_buffer(self->pw_->stream, buffer);
     return;
   }
   const uint8_t* src =
       static_cast<const uint8_t*>(datas[0].data) + datas[0].chunk->offset;
   const int stride = datas[0].chunk->stride;
+  if (stride < 1) {
+    pw_stream_queue_buffer(self->pw_->stream, buffer);
+    return;
+  }
   const uint8_t* uv = nullptr;
   int uv_stride = 0;
   if (self->pw_->spa_format == SPA_VIDEO_FORMAT_NV12) {
-    if (buffer->buffer->n_datas >= 2 && datas[1].data != nullptr) {
+    if (buffer->buffer->n_datas >= 2 && datas[1].data != nullptr &&
+        datas[1].chunk != nullptr) {
       uv = static_cast<const uint8_t*>(datas[1].data) + datas[1].chunk->offset;
       uv_stride = datas[1].chunk->stride;
     } else {
@@ -676,16 +775,53 @@ void ScreenGraph::OnPwProcess(void* data) {
       uv_stride = stride;
     }
   }
+  static std::atomic<int> process_logs{0};
+  if (process_logs.fetch_add(1) < 8) {
+    FacLog("OnPwProcess type=%u data=%p %dx%d stride=%d format=%u",
+           datas[0].type, datas[0].data, self->pw_->src_w, self->pw_->src_h,
+           stride, self->pw_->spa_format);
+  }
   self->CopyPipeWireFrame(src, self->pw_->src_w, self->pw_->src_h, stride,
                           self->pw_->spa_format, uv, uv_stride);
-  if (self->textures_ != nullptr && self->texture_ != nullptr) {
-    fl_texture_registrar_mark_texture_frame_available(self->textures_,
-                                                      FL_TEXTURE(self->texture_));
-  }
+  self->RequestTextureMark();
   pw_stream_queue_buffer(self->pw_->stream, buffer);
 #else
   (void)data;
 #endif
+}
+
+void ScreenGraph::SetMarksAllowed(bool allowed) {
+  marks_allowed_.store(allowed);
+}
+
+void ScreenGraph::RequestTextureMark() {
+  if (!marks_allowed_.load()) {
+    return;
+  }
+  bool expected = false;
+  if (!pw_mark_pending_.compare_exchange_strong(expected, true)) {
+    return;
+  }
+  struct Mark {
+    ScreenGraph* graph;
+    uint64_t epoch;
+  };
+  auto* mark = new Mark{this, texture_epoch_.load()};
+  g_idle_add(
+      [](gpointer data) -> gboolean {
+        auto* mark = static_cast<Mark*>(data);
+        mark->graph->pw_mark_pending_.store(false);
+        if (mark->graph->marks_allowed_.load() &&
+            mark->graph->texture_epoch_.load() == mark->epoch &&
+            mark->graph->textures_ != nullptr &&
+            mark->graph->texture_ != nullptr) {
+          fl_texture_registrar_mark_texture_frame_available(
+              mark->graph->textures_, FL_TEXTURE(mark->graph->texture_));
+        }
+        delete mark;
+        return G_SOURCE_REMOVE;
+      },
+      mark);
 }
 
 void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
@@ -694,13 +830,17 @@ void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
   if (src == nullptr || src_w < 1 || src_h < 1 || stride < 1) {
     return;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  const int out_w = send_width_;
-  const int out_h = send_height_;
+  int out_w = 0;
+  int out_h = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    out_w = send_width_;
+    out_h = send_height_;
+  }
   if (out_w < 1 || out_h < 1) {
     return;
   }
-  front_.assign(static_cast<size_t>(out_w) * out_h * 4, 255);
+  std::vector<uint8_t> frame(static_cast<size_t>(out_w) * out_h * 4, 255);
 #ifdef FAC_HAS_PIPEWIRE
   auto clamp = [](int value) -> uint8_t {
     if (value < 0) {
@@ -713,7 +853,7 @@ void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
   };
   for (int y = 0; y < out_h; y++) {
     const int src_y = y * src_h / out_h;
-    uint8_t* out = front_.data() + static_cast<size_t>(y) * out_w * 4;
+    uint8_t* out = frame.data() + static_cast<size_t>(y) * out_w * 4;
     if (spa_format == SPA_VIDEO_FORMAT_NV12 && uv != nullptr) {
       const uint8_t* y_row = src + static_cast<ptrdiff_t>(stride) * src_y;
       const uint8_t* uv_row =
@@ -753,20 +893,33 @@ void ScreenGraph::CopyPipeWireFrame(const uint8_t* src, int src_w, int src_h,
   (void)uv;
   (void)uv_stride;
 #endif
+  std::lock_guard<std::mutex> lock(mutex_);
+  staging_.swap(frame);
+  staging_width_ = out_w;
+  staging_height_ = out_h;
+  staging_ready_ = true;
 }
 
 bool ScreenGraph::ConnectPipeWire(int fd, uint32_t node_id, int width,
-                                  int height) {
+                                  int height, const std::string& serial) {
 #ifdef FAC_HAS_PIPEWIRE
   if (fd < 0) {
+    FacLog("ConnectPipeWire reject fd=%d", fd);
     return false;
   }
+  FacLog("ConnectPipeWire fd=%d node=%u %dx%d serial=%s", fd, node_id, width,
+         height, serial.c_str());
   StopPipeWire();
   static std::once_flag pw_once;
-  std::call_once(pw_once, [] { pw_init(nullptr, nullptr); });
+  std::call_once(pw_once, [] {
+    pw_init(nullptr, nullptr);
+    FacLog("pw_init headers=%s library=%s", pw_get_headers_version(),
+           pw_get_library_version());
+  });
   pw_ = std::make_unique<PwCapture>();
   pw_->loop = pw_thread_loop_new("fac-screencast", nullptr);
   if (pw_->loop == nullptr) {
+    FacLog("ConnectPipeWire pw_thread_loop_new failed");
     close(fd);
     pw_.reset();
     return false;
@@ -774,6 +927,16 @@ bool ScreenGraph::ConnectPipeWire(int fd, uint32_t node_id, int width,
   pw_thread_loop_lock(pw_->loop);
   pw_->context = pw_context_new(pw_thread_loop_get_loop(pw_->loop), nullptr, 0);
   if (pw_->context == nullptr) {
+    FacLog("ConnectPipeWire pw_context_new failed");
+    pw_thread_loop_unlock(pw_->loop);
+    StopPipeWire();
+    close(fd);
+    return false;
+  }
+  // Loop must be running before connect_fd; otherwise protocol-native
+  // demarshals bound_props on a half-set-up core (SIGSEGV call *%r8).
+  if (pw_thread_loop_start(pw_->loop) < 0) {
+    FacLog("ConnectPipeWire pw_thread_loop_start failed");
     pw_thread_loop_unlock(pw_->loop);
     StopPipeWire();
     close(fd);
@@ -781,35 +944,58 @@ bool ScreenGraph::ConnectPipeWire(int fd, uint32_t node_id, int width,
   }
   pw_->core = pw_context_connect_fd(pw_->context, fd, nullptr, 0);
   if (pw_->core == nullptr) {
+    FacLog("ConnectPipeWire pw_context_connect_fd failed");
     pw_thread_loop_unlock(pw_->loop);
     StopPipeWire();
     return false;
   }
-  char node[16];
-  g_snprintf(node, sizeof(node), "%u", node_id);
   pw_properties* props = pw_properties_new(
       PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture",
-      PW_KEY_MEDIA_ROLE, "Screen", PW_KEY_TARGET_OBJECT, node, nullptr);
+      PW_KEY_MEDIA_ROLE, "Screen", nullptr);
+  // Serial (when the portal sends it) is a target.object. Node id is the
+  // pw_stream_connect target. Setting both with AUTOCONNECT makes
+  // wireplumber create two links and fail both.
+  uint32_t target_id = node_id;
+  if (!serial.empty()) {
+    pw_properties_set(props, PW_KEY_TARGET_OBJECT, serial.c_str());
+    target_id = PW_ID_ANY;
+  }
   pw_->stream = pw_stream_new(pw_->core, "fac-screencast", props);
   if (pw_->stream == nullptr) {
+    FacLog("ConnectPipeWire pw_stream_new failed");
     pw_thread_loop_unlock(pw_->loop);
     StopPipeWire();
     return false;
   }
-  pw_stream_events events{};
-  events.version = PW_VERSION_STREAM_EVENTS;
-  events.param_changed = [](void* data, uint32_t id, const spa_pod* param) {
+  pw_->stream_events.version = PW_VERSION_STREAM_EVENTS;
+  pw_->stream_events.state_changed = [](void* data, pw_stream_state old,
+                                         pw_stream_state state,
+                                         const char* error) {
+    FacLog("pw stream %s -> %s err=%s", pw_stream_state_as_string(old),
+           pw_stream_state_as_string(state), error != nullptr ? error : "");
+    auto* self = static_cast<ScreenGraph*>(data);
+    if (self != nullptr && self->pw_ != nullptr &&
+        self->pw_->stream != nullptr && state == PW_STREAM_STATE_PAUSED) {
+      pw_stream_set_active(self->pw_->stream, true);
+      FacLog("pw_stream_set_active true");
+    }
+  };
+  pw_->stream_events.param_changed = [](void* data, uint32_t id,
+                                        const spa_pod* param) {
     ScreenGraph::OnPwParamChanged(data, id, param);
   };
-  events.process = [](void* data) { ScreenGraph::OnPwProcess(data); };
-  pw_stream_add_listener(pw_->stream, &pw_->listener, &events, this);
+  pw_->stream_events.process = [](void* data) {
+    ScreenGraph::OnPwProcess(data);
+  };
+  pw_stream_add_listener(pw_->stream, &pw_->listener, &pw_->stream_events,
+                         this);
   uint8_t buffer[1024];
   spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
   spa_rectangle def_size = SPA_RECTANGLE(
       static_cast<uint32_t>(width > 0 ? width : 1920),
       static_cast<uint32_t>(height > 0 ? height : 1080));
   spa_rectangle min_size = SPA_RECTANGLE(1, 1);
-  spa_rectangle max_size = SPA_RECTANGLE(4096, 4096);
+  spa_rectangle max_size = SPA_RECTANGLE(16384, 16384);
   spa_fraction def_fps =
       SPA_FRACTION(static_cast<uint32_t>(motion_ ? 30 : 5), 1);
   spa_fraction min_fps = SPA_FRACTION(0, 1);
@@ -828,26 +1014,27 @@ bool ScreenGraph::ConnectPipeWire(int fd, uint32_t node_id, int width,
           SPA_FORMAT_VIDEO_framerate,
           SPA_POD_CHOICE_RANGE_Fraction(&def_fps, &min_fps, &max_fps))),
   };
-  const int connected = pw_stream_connect(
-      pw_->stream, PW_DIRECTION_INPUT, PW_ID_ANY,
-      static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT |
-                                   PW_STREAM_FLAG_MAP_BUFFERS),
-      params, 1);
+  const pw_stream_flags flags = static_cast<pw_stream_flags>(
+      PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS);
+  FacLog("pw_stream_connect target_id=%u serial=%s flags=AUTOCONNECT|MAP_BUFFERS",
+         target_id, serial.c_str());
+  const int connected =
+      pw_stream_connect(pw_->stream, PW_DIRECTION_INPUT, target_id, flags,
+                        params, 1);
   pw_thread_loop_unlock(pw_->loop);
   if (connected < 0) {
+    FacLog("ConnectPipeWire pw_stream_connect failed %d", connected);
     StopPipeWire();
     return false;
   }
-  if (pw_thread_loop_start(pw_->loop) < 0) {
-    StopPipeWire();
-    return false;
-  }
+  FacLog("ConnectPipeWire ok target_id=%u node=%u", target_id, node_id);
   return true;
 #else
   (void)fd;
   (void)node_id;
   (void)width;
   (void)height;
+  (void)serial;
   return false;
 #endif
 }
@@ -872,6 +1059,18 @@ gboolean ScreenGraph::CopyPreviewPixels(const std::string& id,
 gboolean ScreenGraph::CopyPixels(const uint8_t** buffer, uint32_t* width,
                                  uint32_t* height, GError** error) {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (staging_ready_) {
+    published_.swap(staging_);
+    published_width_ = staging_width_;
+    published_height_ = staging_height_;
+    staging_ready_ = false;
+  }
+  if (!published_.empty() && published_width_ > 0 && published_height_ > 0) {
+    *buffer = published_.data();
+    *width = static_cast<uint32_t>(published_width_);
+    *height = static_cast<uint32_t>(published_height_);
+    return TRUE;
+  }
   if (front_.empty()) {
     if (error != nullptr) {
       *error = g_error_new(G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
@@ -890,6 +1089,7 @@ struct ScreenGraph::PortalState {
   GMainLoop* loop = nullptr;
   ScreenGraph* graph = nullptr;
   FlMethodCall* pending = nullptr;
+  std::string session;
 };
 
 namespace {
@@ -898,14 +1098,21 @@ struct PortalWait {
   GMainLoop* loop = nullptr;
   guint code = 2;
   GVariant* results = nullptr;
+  bool done = false;
 };
 
 void OnPortalResponse(GDBusConnection*, const gchar*, const gchar*,
                       const gchar*, const gchar*, GVariant* parameters,
                       gpointer user_data) {
   auto* wait = static_cast<PortalWait*>(user_data);
+  if (wait->done) {
+    return;
+  }
   g_variant_get(parameters, "(u@a{sv})", &wait->code, &wait->results);
-  g_main_loop_quit(wait->loop);
+  wait->done = true;
+  if (wait->loop != nullptr && g_main_loop_is_running(wait->loop)) {
+    g_main_loop_quit(wait->loop);
+  }
 }
 
 void UnrefResults(GVariant* results) {
@@ -914,26 +1121,139 @@ void UnrefResults(GVariant* results) {
   }
 }
 
+bool ParsePortalStreams(GVariant* results, uint32_t* node_id, int* width,
+                        int* height, std::string* serial) {
+  if (results == nullptr || node_id == nullptr || width == nullptr ||
+      height == nullptr) {
+    return false;
+  }
+  GVariantIter* iter = nullptr;
+  if (!g_variant_lookup(results, "streams", "a(ua{sv})", &iter) ||
+      iter == nullptr) {
+    return false;
+  }
+  GVariant* child = nullptr;
+  bool ok = false;
+  if (g_variant_iter_next(iter, "@(ua{sv})", &child) && child != nullptr) {
+    GVariant* props = nullptr;
+    if (g_variant_is_of_type(child, G_VARIANT_TYPE("(ua{sv})"))) {
+      g_variant_get(child, "(u@a{sv})", node_id, &props);
+    }
+    if (props != nullptr) {
+      g_variant_lookup(props, "size", "(ii)", width, height);
+      const gchar* ser = nullptr;
+      if (g_variant_lookup(props, "pipewire-serial", "&s", &ser) &&
+          ser != nullptr) {
+        if (serial != nullptr) {
+          *serial = ser;
+        }
+      }
+      g_variant_unref(props);
+    }
+    g_variant_unref(child);
+    ok = true;
+  }
+  g_variant_iter_free(iter);
+  return ok;
+}
+
+void ClosePortalSession(const std::string& session) {
+  if (session.empty()) {
+    return;
+  }
+  g_autoptr(GError) error = nullptr;
+  g_autoptr(GDBusConnection) bus =
+      g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+  if (bus == nullptr) {
+    return;
+  }
+  g_dbus_connection_call_sync(
+      bus, "org.freedesktop.portal.Desktop", session.c_str(),
+      "org.freedesktop.portal.Session", "Close", nullptr, nullptr,
+      G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &error);
+}
+
+std::string MakePortalToken(const char* prefix) {
+  char token[64];
+  g_snprintf(token, sizeof(token), "%s%u", prefix,
+             static_cast<unsigned>(g_random_int_range(1, 1 << 30)));
+  return token;
+}
+
+std::string PortalRequestPath(GDBusConnection* bus, const char* handle_token) {
+  const gchar* unique = g_dbus_connection_get_unique_name(bus);
+  if (unique == nullptr || handle_token == nullptr || handle_token[0] == '\0') {
+    return "";
+  }
+  std::string sender = unique[0] == ':' ? unique + 1 : unique;
+  for (char& ch : sender) {
+    if (ch == '.') {
+      ch = '_';
+    }
+  }
+  return std::string("/org/freedesktop/portal/desktop/request/") + sender + "/" +
+         handle_token;
+}
+
+uint32_t AvailableCursorModes(GDBusProxy* proxy) {
+  g_autoptr(GVariant) prop =
+      g_dbus_proxy_get_cached_property(proxy, "AvailableCursorModes");
+  if (prop != nullptr && g_variant_is_of_type(prop, G_VARIANT_TYPE_UINT32)) {
+    return g_variant_get_uint32(prop);
+  }
+  return 0;
+}
+
+uint32_t PickCursorMode(GDBusProxy* proxy, bool cursor) {
+  const uint32_t available = AvailableCursorModes(proxy);
+  const uint32_t hidden = 1;
+  const uint32_t embedded = 2;
+  const uint32_t metadata = 4;
+  const uint32_t want = cursor ? embedded : hidden;
+  if (available == 0 || (available & want) != 0) {
+    return want;
+  }
+  if (cursor && (available & metadata) != 0) {
+    return metadata;
+  }
+  if ((available & hidden) != 0) {
+    return hidden;
+  }
+  if ((available & embedded) != 0) {
+    return embedded;
+  }
+  return want;
+}
+
 bool PortalCall(GDBusProxy* proxy, const char* method, GVariant* args,
-                GVariant** results, guint* code,
+                const char* handle_token, GVariant** results, guint* code,
                 const std::shared_ptr<ScreenGraph::PortalState>& state) {
+  GDBusConnection* bus = g_dbus_proxy_get_connection(proxy);
+  const std::string path = PortalRequestPath(bus, handle_token);
+  if (path.empty()) {
+    return false;
+  }
+  PortalWait wait;
+  GMainContext* ctx = g_main_context_get_thread_default();
+  wait.loop = g_main_loop_new(ctx, FALSE);
+  state->loop = wait.loop;
+  const guint sub = g_dbus_connection_signal_subscribe(
+      bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request",
+      "Response", path.c_str(), nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+      OnPortalResponse, &wait, nullptr);
   g_autoptr(GError) error = nullptr;
   g_autoptr(GVariant) ret = g_dbus_proxy_call_sync(
       proxy, method, args, G_DBUS_CALL_FLAGS_NONE, 180000, nullptr, &error);
   if (ret == nullptr || state->cancel) {
+    g_dbus_connection_signal_unsubscribe(bus, sub);
+    state->loop = nullptr;
+    g_main_loop_unref(wait.loop);
+    UnrefResults(wait.results);
     return false;
   }
-  const gchar* request_path = nullptr;
-  g_variant_get(ret, "(&o)", &request_path);
-  PortalWait wait;
-  wait.loop = g_main_loop_new(nullptr, FALSE);
-  state->loop = wait.loop;
-  GDBusConnection* bus = g_dbus_proxy_get_connection(proxy);
-  const guint sub = g_dbus_connection_signal_subscribe(
-      bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request",
-      "Response", request_path, nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
-      OnPortalResponse, &wait, nullptr);
-  g_main_loop_run(wait.loop);
+  if (!wait.done) {
+    g_main_loop_run(wait.loop);
+  }
   g_dbus_connection_signal_unsubscribe(bus, sub);
   state->loop = nullptr;
   g_main_loop_unref(wait.loop);
@@ -943,17 +1263,14 @@ bool PortalCall(GDBusProxy* proxy, const char* method, GVariant* args,
   }
   *code = wait.code;
   *results = wait.results;
-  return true;
+  return wait.done;
 }
 
 }  // namespace
 
 FlValue* ScreenGraph::PortalStartedMap() {
   EnsureTexture();
-  if (textures_ != nullptr && texture_ != nullptr) {
-    fl_texture_registrar_mark_texture_frame_available(textures_,
-                                                      FL_TEXTURE(texture_));
-  }
+  RequestTextureMark();
   FlValue* map = fl_value_new_map();
   fl_value_set_string_take(map, "status", fl_value_new_string("started"));
   fl_value_set_string_take(map, "textureId", fl_value_new_int(texture_id_));
@@ -979,6 +1296,10 @@ void ScreenGraph::CancelPortal() {
   }
   if (portal_thread_.joinable()) {
     portal_thread_.join();
+  }
+  if (state != nullptr && !state->session.empty()) {
+    ClosePortalSession(state->session);
+    state->session.clear();
   }
   if (state != nullptr) {
     FlMethodCall* pending = nullptr;
@@ -1011,7 +1332,10 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
   state->pending = pending;
   g_object_ref(pending);
   portal_state_ = state;
-  portal_thread_ = std::thread([this, state, cursor, motion]() {
+  const std::string parent = parent_window_;
+  portal_thread_ = std::thread([this, state, cursor, motion, parent]() {
+    GMainContext* ctx = g_main_context_new();
+    g_main_context_push_thread_default(ctx);
     auto finish = [state](const char* status, const char* reason) {
       FlMethodCall* pending_call = nullptr;
       ScreenGraph* graph = nullptr;
@@ -1080,89 +1404,93 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
         "org.freedesktop.portal.ScreenCast", nullptr, &error);
     if (proxy == nullptr || state->cancel) {
       finish("unavailable", "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
 
-    gchar token[32];
-    g_snprintf(token, sizeof(token), "fac%d", g_random_int_range(1, 1 << 20));
+    const std::string session_token = MakePortalToken("facs");
+    const std::string create_token = MakePortalToken("facr");
     GVariantBuilder opts;
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token",
-                          g_variant_new_string(token));
+                          g_variant_new_string(create_token.c_str()));
     g_variant_builder_add(&opts, "{sv}", "session_handle_token",
-                          g_variant_new_string(token));
+                          g_variant_new_string(session_token.c_str()));
     GVariant* results = nullptr;
     guint code = 2;
     if (!PortalCall(proxy, "CreateSession", g_variant_new("(a{sv})", &opts),
-                    &results, &code, state) ||
+                    create_token.c_str(), &results, &code, state) ||
         code != 0 || results == nullptr) {
       UnrefResults(results);
       finish("unavailable", code == 1 ? "denied" : "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     const gchar* session_path = nullptr;
-    g_variant_lookup(results, "session_handle", "&o", &session_path);
-    if (session_path == nullptr) {
+    // xdg-desktop-portal.xml types this as `o`; GNOME 48+ emits `s`.
+    if (!g_variant_lookup(results, "session_handle", "&s", &session_path)) {
+      g_variant_lookup(results, "session_handle", "&o", &session_path);
+    }
+    if (session_path == nullptr || session_path[0] == '\0') {
       UnrefResults(results);
       finish("unavailable", "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     const std::string session = session_path;
+    state->session = session;
     UnrefResults(results);
 
+    const std::string select_token = MakePortalToken("facq");
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token",
-                          g_variant_new_string(token));
+                          g_variant_new_string(select_token.c_str()));
     g_variant_builder_add(&opts, "{sv}", "types",
                           g_variant_new_uint32(1 | 2));
     g_variant_builder_add(&opts, "{sv}", "multiple",
                           g_variant_new_boolean(FALSE));
     g_variant_builder_add(&opts, "{sv}", "cursor_mode",
-                          g_variant_new_uint32(cursor ? 4 : 2));
+                          g_variant_new_uint32(PickCursorMode(proxy, cursor)));
     results = nullptr;
     if (!PortalCall(proxy, "SelectSources",
-                    g_variant_new("(oa{sv})", session.c_str(), &opts), &results,
-                    &code, state) ||
+                    g_variant_new("(oa{sv})", session.c_str(), &opts),
+                    select_token.c_str(), &results, &code, state) ||
         code != 0) {
       UnrefResults(results);
+      ClosePortalSession(session);
       finish("unavailable", code == 1 ? "denied" : "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     UnrefResults(results);
 
+    const std::string start_token = MakePortalToken("fact");
     g_variant_builder_init(&opts, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&opts, "{sv}", "handle_token",
-                          g_variant_new_string(token));
+                          g_variant_new_string(start_token.c_str()));
     results = nullptr;
     if (!PortalCall(proxy, "Start",
-                    g_variant_new("(osa{sv})", session.c_str(), "", &opts),
-                    &results, &code, state) ||
+                    g_variant_new("(osa{sv})", session.c_str(), parent.c_str(),
+                                  &opts),
+                    start_token.c_str(), &results, &code, state) ||
         code != 0 || results == nullptr) {
       UnrefResults(results);
+      ClosePortalSession(session);
       finish("unavailable", code == 1 ? "denied" : "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     uint32_t node_id = 0;
     int stream_w = 0;
     int stream_h = 0;
-    bool have_stream = false;
-    GVariant* streams = g_variant_lookup_value(results, "streams", nullptr);
-    if (streams != nullptr) {
-      GVariantIter iter;
-      g_variant_iter_init(&iter, streams);
-      GVariant* child = g_variant_iter_next_value(&iter);
-      if (child != nullptr) {
-        GVariant* props = nullptr;
-        g_variant_get(child, "(u@a{sv})", &node_id, &props);
-        if (props != nullptr) {
-          g_variant_lookup(props, "size", "(ii)", &stream_w, &stream_h);
-          g_variant_unref(props);
-        }
-        have_stream = true;
-        g_variant_unref(child);
-      }
-      g_variant_unref(streams);
-    }
+    std::string pw_serial;
+    const bool have_stream =
+        ParsePortalStreams(results, &node_id, &stream_w, &stream_h, &pw_serial);
     g_autoptr(GUnixFDList) fd_list = nullptr;
     g_autoptr(GError) fd_error = nullptr;
     GVariantBuilder fd_opts;
@@ -1182,7 +1510,10 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
       if (pw_fd >= 0) {
         close(pw_fd);
       }
+      ClosePortalSession(session);
       finish("unavailable", "none");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     motion_ = motion;
@@ -1201,21 +1532,20 @@ bool ScreenGraph::StartPortal(FlMethodCall* pending, bool cursor, bool motion) {
       running_ = true;
       front_.assign(static_cast<size_t>(send_width_) * send_height_ * 4, 0);
     }
-    if (!ConnectPipeWire(pw_fd, node_id, stream_w, stream_h)) {
-      g_autoptr(GError) close_error = nullptr;
-      g_autoptr(GDBusConnection) bus =
-          g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
-      if (bus != nullptr) {
-        g_dbus_connection_call_sync(
-            bus, "org.freedesktop.portal.Desktop", session.c_str(),
-            "org.freedesktop.portal.Session", "Close", nullptr, nullptr,
-            G_DBUS_CALL_FLAGS_NONE, 2000, nullptr, &close_error);
-      }
-      finish("unavailable", "none");
+    FacLog("portal Start node=%u %dx%d serial=%s fd=%d", node_id, stream_w,
+           stream_h, pw_serial.c_str(), pw_fd);
+    if (!ConnectPipeWire(pw_fd, node_id, stream_w, stream_h, pw_serial)) {
+      FacLog("portal ConnectPipeWire failed");
+      ClosePortalSession(session);
+      finish("unavailable", "pipewire");
+      g_main_context_pop_thread_default(ctx);
+      g_main_context_unref(ctx);
       return;
     }
     portal_session_ = session;
     finish("started", nullptr);
+    g_main_context_pop_thread_default(ctx);
+    g_main_context_unref(ctx);
   });
   return true;
 }

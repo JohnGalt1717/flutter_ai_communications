@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications_linux/flutter_ai_communications_linux.dart';
 import 'package:flutter_ai_communications_linux/src/camera_backend.dart';
@@ -28,6 +31,40 @@ void main() {
     addTearDown(adapter.stopCameraNative);
     return adapter;
   }
+
+  test('Linux catalog maps native V4L2 modes from the channel', () async {
+    const methods = MethodChannel('flutter_ai_communications/methods');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'enumerateCameras') {
+        return [
+          {
+            'id': '/dev/video0',
+            'name': 'LifeCam Studio',
+            'facing': 'external',
+            'modes': [
+              {'width': 640, 'height': 480, 'frameRate': 30},
+              {'width': 1280, 'height': 720, 'frameRate': 30},
+              {'width': 1920, 'height': 1080, 'frameRate': 30},
+            ],
+          },
+        ];
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(methods, null);
+    });
+    final backend = MethodChannelCameraBackend(methods: methods);
+    final catalog = await backend.enumerate();
+    expect(catalog, hasLength(1));
+    expect(catalog.single.modes, [
+      const VideoFormat(width: 640, height: 480, frameRate: 30),
+      const VideoFormat(width: 1280, height: 720, frameRate: 30),
+      const VideoFormat(width: 1920, height: 1080, frameRate: 30),
+    ]);
+  });
 
   test('external cameras appear in the catalog', () async {
     final camera = _RecordingCamera()..cameras = [usb, integrated];
@@ -99,6 +136,27 @@ void main() {
     expect(adapter.lastVideoSurface, isNull);
   });
 
+  test('native V4L2 miss is unavailable without a Video surface', () async {
+    const methods = MethodChannel('flutter_ai_communications/methods');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'startCameraNative') {
+        return {'status': 'unavailable'};
+      }
+      return null;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(methods, null);
+    });
+    final backend = MethodChannelCameraBackend(methods: methods);
+    expect(
+      await backend.start(cameraId: '/dev/video0'),
+      NativeGraphStart.unavailable,
+    );
+    expect(backend.lastSurface, isNull);
+  });
+
   test(
     'cameraCatalog is the enumerate snapshot without an EventChannel',
     () async {
@@ -150,6 +208,37 @@ void main() {
       await sub.cancel();
     },
   );
+
+  test('V4L2 stream modify on /dev/video0 does not refresh catalog', () {
+    expect(
+      linuxVideoNodeCatalogChange(
+        path: '/dev/video0',
+        type: FileSystemEvent.modify,
+      ),
+      isFalse,
+    );
+    expect(
+      linuxVideoNodeCatalogChange(
+        path: '/dev/video0',
+        type: FileSystemEvent.create,
+      ),
+      isTrue,
+    );
+    expect(
+      linuxVideoNodeCatalogChange(
+        path: '/dev/video1',
+        type: FileSystemEvent.delete,
+      ),
+      isTrue,
+    );
+    expect(
+      linuxVideoNodeCatalogChange(
+        path: '/dev/null',
+        type: FileSystemEvent.create,
+      ),
+      isFalse,
+    );
+  });
 
   test('native status failed is NativeGraphStart.failed', () async {
     const methods = MethodChannel('flutter_ai_communications/methods');
@@ -261,6 +350,70 @@ void main() {
       );
     },
   );
+
+  test(
+    'runtime processor unavailable EventChannel maps to the camera stream',
+    () async {
+      const methods = MethodChannel('flutter_ai_communications/methods');
+      const events = EventChannel('flutter_ai_communications/events');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      late MockStreamHandlerEventSink sink;
+      messenger.setMockStreamHandler(
+        events,
+        MockStreamHandler.inline(
+          onListen: (arguments, events) {
+            sink = events;
+          },
+        ),
+      );
+      addTearDown(() => messenger.setMockStreamHandler(events, null));
+      final backend = MethodChannelCameraBackend(
+        methods: methods,
+        events: events,
+      );
+      final seen = <Object?>[];
+      final sub = backend.processorUnavailable.listen(seen.add);
+      addTearDown(sub.cancel);
+      await Future<void>.delayed(Duration.zero);
+      sink.success({'type': 'processor', 'payload': 'unavailable'});
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+    },
+  );
+
+  test(
+    'runtime processor unavailable from the camera backend reaches the adapter',
+    () async {
+      final camera = _RecordingCamera()..cameras = [usb];
+      final adapter = adapterFor(camera);
+      final seen = <Object?>[];
+      final sub = adapter.processorUnavailable.listen(seen.add);
+      addTearDown(sub.cancel);
+      camera.emitProcessorUnavailable();
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, hasLength(1));
+    },
+  );
+
+  test('apply-time unavailable does not emit processorUnavailable', () async {
+    final camera = _RecordingCamera()
+      ..cameras = [usb]
+      ..processorResult = NativeProcessorResult.unavailable;
+    final adapter = adapterFor(camera);
+    final seen = <Object?>[];
+    final sub = adapter.processorUnavailable.listen(seen.add);
+    addTearDown(sub.cancel);
+    await adapter.startCameraNative(cameraId: '/dev/video0');
+    expect(
+      await adapter.setVideoProcessorNative(
+        const BlurVideoProcessor(intensity: 100),
+      ),
+      NativeProcessorResult.unavailable,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(seen, isEmpty);
+  });
 }
 
 final class _RecordingCamera implements CameraBackend {
@@ -342,6 +495,13 @@ final class _RecordingCamera implements CameraBackend {
   Future<void> setMuted(bool muted) async {
     this.muted = muted;
   }
+
+  final _processorUnavailableOut = StreamController<void>.broadcast();
+
+  void emitProcessorUnavailable() => _processorUnavailableOut.add(null);
+
+  @override
+  Stream<void> get processorUnavailable => _processorUnavailableOut.stream;
 
   @override
   Future<NativeProcessorResult> setVideoProcessor(

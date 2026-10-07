@@ -37,6 +37,9 @@ abstract class CameraBackend {
   /// Applies a Video processor on the live Production video path.
   Future<NativeProcessorResult> setVideoProcessor(VideoProcessor processor);
 
+  /// Runtime segmentation failure after a successful apply (ADR-0017).
+  Stream<void> get processorUnavailable => const Stream.empty();
+
   /// Last Video surface from camera start, if any.
   VideoSurface? get lastSurface;
 

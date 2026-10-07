@@ -4,6 +4,7 @@
 #include <flutter_linux/flutter_linux.h>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -22,6 +23,9 @@ class PersonBackgroundProcessor {
 
   /// In-place RGBA transform. No-op for none or when segmentation fails.
   void Process(uint8_t* rgba, int width, int height);
+
+  /// Fired once when runtime segmentation falls back to none (ADR-0017).
+  void SetOnUnavailable(std::function<void()> callback);
 
  private:
   struct Impl;

@@ -3,12 +3,17 @@
 #include <dlfcn.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <gio/gio.h>
+#include <glib.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
+#include <functional>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 #ifdef FAC_HAS_ONNXRUNTIME
@@ -212,30 +217,212 @@ void CoverStill(const uint8_t* src, int src_w, int src_h, uint8_t* dst,
   }
 }
 
-#ifdef FAC_HAS_ONNXRUNTIME
-void ScaleMask(const uint8_t* src, int src_w, int src_h, uint8_t* dst, int dst_w,
-               int dst_h) {
-  if (src_w <= 0 || src_h <= 0 || dst_w <= 0 || dst_h <= 0) {
+void BoxBlurRgba(uint8_t* img, int w, int h, int radius,
+                 std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
     return;
   }
+  tmp->assign(static_cast<size_t>(w) * h * 4, 0);
+  const int window = radius * 2 + 1;
+  for (int y = 0; y < h; y++) {
+    int sum[3] = {0, 0, 0};
+    for (int x = -radius; x <= radius; x++) {
+      const uint8_t* px =
+          img + (static_cast<size_t>(y) * w + ClampIndex(x, w - 1)) * 4;
+      sum[0] += px[0];
+      sum[1] += px[1];
+      sum[2] += px[2];
+    }
+    for (int x = 0; x < w; x++) {
+      uint8_t* out = tmp->data() + (static_cast<size_t>(y) * w + x) * 4;
+      out[0] = static_cast<uint8_t>(sum[0] / window);
+      out[1] = static_cast<uint8_t>(sum[1] / window);
+      out[2] = static_cast<uint8_t>(sum[2] / window);
+      out[3] = 255;
+      const uint8_t* leave =
+          img + (static_cast<size_t>(y) * w + ClampIndex(x - radius, w - 1)) * 4;
+      const uint8_t* enter =
+          img +
+          (static_cast<size_t>(y) * w + ClampIndex(x + radius + 1, w - 1)) * 4;
+      sum[0] += enter[0] - leave[0];
+      sum[1] += enter[1] - leave[1];
+      sum[2] += enter[2] - leave[2];
+    }
+  }
+  for (int x = 0; x < w; x++) {
+    int sum[3] = {0, 0, 0};
+    for (int y = -radius; y <= radius; y++) {
+      const uint8_t* px =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y, h - 1)) * w + x) * 4;
+      sum[0] += px[0];
+      sum[1] += px[1];
+      sum[2] += px[2];
+    }
+    for (int y = 0; y < h; y++) {
+      uint8_t* out = img + (static_cast<size_t>(y) * w + x) * 4;
+      out[0] = static_cast<uint8_t>(sum[0] / window);
+      out[1] = static_cast<uint8_t>(sum[1] / window);
+      out[2] = static_cast<uint8_t>(sum[2] / window);
+      out[3] = 255;
+      const uint8_t* leave =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y - radius, h - 1)) * w + x) * 4;
+      const uint8_t* enter =
+          tmp->data() +
+          (static_cast<size_t>(ClampIndex(y + radius + 1, h - 1)) * w + x) * 4;
+      sum[0] += enter[0] - leave[0];
+      sum[1] += enter[1] - leave[1];
+      sum[2] += enter[2] - leave[2];
+    }
+  }
+}
+
+#ifdef FAC_HAS_ONNXRUNTIME
+void DilateGray(uint8_t* img, int w, int h, int radius,
+                std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h, 0);
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      uint8_t m = 0;
+      for (int dy = -radius; dy <= radius; dy++) {
+        const int yy = ClampIndex(y + dy, h - 1);
+        for (int dx = -radius; dx <= radius; dx++) {
+          const int xx = ClampIndex(x + dx, w - 1);
+          const uint8_t v = img[static_cast<size_t>(yy) * w + xx];
+          if (v > m) {
+            m = v;
+          }
+        }
+      }
+      (*tmp)[static_cast<size_t>(y) * w + x] = m;
+    }
+  }
+  std::memcpy(img, tmp->data(), tmp->size());
+}
+
+void ErodeGray(uint8_t* img, int w, int h, int radius,
+               std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h, 0);
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      uint8_t m = 255;
+      for (int dy = -radius; dy <= radius; dy++) {
+        const int yy = ClampIndex(y + dy, h - 1);
+        for (int dx = -radius; dx <= radius; dx++) {
+          const int xx = ClampIndex(x + dx, w - 1);
+          const uint8_t v = img[static_cast<size_t>(yy) * w + xx];
+          if (v < m) {
+            m = v;
+          }
+        }
+      }
+      (*tmp)[static_cast<size_t>(y) * w + x] = m;
+    }
+  }
+  std::memcpy(img, tmp->data(), tmp->size());
+}
+
+void BoxBlurGray(uint8_t* img, int w, int h, int radius,
+                 std::vector<uint8_t>* tmp) {
+  if (radius <= 0 || w <= 0 || h <= 0) {
+    return;
+  }
+  tmp->assign(static_cast<size_t>(w) * h, 0);
+  const int window = radius * 2 + 1;
+  for (int y = 0; y < h; y++) {
+    int sum = 0;
+    for (int x = -radius; x <= radius; x++) {
+      sum += img[static_cast<size_t>(y) * w + ClampIndex(x, w - 1)];
+    }
+    for (int x = 0; x < w; x++) {
+      (*tmp)[static_cast<size_t>(y) * w + x] =
+          static_cast<uint8_t>(sum / window);
+      const int leave = ClampIndex(x - radius, w - 1);
+      const int enter = ClampIndex(x + radius + 1, w - 1);
+      sum += img[static_cast<size_t>(y) * w + enter] -
+             img[static_cast<size_t>(y) * w + leave];
+    }
+  }
+  for (int x = 0; x < w; x++) {
+    int sum = 0;
+    for (int y = -radius; y <= radius; y++) {
+      sum += (*tmp)[static_cast<size_t>(ClampIndex(y, h - 1)) * w + x];
+    }
+    for (int y = 0; y < h; y++) {
+      img[static_cast<size_t>(y) * w + x] =
+          static_cast<uint8_t>(sum / window);
+      const int leave = ClampIndex(y - radius, h - 1);
+      const int enter = ClampIndex(y + radius + 1, h - 1);
+      sum += (*tmp)[static_cast<size_t>(enter) * w + x] -
+             (*tmp)[static_cast<size_t>(leave) * w + x];
+    }
+  }
+}
+
+// Stretching 16:9 into 256x256 zeros MediaPipe alphas. Fit and pad instead.
+void LetterboxRgb(const uint8_t* rgba, int width, int height, float* input) {
+  const float scale = std::min(static_cast<float>(kModel) / width,
+                               static_cast<float>(kModel) / height);
+  const float pad_x =
+      (kModel - static_cast<float>(width) * scale) * 0.5f;
+  const float pad_y =
+      (kModel - static_cast<float>(height) * scale) * 0.5f;
+  const size_t plane = static_cast<size_t>(kModel) * kModel;
+  std::fill(input, input + plane * 3, 0.f);
+  for (int y = 0; y < kModel; y++) {
+    for (int x = 0; x < kModel; x++) {
+      const float ix = (static_cast<float>(x) - pad_x + 0.5f) / scale - 0.5f;
+      const float iy = (static_cast<float>(y) - pad_y + 0.5f) / scale - 0.5f;
+      if (ix < 0.f || iy < 0.f || ix > static_cast<float>(width - 1) ||
+          iy > static_cast<float>(height - 1)) {
+        continue;
+      }
+      const int x0 = ClampIndex(static_cast<int>(std::floor(ix)), width - 1);
+      const int y0 = ClampIndex(static_cast<int>(std::floor(iy)), height - 1);
+      const int x1 = ClampIndex(x0 + 1, width - 1);
+      const int y1 = ClampIndex(y0 + 1, height - 1);
+      const float tx = Clamp01(ix - static_cast<float>(x0));
+      const float ty = Clamp01(iy - static_cast<float>(y0));
+      const size_t i00 = (static_cast<size_t>(y0) * width + x0) * 4;
+      const size_t i10 = (static_cast<size_t>(y0) * width + x1) * 4;
+      const size_t i01 = (static_cast<size_t>(y1) * width + x0) * 4;
+      const size_t i11 = (static_cast<size_t>(y1) * width + x1) * 4;
+      const size_t idx = static_cast<size_t>(y) * kModel + x;
+      for (int c = 0; c < 3; c++) {
+        const float p00 = rgba[i00 + c];
+        const float p10 = rgba[i10 + c];
+        const float p01 = rgba[i01 + c];
+        const float p11 = rgba[i11 + c];
+        const float top = p00 + (p10 - p00) * tx;
+        const float bot = p01 + (p11 - p01) * tx;
+        input[c * plane + idx] = (top + (bot - top) * ty) * (1.f / 255.f);
+      }
+    }
+  }
+}
+
+void UnletterboxMask(const uint8_t* src, uint8_t* dst, int dst_w, int dst_h) {
+  const float scale = std::min(static_cast<float>(kModel) / dst_w,
+                               static_cast<float>(kModel) / dst_h);
+  const float pad_x =
+      (kModel - static_cast<float>(dst_w) * scale) * 0.5f;
+  const float pad_y =
+      (kModel - static_cast<float>(dst_h) * scale) * 0.5f;
   for (int y = 0; y < dst_h; y++) {
-    const float fy = (static_cast<float>(y) + 0.5f) * src_h / dst_h - 0.5f;
-    const int y0 = ClampIndex(static_cast<int>(std::floor(fy)), src_h - 1);
-    const int y1 = ClampIndex(y0 + 1, src_h - 1);
-    const float ty = Clamp01(fy - static_cast<float>(y0));
     for (int x = 0; x < dst_w; x++) {
-      const float fx = (static_cast<float>(x) + 0.5f) * src_w / dst_w - 0.5f;
-      const int x0 = ClampIndex(static_cast<int>(std::floor(fx)), src_w - 1);
-      const int x1 = ClampIndex(x0 + 1, src_w - 1);
-      const float tx = Clamp01(fx - static_cast<float>(x0));
-      const float p00 = src[static_cast<size_t>(y0) * src_w + x0];
-      const float p10 = src[static_cast<size_t>(y0) * src_w + x1];
-      const float p01 = src[static_cast<size_t>(y1) * src_w + x0];
-      const float p11 = src[static_cast<size_t>(y1) * src_w + x1];
-      const float top = p00 + (p10 - p00) * tx;
-      const float bot = p01 + (p11 - p01) * tx;
+      const float mx = pad_x + (static_cast<float>(x) + 0.5f) * scale - 0.5f;
+      const float my = pad_y + (static_cast<float>(y) + 0.5f) * scale - 0.5f;
+      const int ix = ClampIndex(static_cast<int>(mx + 0.5f), kModel - 1);
+      const int iy = ClampIndex(static_cast<int>(my + 0.5f), kModel - 1);
       dst[static_cast<size_t>(y) * dst_w + x] =
-          static_cast<uint8_t>(top + (bot - top) * ty + 0.5f);
+          src[static_cast<size_t>(iy) * kModel + ix];
     }
   }
 }
@@ -305,6 +492,9 @@ struct PersonBackgroundProcessor::Impl {
   std::vector<uint8_t> still_rgba_;
   int still_w_ = 0;
   int still_h_ = 0;
+  std::atomic<int> consecutive_failures_{0};
+  std::function<void()> on_unavailable_;
+  static constexpr int kFailureLimit = 5;
 
   std::mutex session_mutex_;
   bool load_failed_ = false;
@@ -317,12 +507,34 @@ struct PersonBackgroundProcessor::Impl {
 #endif
   std::vector<float> input_;
   std::vector<uint8_t> mask256_;
+  std::vector<uint8_t> mask256_prev_;
   std::vector<uint8_t> mask_;
+  std::vector<uint8_t> mask_tmp_;
   std::vector<uint8_t> background_;
   std::vector<uint8_t> scratch_;
+  std::vector<uint8_t> blur_tmp_;
+  int last_w_ = 0;
+  int last_h_ = 0;
+  std::mutex work_mutex_;
+  std::condition_variable cv_;
+  std::thread worker_;
+  std::atomic<bool> stop_{false};
+  std::atomic<bool> segment_pending_{false};
+  std::atomic<uint64_t> generation_{0};
+  std::vector<uint8_t> segment_rgba_;
+  int segment_w_ = 0;
+  int segment_h_ = 0;
+  std::vector<uint8_t> live_mask_;
+  int live_w_ = 0;
+  int live_h_ = 0;
 
   ~Impl() {
 #ifdef FAC_HAS_ONNXRUNTIME
+    stop_.store(true);
+    cv_.notify_all();
+    if (worker_.joinable()) {
+      worker_.join();
+    }
     if (api_ != nullptr) {
       if (session_ != nullptr) {
         api_->ReleaseSession(session_);
@@ -344,6 +556,7 @@ struct PersonBackgroundProcessor::Impl {
 #ifdef FAC_HAS_ONNXRUNTIME
     std::lock_guard<std::mutex> lock(session_mutex_);
     if (session_ != nullptr) {
+      StartWorker();
       return true;
     }
     if (load_failed_) {
@@ -376,6 +589,14 @@ struct PersonBackgroundProcessor::Impl {
       load_failed_ = true;
       return false;
     }
+    status = api_->SetIntraOpNumThreads(options_, 1);
+    if (status != nullptr) {
+      api_->ReleaseStatus(status);
+    }
+    status = api_->SetInterOpNumThreads(options_, 1);
+    if (status != nullptr) {
+      api_->ReleaseStatus(status);
+    }
     status = api_->CreateSession(env_, path.c_str(), options_, &session_);
     if (status != nullptr) {
       api_->ReleaseStatus(status);
@@ -391,6 +612,10 @@ struct PersonBackgroundProcessor::Impl {
     }
     input_.assign(static_cast<size_t>(3) * kModel * kModel, 0.f);
     mask256_.assign(static_cast<size_t>(kModel) * kModel, 0);
+    mask256_prev_.clear();
+    last_w_ = 0;
+    last_h_ = 0;
+    StartWorker();
     return true;
 #else
     return false;
@@ -403,36 +628,7 @@ struct PersonBackgroundProcessor::Impl {
         api_ == nullptr || session_ == nullptr || memory_info_ == nullptr) {
       return false;
     }
-    for (int y = 0; y < kModel; y++) {
-      const float fy =
-          (static_cast<float>(y) + 0.5f) * height / kModel - 0.5f;
-      const int y0 = ClampIndex(static_cast<int>(std::floor(fy)), height - 1);
-      const int y1 = ClampIndex(y0 + 1, height - 1);
-      const float ty = Clamp01(fy - static_cast<float>(y0));
-      for (int x = 0; x < kModel; x++) {
-        const float fx =
-            (static_cast<float>(x) + 0.5f) * width / kModel - 0.5f;
-        const int x0 = ClampIndex(static_cast<int>(std::floor(fx)), width - 1);
-        const int x1 = ClampIndex(x0 + 1, width - 1);
-        const float tx = Clamp01(fx - static_cast<float>(x0));
-        const size_t i00 = (static_cast<size_t>(y0) * width + x0) * 4;
-        const size_t i10 = (static_cast<size_t>(y0) * width + x1) * 4;
-        const size_t i01 = (static_cast<size_t>(y1) * width + x0) * 4;
-        const size_t i11 = (static_cast<size_t>(y1) * width + x1) * 4;
-        const size_t plane = static_cast<size_t>(kModel) * kModel;
-        const size_t idx = static_cast<size_t>(y) * kModel + x;
-        for (int c = 0; c < 3; c++) {
-          const float p00 = rgba[i00 + c];
-          const float p10 = rgba[i10 + c];
-          const float p01 = rgba[i01 + c];
-          const float p11 = rgba[i11 + c];
-          const float top = p00 + (p10 - p00) * tx;
-          const float bot = p01 + (p11 - p01) * tx;
-          input_[c * plane + idx] =
-              (top + (bot - top) * ty) * (1.f / 255.f);
-        }
-      }
-    }
+    LetterboxRgb(rgba, width, height, input_.data());
     const int64_t shape[4] = {1, 3, kModel, kModel};
     OrtValue* input_tensor = nullptr;
     OrtStatus* status = api_->CreateTensorWithDataAsOrtValue(
@@ -467,8 +663,20 @@ struct PersonBackgroundProcessor::Impl {
           static_cast<uint8_t>(Clamp01(out[i]) * 255.f + 0.5f);
     }
     api_->ReleaseValue(output_tensor);
+    last_w_ = width;
+    last_h_ = height;
+    // Halfway between net-shrink (too tight) and expand-2 (halo).
+    for (uint8_t& v : mask256_) {
+      const float a = std::pow(v / 255.f, 2.4f);
+      const float t = Clamp01((a - 0.35f) / 0.30f);
+      const float s = t * t * (3.f - 2.f * t);
+      v = static_cast<uint8_t>(s * 255.f + 0.5f);
+    }
+    ErodeGray(mask256_.data(), kModel, kModel, 1, &mask_tmp_);
+    DilateGray(mask256_.data(), kModel, kModel, 1, &mask_tmp_);
     mask_.assign(static_cast<size_t>(width) * height, 0);
-    ScaleMask(mask256_.data(), kModel, kModel, mask_.data(), width, height);
+    UnletterboxMask(mask256_.data(), mask_.data(), width, height);
+    BoxBlurGray(mask_.data(), width, height, 1, &mask_tmp_);
     return true;
 #else
     (void)rgba;
@@ -487,22 +695,29 @@ struct PersonBackgroundProcessor::Impl {
       return;
     }
     const float t = intensity / 100.f;
-    const float factor = std::pow(1.f - t, 2.5f) * 0.88f + 0.12f;
-    const int small_w = std::max(8, static_cast<int>(width * factor));
-    const int small_h = std::max(8, static_cast<int>(height * factor));
+    const float factor = 0.16f - t * 0.10f;
+    const int small_w =
+        std::max(12, static_cast<int>(width * factor + 0.5f));
+    const int small_h =
+        std::max(12, static_cast<int>(height * factor + 0.5f));
     scratch_.assign(static_cast<size_t>(small_w) * small_h * 4, 0);
     ScaleRgba(rgba, width, height, scratch_.data(), small_w, small_h);
+    const int passes = t >= 0.75f ? 3 : 2;
+    const int radius = t >= 0.75f ? 3 : 2;
+    for (int i = 0; i < passes; i++) {
+      BoxBlurRgba(scratch_.data(), small_w, small_h, radius, &blur_tmp_);
+    }
     ScaleRgba(scratch_.data(), small_w, small_h, background_.data(), width,
               height);
   }
 
-  void Composite(uint8_t* rgba, int width, int height) {
+  void Composite(uint8_t* rgba, int width, int height, const uint8_t* mask) {
     const size_t pixels = static_cast<size_t>(width) * height;
-    if (background_.size() < pixels * 4 || mask_.size() < pixels) {
+    if (background_.size() < pixels * 4 || mask == nullptr) {
       return;
     }
     for (size_t i = 0; i < pixels; i++) {
-      const float a = mask_[i] / 255.f;
+      const float a = mask[i] / 255.f;
       uint8_t* px = rgba + i * 4;
       const uint8_t* bg = background_.data() + i * 4;
       px[0] = static_cast<uint8_t>(bg[0] * (1.f - a) + px[0] * a + 0.5f);
@@ -511,12 +726,98 @@ struct PersonBackgroundProcessor::Impl {
       px[3] = 255;
     }
   }
+
+  void StartWorker() {
+#ifdef FAC_HAS_ONNXRUNTIME
+    if (worker_.joinable()) {
+      return;
+    }
+    stop_.store(false);
+    worker_ = std::thread([this] { WorkerLoop(); });
+#endif
+  }
+
+  void WorkerLoop() {
+#ifdef FAC_HAS_ONNXRUNTIME
+    while (!stop_.load()) {
+      std::vector<uint8_t> rgba;
+      int width = 0;
+      int height = 0;
+      uint64_t gen = 0;
+      {
+        std::unique_lock<std::mutex> lock(work_mutex_);
+        cv_.wait(lock, [this] {
+          return stop_.load() || segment_pending_.load();
+        });
+        if (stop_.load()) {
+          break;
+        }
+        rgba = std::move(segment_rgba_);
+        width = segment_w_;
+        height = segment_h_;
+        gen = generation_.load();
+        segment_pending_.store(false);
+      }
+      if (rgba.empty() || width <= 0 || height <= 0) {
+        continue;
+      }
+      if (!Segment(rgba.data(), width, height)) {
+        const int failures = consecutive_failures_.fetch_add(1) + 1;
+        if (failures < kFailureLimit) {
+          continue;
+        }
+        std::function<void()> callback;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          if (kind_ == Kind::None) {
+            consecutive_failures_.store(0);
+            continue;
+          }
+          kind_ = Kind::None;
+          still_rgba_.clear();
+          still_w_ = 0;
+          still_h_ = 0;
+          live_mask_.clear();
+          live_w_ = 0;
+          live_h_ = 0;
+          consecutive_failures_.store(0);
+          callback = on_unavailable_;
+        }
+        if (callback) {
+          auto* fn = new std::function<void()>(std::move(callback));
+          g_idle_add(
+              [](gpointer data) -> gboolean {
+                auto* f = static_cast<std::function<void()>*>(data);
+                (*f)();
+                delete f;
+                return G_SOURCE_REMOVE;
+              },
+              fn);
+        }
+        continue;
+      }
+      consecutive_failures_.store(0);
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (generation_.load() != gen || kind_ == Kind::None) {
+        continue;
+      }
+      live_mask_.swap(mask_);
+      live_w_ = width;
+      live_h_ = height;
+    }
+#endif
+  }
 };
 
 PersonBackgroundProcessor::PersonBackgroundProcessor()
     : impl_(std::make_unique<Impl>()) {}
 
 PersonBackgroundProcessor::~PersonBackgroundProcessor() = default;
+
+void PersonBackgroundProcessor::SetOnUnavailable(std::function<void()> callback) {
+  std::lock_guard<std::mutex> lock(impl_->mutex_);
+  impl_->on_unavailable_ = std::move(callback);
+}
 
 std::string PersonBackgroundProcessor::Apply(FlValue* args) {
   const std::string kind = ReadString(args, "kind");
@@ -526,6 +827,11 @@ std::string PersonBackgroundProcessor::Apply(FlValue* args) {
     impl_->still_rgba_.clear();
     impl_->still_w_ = 0;
     impl_->still_h_ = 0;
+    impl_->live_mask_.clear();
+    impl_->live_w_ = 0;
+    impl_->live_h_ = 0;
+    impl_->consecutive_failures_.store(0);
+    impl_->generation_.fetch_add(1);
     return "ready";
   }
   if (kind == "blur") {
@@ -539,6 +845,7 @@ std::string PersonBackgroundProcessor::Apply(FlValue* args) {
     std::lock_guard<std::mutex> lock(impl_->mutex_);
     impl_->kind_ = Impl::Kind::Blur;
     impl_->intensity_ = intensity;
+    impl_->consecutive_failures_.store(0);
     return "ready";
   }
   if (kind == "replace") {
@@ -566,6 +873,7 @@ std::string PersonBackgroundProcessor::Apply(FlValue* args) {
     impl_->still_rgba_ = std::move(still);
     impl_->still_w_ = still_w;
     impl_->still_h_ = still_h;
+    impl_->consecutive_failures_.store(0);
     return "ready";
   }
   return "unavailable";
@@ -593,8 +901,27 @@ void PersonBackgroundProcessor::Process(uint8_t* rgba, int width, int height) {
       still_h = impl_->still_h_;
     }
   }
-  if (!impl_->Segment(rgba, width, height)) {
+  if (!impl_->EnsureSession()) {
     return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(impl_->work_mutex_);
+    if (!impl_->segment_pending_.load()) {
+      impl_->segment_rgba_.assign(
+          rgba, rgba + static_cast<size_t>(width) * height * 4);
+      impl_->segment_w_ = width;
+      impl_->segment_h_ = height;
+      impl_->segment_pending_.store(true);
+      impl_->cv_.notify_one();
+    }
+  }
+  const size_t pixels = static_cast<size_t>(width) * height;
+  {
+    std::lock_guard<std::mutex> lock(impl_->mutex_);
+    if (impl_->live_w_ != width || impl_->live_h_ != height ||
+        impl_->live_mask_.size() != pixels) {
+      return;
+    }
   }
   if (kind == Impl::Kind::Blur) {
     impl_->BlurBackground(rgba, width, height, intensity);
@@ -602,9 +929,13 @@ void PersonBackgroundProcessor::Process(uint8_t* rgba, int width, int height) {
     if (still.empty() || still_w <= 0 || still_h <= 0) {
       return;
     }
-    impl_->background_.assign(static_cast<size_t>(width) * height * 4, 0);
+    impl_->background_.assign(pixels * 4, 0);
     CoverStill(still.data(), still_w, still_h, impl_->background_.data(), width,
                height);
   }
-  impl_->Composite(rgba, width, height);
+  std::lock_guard<std::mutex> lock(impl_->mutex_);
+  if (impl_->live_w_ == width && impl_->live_h_ == height &&
+      impl_->live_mask_.size() == pixels) {
+    impl_->Composite(rgba, width, height, impl_->live_mask_.data());
+  }
 }
