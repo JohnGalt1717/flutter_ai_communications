@@ -193,6 +193,31 @@ public enum IosRoutePolicy {
         routeClass == "handset" ? "handset" : "unknown"
     }
 
+    /// Speakerphone is the built-in osDefault when no accessory is current.
+    /// `playAndRecord` sits on the receiver; that is not the product default
+    /// (same as Android `syntheticOsDefault` → speakerphone).
+    public static func builtinIsOsDefault(
+        routeClass: String,
+        isCapture: Bool,
+        inputPortType: String?,
+        outputPortType: String?
+    ) -> Bool {
+        guard routeClass == "speakerphone" else { return false }
+        if isCapture {
+            return isBuiltinPort(portType: inputPortType)
+        }
+        return isBuiltinPort(portType: outputPortType)
+    }
+
+    public static func isBuiltinPort(portType: String?) -> Bool {
+        switch portType {
+        case nil, "MicrophoneBuiltIn", "Speaker", "Receiver":
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Input ports that may appear as capture Endpoints (issue #88).
     public static func isCaptureCapableAccessory(portType: String) -> Bool {
         switch portType {

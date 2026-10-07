@@ -1,3 +1,4 @@
+import Accelerate
 import CoreMedia
 import Flutter
 import Foundation
@@ -18,6 +19,7 @@ final class IosScreenGraph: NSObject, FlutterTexture {
   private let queue = DispatchQueue(label: "fac.screen")
   private weak var textures: FlutterTextureRegistry?
   var onCatalog: (([[String: Any]]) -> Void)?
+  var onFormat: ((Int, Int) -> Void)?
   private(set) var textureId: Int64 = -1
   private var pixelBuffer: CVPixelBuffer?
   private var pending: FlutterResult?
@@ -192,8 +194,15 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     lastSeq = seq
     let pixels = data.advanced(by: 16)
     let size = cappedSize(width: width, height: height)
+    let formatChanged = size.0 != sendWidth || size.1 != sendHeight
     sendWidth = size.0
     sendHeight = size.1
+    if formatChanged {
+      let report = onFormat
+      DispatchQueue.main.async {
+        report?(size.0, size.1)
+      }
+    }
     guard let buffer = makeBuffer(width: size.0, height: size.1) else {
       return
     }
@@ -201,14 +210,29 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     if let dest = CVPixelBufferGetBaseAddress(buffer) {
       let destStride = CVPixelBufferGetBytesPerRow(buffer)
       let srcStride = width * 4
-      let rowBytes = min(srcStride, destStride)
-      let rows = min(height, size.1)
       pixels.withUnsafeBytes { raw in
         guard let src = raw.baseAddress else {
           return
         }
-        for row in 0..<rows {
-          memcpy(dest + row * destStride, src + row * srcStride, rowBytes)
+        if size.0 == width, size.1 == height {
+          let rowBytes = min(srcStride, destStride)
+          for row in 0..<height {
+            memcpy(dest + row * destStride, src + row * srcStride, rowBytes)
+          }
+        } else {
+          var srcBuffer = vImage_Buffer(
+            data: UnsafeMutableRawPointer(mutating: src),
+            height: vImagePixelCount(height),
+            width: vImagePixelCount(width),
+            rowBytes: srcStride
+          )
+          var destBuffer = vImage_Buffer(
+            data: dest,
+            height: vImagePixelCount(size.1),
+            width: vImagePixelCount(size.0),
+            rowBytes: destStride
+          )
+          vImageScale_ARGB8888(&srcBuffer, &destBuffer, nil, vImage_Flags(kvImageNoFlags))
         }
       }
     }
@@ -281,14 +305,21 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     return buffer
   }
 
+  /// ADR-0027: at most 1920 on the long edge and 1080 on the short edge,
+  /// keeping aspect. Portrait iPhone is 1080×1920-class, not 1920×1080.
   private func cappedSize(width: Int, height: Int) -> (Int, Int) {
     let w = max(width, 1)
     let h = max(height, 1)
-    if w <= 1920 && h <= 1080 {
+    let long = max(w, h)
+    let short = min(w, h)
+    if long <= 1920, short <= 1080 {
       return (w, h)
     }
-    let scale = min(1920.0 / Double(w), 1080.0 / Double(h))
-    return (max(Int((Double(w) * scale).rounded()), 1), max(Int((Double(h) * scale).rounded()), 1))
+    let scale = min(1920.0 / Double(long), 1080.0 / Double(short))
+    return (
+      max(Int((Double(w) * scale).rounded()), 1),
+      max(Int((Double(h) * scale).rounded()), 1)
+    )
   }
 
   private static func keyWindow() -> UIWindow? {

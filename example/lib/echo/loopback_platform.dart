@@ -358,6 +358,9 @@ final class LoopbackCommunicationsPlatform
   VideoSurface? get lastScreenSurface => inner.lastScreenSurface;
 
   @override
+  Stream<VideoSurface?> get screenSurfaces => inner.screenSurfaces;
+
+  @override
   VideoFormat? get lastScreenNativeFormat => inner.lastScreenNativeFormat;
 
   @override

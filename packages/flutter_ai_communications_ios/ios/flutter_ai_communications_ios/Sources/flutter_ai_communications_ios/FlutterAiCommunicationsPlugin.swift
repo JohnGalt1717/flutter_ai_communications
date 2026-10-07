@@ -47,6 +47,14 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         ]
       )
     }
+    instance.screen.onFormat = { [weak instance] width, height in
+      instance?.eventSink?(
+        [
+          "type": "screenFormat",
+          "payload": ["width": width, "height": height],
+        ]
+      )
+    }
     instance.camera.onCatalog = { [weak instance] cameras in
       instance?.eventSink?(["type": "cameraCatalog", "payload": cameras])
     }
@@ -771,10 +779,11 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
         $0.isCapture,
         $0.pairId,
         IosRoutePolicy.formFactor(routeClass: $0.routeClass),
-        osDefault: builtinIsOsDefault(
-          $0,
-          inputType: currentIn?.portType,
-          outputType: currentOut?.portType
+        osDefault: IosRoutePolicy.builtinIsOsDefault(
+          routeClass: $0.routeClass,
+          isCapture: $0.isCapture,
+          inputPortType: currentIn?.portType.rawValue,
+          outputPortType: currentOut?.portType.rawValue
         )
       )
     }
@@ -799,26 +808,6 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
       )
     }
     return items
-  }
-
-  private func builtinIsOsDefault(
-    _ endpoint: IosCatalogEndpoint,
-    inputType: AVAudioSession.Port?,
-    outputType: AVAudioSession.Port?
-  ) -> Bool {
-    if endpoint.isCapture {
-      if outputType == .builtInReceiver {
-        return endpoint.routeClass == "handset"
-      }
-      return inputType == .builtInMic && endpoint.routeClass == "speakerphone"
-    }
-    if outputType == .builtInSpeaker {
-      return endpoint.routeClass == "speakerphone"
-    }
-    if outputType == .builtInReceiver {
-      return endpoint.routeClass == "handset"
-    }
-    return false
   }
 
   /// Capture rows only for HFP / LE / headsetMic inputs. A2DP and headphones

@@ -993,9 +993,35 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
       StreamController<List<ScreenSource>>.broadcast();
   final StreamController<String> screenPreviewReadyController =
       StreamController<String>.broadcast();
+  final StreamController<VideoSurface?> _screenSurfaceOut =
+      StreamController<VideoSurface?>.broadcast();
 
   @override
   VideoSurface? get lastScreenSurface => _lastScreenSurface;
+
+  @override
+  Stream<VideoSurface?> get screenSurfaces => _screenSurfaceOut.stream;
+
+  /// Tests inject a live screen-send size the way native `screenFormat` does.
+  void publishScreenFormat({required int width, required int height}) {
+    final surface = _lastScreenSurface;
+    if (surface == null) {
+      return;
+    }
+    _lastScreenSurface = VideoSurface(
+      handle: surface.handle,
+      kind: surface.kind,
+      width: width,
+      height: height,
+    );
+    final previous = _lastScreenNativeFormat;
+    _lastScreenNativeFormat = VideoFormat(
+      width: width,
+      height: height,
+      frameRate: previous?.frameRate ?? 5,
+    );
+    _screenSurfaceOut.add(_lastScreenSurface);
+  }
 
   @override
   VideoFormat? get lastScreenNativeFormat => _lastScreenNativeFormat;
@@ -1175,5 +1201,6 @@ final class FakeCommunicationsPlatform extends FlutterAiCommunicationsPlatform {
     await screenPreviewReadyController.close();
     await cameraCatalogController.close();
     await _videoSurfaceOut.close();
+    await _screenSurfaceOut.close();
   }
 }
