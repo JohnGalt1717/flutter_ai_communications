@@ -635,6 +635,7 @@ void CameraGraph::SetOnProcessorUnavailable(std::function<void()> callback) {
 }
 
 void CameraGraph::Select(const std::string& camera_id) {
+  std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   FlValue* result =
       Start(camera_id, request_width_, request_height_, request_frame_rate_,
             enabled_.load(), muted_.load(), LifecycleEpoch());
