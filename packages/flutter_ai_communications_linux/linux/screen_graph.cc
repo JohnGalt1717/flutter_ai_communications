@@ -828,25 +828,31 @@ void ScreenGraph::RequestTextureMark() {
     uint64_t epoch;
   };
   auto* mark = new Mark{this, alive_, texture_epoch_.load()};
-  const guint id = g_idle_add(
+  const guint id = g_idle_add_full(
+      G_PRIORITY_DEFAULT_IDLE,
       [](gpointer data) -> gboolean {
         auto* mark = static_cast<Mark*>(data);
-        if (mark->graph != nullptr) {
-          mark->graph->mark_source_.store(0);
-          mark->graph->pw_mark_pending_.store(false);
+        if (!mark->alive || !mark->alive->load() || mark->graph == nullptr) {
+          return G_SOURCE_REMOVE;
         }
-        if (mark->alive && mark->alive->load() && mark->graph != nullptr &&
-            mark->graph->marks_allowed_.load() &&
+        mark->graph->mark_source_.store(0);
+        mark->graph->pw_mark_pending_.store(false);
+        if (mark->graph->marks_allowed_.load() &&
             mark->graph->texture_epoch_.load() == mark->epoch &&
             mark->graph->textures_ != nullptr &&
             mark->graph->texture_ != nullptr) {
           fl_texture_registrar_mark_texture_frame_available(
               mark->graph->textures_, FL_TEXTURE(mark->graph->texture_));
         }
-        delete mark;
         return G_SOURCE_REMOVE;
       },
-      mark);
+      mark,
+      [](gpointer data) { delete static_cast<Mark*>(data); });
+  if (!alive_->load()) {
+    g_source_remove(id);
+    pw_mark_pending_.store(false);
+    return;
+  }
   mark_source_.store(id);
 }
 

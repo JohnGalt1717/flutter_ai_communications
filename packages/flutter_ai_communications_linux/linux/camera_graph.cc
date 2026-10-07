@@ -549,13 +549,17 @@ bool CameraGraph::StartCancelled(uint64_t epoch) const {
   return epoch != lifecycle_epoch_.load();
 }
 
+uint64_t CameraGraph::LifecycleEpoch() const {
+  return lifecycle_epoch_.load();
+}
+
 FlValue* CameraGraph::Start(const std::string& camera_id,
                             int width,
                             int height,
                             int frame_rate,
                             bool enabled,
-                            bool muted) {
-  const uint64_t epoch = lifecycle_epoch_.load();
+                            bool muted,
+                            uint64_t epoch) {
   std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   FlValue* result = fl_value_new_map();
   if (StartCancelled(epoch)) {
@@ -633,7 +637,7 @@ void CameraGraph::SetOnProcessorUnavailable(std::function<void()> callback) {
 void CameraGraph::Select(const std::string& camera_id) {
   FlValue* result =
       Start(camera_id, request_width_, request_height_, request_frame_rate_,
-            enabled_.load(), muted_.load());
+            enabled_.load(), muted_.load(), LifecycleEpoch());
   fl_value_unref(result);
 }
 
@@ -700,31 +704,37 @@ void CameraGraph::RequestTextureMark() {
     uint64_t epoch;
   };
   auto* mark = new Mark{this, alive_, texture_epoch_.load()};
-  const guint id = g_idle_add(
+  const guint id = g_idle_add_full(
+      G_PRIORITY_DEFAULT_IDLE,
       [](gpointer data) -> gboolean {
         auto* mark = static_cast<Mark*>(data);
-        if (mark->graph != nullptr) {
-          mark->graph->mark_source_.store(0);
-          mark->graph->mark_pending_.store(false);
+        if (!mark->alive || !mark->alive->load() || mark->graph == nullptr) {
+          return G_SOURCE_REMOVE;
         }
-        if (mark->alive && mark->alive->load() && mark->graph != nullptr &&
-            mark->graph->marks_allowed_.load() &&
+        mark->graph->mark_source_.store(0);
+        mark->graph->mark_pending_.store(false);
+        if (mark->graph->marks_allowed_.load() &&
             mark->graph->texture_epoch_.load() == mark->epoch &&
             mark->graph->textures_ != nullptr &&
             mark->graph->texture_ != nullptr) {
           fl_texture_registrar_mark_texture_frame_available(
               mark->graph->textures_, FL_TEXTURE(mark->graph->texture_));
         }
-        delete mark;
         return G_SOURCE_REMOVE;
       },
-      mark);
+      mark,
+      [](gpointer data) { delete static_cast<Mark*>(data); });
+  if (!alive_->load()) {
+    g_source_remove(id);
+    mark_pending_.store(false);
+    return;
+  }
   mark_source_.store(id);
 }
 
 void CameraGraph::StopCapture() {
   texture_epoch_.fetch_add(1);
-  mark_pending_.store(false);
+  CancelPendingMark();
   running_.store(false);
   if (fd_ >= 0) {
     v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;

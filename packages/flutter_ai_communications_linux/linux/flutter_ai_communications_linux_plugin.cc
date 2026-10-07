@@ -205,10 +205,11 @@ static void HandleMethodCall(FlMethodChannel* channel,
     self->camera->EnsureTexture();
     g_object_ref(method_call);
     g_object_ref(self);
+    const uint64_t epoch = self->camera->LifecycleEpoch();
     std::thread([self, method_call, camera_id, width, height, frame_rate,
-                 enabled, muted]() {
+                 enabled, muted, epoch]() {
       g_autoptr(FlValue) value = self->camera->Start(
-          camera_id, width, height, frame_rate, enabled, muted);
+          camera_id, width, height, frame_rate, enabled, muted, epoch);
       RespondOnIdle(self, method_call, value);
     }).detach();
     return;

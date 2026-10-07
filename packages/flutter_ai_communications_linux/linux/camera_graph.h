@@ -31,12 +31,14 @@ class CameraGraph {
   FlValue* Enumerate();
   std::string RequestPermission();
   void EnsureTexture();
+  uint64_t LifecycleEpoch() const;
   FlValue* Start(const std::string& camera_id,
                  int width,
                  int height,
                  int frame_rate,
                  bool enabled,
-                 bool muted);
+                 bool muted,
+                 uint64_t epoch);
   void Stop();
   void Select(const std::string& camera_id);
   void SetEnabled(bool enabled);
