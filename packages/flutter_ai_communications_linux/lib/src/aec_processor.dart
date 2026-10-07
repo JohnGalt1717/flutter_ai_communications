@@ -149,7 +149,7 @@ final class SpeexAec {
       echo: echo,
       pre: pre,
       frameSamples: frameSamples,
-      maxPlayBytes: filterSamples * 2,
+      maxPlayBytes: sampleRate * 2 * 5,
       rec: rec,
       play: play,
       out: out,

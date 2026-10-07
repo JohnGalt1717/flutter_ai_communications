@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdarg>
 #include <cstdio>
 #include <condition_variable>
@@ -196,7 +197,24 @@ bool StepAligned(int value, int min_v, int max_v, int step) {
   return (value - min_v) % s == 0;
 }
 
-std::vector<NativeMode> CollectModes(int fd, int req_w, int req_h) {
+uint64_t FractUsec(const v4l2_fract& fract) {
+  if (fract.denominator == 0) {
+    return 33333;
+  }
+  return static_cast<uint64_t>(fract.numerator) * 1000000ULL /
+         fract.denominator;
+}
+
+int FpsFromUsec(uint64_t usec) {
+  if (usec == 0) {
+    return 30;
+  }
+  const int fps = static_cast<int>(1000000ULL / usec);
+  return fps < 1 ? 1 : fps;
+}
+
+std::vector<NativeMode> CollectModes(int fd, int req_w, int req_h,
+                                     int req_fps) {
   std::vector<NativeMode> modes;
   if (fd < 0) {
     return modes;
@@ -235,8 +253,20 @@ std::vector<NativeMode> CollectModes(int fd, int req_w, int req_h) {
         add_dim(1280, 720);
         add_dim(1920, 1080);
         if (req_w > 0 && req_h > 0) {
-          add_dim(SnapStep(req_w, min_w, max_w, step_w),
-                  SnapStep(req_h, min_h, max_h, step_h));
+          const int floor_w = SnapStep(req_w, min_w, max_w, step_w);
+          const int floor_h = SnapStep(req_h, min_h, max_h, step_h);
+          add_dim(floor_w, floor_h);
+          const int s_w = step_w < 1 ? 1 : step_w;
+          const int s_h = step_h < 1 ? 1 : step_h;
+          int ceil_w = floor_w;
+          int ceil_h = floor_h;
+          if (floor_w < req_w && floor_w + s_w <= max_w) {
+            ceil_w = floor_w + s_w;
+          }
+          if (floor_h < req_h && floor_h + s_h <= max_h) {
+            ceil_h = floor_h + s_h;
+          }
+          add_dim(ceil_w, ceil_h);
         }
       }
       for (const auto& dim : dims) {
@@ -254,15 +284,31 @@ std::vector<NativeMode> CollectModes(int fd, int req_w, int req_h) {
           if (ival.type == V4L2_FRMIVAL_TYPE_DISCRETE) {
             add_fps(IntervalFps(ival.discrete));
           } else {
-            const int min_fps = IntervalFps(ival.stepwise.max);
-            const int max_fps = IntervalFps(ival.stepwise.min);
-            add_fps(min_fps);
-            if (max_fps != min_fps) {
-              add_fps(max_fps);
+            const uint64_t min_u = FractUsec(ival.stepwise.min);
+            const uint64_t max_u = FractUsec(ival.stepwise.max);
+            add_fps(FpsFromUsec(min_u));
+            add_fps(FpsFromUsec(max_u));
+            const int want = req_fps > 0 ? req_fps : 30;
+            uint64_t want_u = 1000000ULL / static_cast<uint64_t>(std::max(1, want));
+            if (want_u < min_u) {
+              want_u = min_u;
             }
-            if (30 > min_fps && 30 < max_fps) {
-              add_fps(30);
+            if (want_u > max_u) {
+              want_u = max_u;
             }
+            if (ival.type == V4L2_FRMIVAL_TYPE_STEPWISE) {
+              const uint64_t step_u = FractUsec(ival.stepwise.step);
+              if (step_u > 0) {
+                want_u = min_u + ((want_u - min_u) / step_u) * step_u;
+                if (want_u > max_u) {
+                  want_u = max_u;
+                }
+                if (want_u >= step_u && want_u - step_u >= min_u) {
+                  add_fps(FpsFromUsec(want_u - step_u));
+                }
+              }
+            }
+            add_fps(FpsFromUsec(want_u));
           }
         }
         if (!any) {
@@ -571,7 +617,7 @@ FlValue* CameraGraph::Enumerate() {
         }
         continue;
       }
-      native_modes = CollectModes(fd, 0, 0);
+      native_modes = CollectModes(fd, 0, 0, 0);
       if (fd >= 0) {
         close(fd);
       }
@@ -886,7 +932,7 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   cached_name_ = reinterpret_cast<const char*>(cap.card);
   cached_facing_ = FacingFor(cached_name_,
                              reinterpret_cast<const char*>(cap.bus_info));
-  const auto available = CollectModes(fd_, width, height);
+  const auto available = CollectModes(fd_, width, height, frame_rate);
   cached_modes_.clear();
   {
     std::set<std::tuple<int, int, int>> seen;
