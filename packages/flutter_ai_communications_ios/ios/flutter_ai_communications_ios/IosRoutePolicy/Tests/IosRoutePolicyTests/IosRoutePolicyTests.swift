@@ -187,3 +187,60 @@ import Testing
     #expect(left != right)
     #expect(IosRoutePolicy.hardwarePairToken(uid: "plain-uid") == "plain-uid")
 }
+
+@Test func receiverRouteStillMarksSpeakerphoneAsBuiltinOsDefault() {
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "speakerphone",
+            isCapture: true,
+            inputPortType: "MicrophoneBuiltIn",
+            outputPortType: "Receiver"
+        )
+    )
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "speakerphone",
+            isCapture: false,
+            inputPortType: "MicrophoneBuiltIn",
+            outputPortType: "Receiver"
+        )
+    )
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "handset",
+            isCapture: false,
+            inputPortType: "MicrophoneBuiltIn",
+            outputPortType: "Receiver"
+        ) == false
+    )
+}
+
+@Test func speakerRouteMarksSpeakerphoneAsBuiltinOsDefault() {
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "speakerphone",
+            isCapture: false,
+            inputPortType: "MicrophoneBuiltIn",
+            outputPortType: "Speaker"
+        )
+    )
+}
+
+@Test func accessoryRouteDoesNotMarkSpeakerphoneAsOsDefault() {
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "speakerphone",
+            isCapture: false,
+            inputPortType: "BluetoothHFP",
+            outputPortType: "BluetoothHFP"
+        ) == false
+    )
+    #expect(
+        IosRoutePolicy.builtinIsOsDefault(
+            routeClass: "speakerphone",
+            isCapture: true,
+            inputPortType: "BluetoothHFP",
+            outputPortType: "BluetoothHFP"
+        ) == false
+    )
+}

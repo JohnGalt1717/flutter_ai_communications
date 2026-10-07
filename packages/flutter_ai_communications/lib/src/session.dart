@@ -80,6 +80,7 @@ final class Session {
       onError: (_) {},
     );
     _videoSurfaceSub = platform.videoSurfaces.listen(_onVideoSurface);
+    _screenSurfaceSub = platform.screenSurfaces.listen(_onScreenSurface);
     _onIsolation(platform.lastIsolation);
     if (!preferenceControlled) {
       _explicitCaptureId = preference.captureId;
@@ -231,6 +232,9 @@ final class Session {
 
   /// Live Camera Video surface size. The host sizes the tile from this.
   Stream<VideoSurface?> get videoSurfaces => _platform.videoSurfaces;
+
+  /// Live screen-send Video surface size. The host sizes the tile from this.
+  Stream<VideoSurface?> get screenSurfaces => _platform.screenSurfaces;
 
   /// Last Isolation event. Host UI can seed from this before listening.
   IsolationEvent get lastIsolation => _lastIsolation;
@@ -422,6 +426,7 @@ final class Session {
   StreamSubscription<List<ScreenSource>>? _screenCatalogSub;
   StreamSubscription<List<CameraEndpoint>>? _cameraCatalogSub;
   StreamSubscription<VideoSurface?>? _videoSurfaceSub;
+  StreamSubscription<VideoSurface?>? _screenSurfaceSub;
   var _screenPickOpen = false;
   var _screenSending = false;
   var _includeSystemAudio = false;
@@ -706,6 +711,15 @@ final class Session {
     _videoSurface = surface;
     _nativeVideoFormat = _platform.lastNativeVideoFormat;
     _notifyVideoSinks();
+  }
+
+  void _onScreenSurface(VideoSurface? surface) {
+    if (_stopped || !_screenSending) {
+      return;
+    }
+    _screenSurface = surface;
+    _screenNativeFormat = _platform.lastScreenNativeFormat;
+    _notifyScreenVideoSinks();
   }
 
   void _onScreenCatalog(List<ScreenSource> sources) {
@@ -1091,6 +1105,7 @@ final class Session {
       unawaited(_routeSub?.cancel());
       unawaited(_screenCatalogSub?.cancel());
       unawaited(_videoSurfaceSub?.cancel());
+      unawaited(_screenSurfaceSub?.cancel());
       _captureSub = null;
       _isolationSub = null;
       _processorUnavailableSub = null;
@@ -1102,6 +1117,7 @@ final class Session {
       _routeSub = null;
       _screenCatalogSub = null;
       _videoSurfaceSub = null;
+      _screenSurfaceSub = null;
       unawaited(_captureController.close());
       unawaited(_isolationController.close());
       unawaited(_coverageController.close());

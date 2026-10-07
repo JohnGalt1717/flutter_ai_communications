@@ -340,6 +340,8 @@ class MethodChannelCommunicationsPlatform
   VideoSurface? _lastScreenSurface;
   VideoFormat? _lastScreenNativeFormat;
   String? _lastScreenUnavailableReason;
+  final StreamController<VideoSurface?> _screenSurfaceOut =
+      StreamController<VideoSurface?>.broadcast();
   final Map<String, VideoSurface> _screenPreviews = {};
   final StreamController<String> _screenPreviewReadyOut =
       StreamController<String>.broadcast();
@@ -546,6 +548,12 @@ class MethodChannelCommunicationsPlatform
 
   @override
   VideoSurface? get lastScreenSurface => _lastScreenSurface;
+
+  @override
+  Stream<VideoSurface?> get screenSurfaces {
+    _ensureListening();
+    return _screenSurfaceOut.stream;
+  }
 
   @override
   VideoFormat? get lastScreenNativeFormat => _lastScreenNativeFormat;
@@ -904,6 +912,26 @@ class MethodChannelCommunicationsPlatform
         }
       case 'screenCatalog':
         _screenCatalogOut.add(_readScreenSources(payload as List<dynamic>?));
+      case 'screenFormat':
+        if (payload is Map) {
+          final width = _asInt(payload['width']);
+          final height = _asInt(payload['height']);
+          final surface = _lastScreenSurface;
+          if (width != null && height != null && surface != null) {
+            _lastScreenSurface = VideoSurface(
+              handle: surface.handle,
+              kind: surface.kind,
+              width: width,
+              height: height,
+            );
+            _lastScreenNativeFormat = VideoFormat(
+              width: width,
+              height: height,
+              frameRate: _lastScreenNativeFormat?.frameRate ?? 5,
+            );
+            _screenSurfaceOut.add(_lastScreenSurface);
+          }
+        }
       case 'screenPreview':
         if (payload is Map) {
           final id = payload['id'] as String?;
@@ -1034,6 +1062,7 @@ class MethodChannelCommunicationsPlatform
     await _focusOut.close();
     await _routeOut.close();
     await _videoSurfaceOut.close();
+    await _screenSurfaceOut.close();
     await _cameraCatalogOut.close();
   }
 }

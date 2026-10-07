@@ -346,6 +346,9 @@ abstract class FlutterAiCommunicationsPlatform extends PlatformInterface {
   /// Last local send Video surface from screen start, if any.
   VideoSurface? get lastScreenSurface => null;
 
+  /// Live screen-send Video surface size. The host sizes the tile from this.
+  Stream<VideoSurface?> get screenSurfaces => const Stream.empty();
+
   /// Negotiated Native Video Format from the last screen start.
   VideoFormat? get lastScreenNativeFormat => null;
 

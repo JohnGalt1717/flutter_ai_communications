@@ -67,6 +67,26 @@ void main() {
     expect(session.isScreenPickOpen, isFalse);
   });
 
+  test('screenFormat updates screenSurface size', () async {
+    final session =
+        ((await manager.start(purpose: 'meeting', cameraSend: true))
+                as StartReady)
+            .session;
+    expect(await session.startScreenShare('display-0'), isA<ScreenShareReady>());
+    expect(session.screenSurface?.width, 1920);
+    expect(session.screenSurface?.height, 1080);
+    final seen = <VideoSurface?>[];
+    final sub = session.screenSurfaces.listen(seen.add);
+    addTearDown(sub.cancel);
+    platform.publishScreenFormat(width: 886, height: 1920);
+    await Future<void>.delayed(Duration.zero);
+    expect(session.screenSurface?.handle, 2);
+    expect(session.screenSurface?.width, 886);
+    expect(session.screenSurface?.height, 1920);
+    expect(seen.single?.width, 886);
+    expect(seen.single?.height, 1920);
+  });
+
   test('Screen preview ready ids fire during pick', () async {
     final session = ((await manager.start()) as StartReady).session;
     final ids = <String>[];

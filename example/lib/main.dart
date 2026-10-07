@@ -629,6 +629,11 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() {});
       }
     });
+    session.screenSurfaces.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     session.capture.listen((bytes) {
       if (!mounted) {
         return;

@@ -18,6 +18,7 @@ final class IosScreenGraph: NSObject, FlutterTexture {
   private let queue = DispatchQueue(label: "fac.screen")
   private weak var textures: FlutterTextureRegistry?
   var onCatalog: (([[String: Any]]) -> Void)?
+  var onFormat: ((Int, Int) -> Void)?
   private(set) var textureId: Int64 = -1
   private var pixelBuffer: CVPixelBuffer?
   private var pending: FlutterResult?
@@ -192,8 +193,15 @@ final class IosScreenGraph: NSObject, FlutterTexture {
     lastSeq = seq
     let pixels = data.advanced(by: 16)
     let size = cappedSize(width: width, height: height)
+    let formatChanged = size.0 != sendWidth || size.1 != sendHeight
     sendWidth = size.0
     sendHeight = size.1
+    if formatChanged {
+      let report = onFormat
+      DispatchQueue.main.async {
+        report?(size.0, size.1)
+      }
+    }
     guard let buffer = makeBuffer(width: size.0, height: size.1) else {
       return
     }
@@ -284,11 +292,15 @@ final class IosScreenGraph: NSObject, FlutterTexture {
   private func cappedSize(width: Int, height: Int) -> (Int, Int) {
     let w = max(width, 1)
     let h = max(height, 1)
-    if w <= 1920 && h <= 1080 {
+    let long = max(w, h)
+    if long <= 1920 {
       return (w, h)
     }
-    let scale = min(1920.0 / Double(w), 1080.0 / Double(h))
-    return (max(Int((Double(w) * scale).rounded()), 1), max(Int((Double(h) * scale).rounded()), 1))
+    let scale = 1920.0 / Double(long)
+    return (
+      max(Int((Double(w) * scale).rounded()), 1),
+      max(Int((Double(h) * scale).rounded()), 1)
+    )
   }
 
   private static func keyWindow() -> UIWindow? {
