@@ -55,6 +55,29 @@ void main() {
     expect(session.isStopped, isFalse);
   });
 
+  test(
+    'screenFormat updates screenSurface without notifying ScreenVideoSink',
+    () async {
+      final session =
+          ((await manager.start(purpose: 'meeting', cameraSend: true))
+                  as StartReady)
+              .session;
+      final sink = _RecordingScreenVideoSink();
+      session.attachScreenVideoSink(sink);
+      expect(
+        await session.startScreenShare('display-0'),
+        isA<ScreenShareReady>(),
+      );
+      final before = sink.snapshots.length;
+      platform.publishScreenFormat(width: 886, height: 1920);
+      await Future<void>.delayed(Duration.zero);
+      expect(session.screenSurface?.width, 886);
+      expect(session.screenSurface?.height, 1920);
+      expect(sink.snapshots, hasLength(before));
+      expect(sink.snapshots.last.generation, 1);
+    },
+  );
+
   test('replace startScreenShare increments screen path generation', () async {
     final session = ((await manager.start()) as StartReady).session;
     final sink = _RecordingScreenVideoSink();

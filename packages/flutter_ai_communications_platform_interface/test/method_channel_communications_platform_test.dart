@@ -514,6 +514,53 @@ void main() {
     messenger.setMockStreamHandler(events, null);
   });
 
+  test('screenFormat updates last screen Video surface size', () async {
+    await platform.dispose();
+    const events = EventChannel('flutter_ai_communications/events');
+    late MockStreamHandlerEventSink sink;
+    messenger.setMockStreamHandler(
+      events,
+      MockStreamHandler.inline(
+        onListen: (args, eventSink) {
+          sink = eventSink;
+        },
+      ),
+    );
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'startScreenShareNative') {
+        return {
+          'status': 'started',
+          'textureId': 9,
+          'width': 1280,
+          'height': 720,
+          'frameRate': 5,
+          'kind': 'texture',
+        };
+      }
+      return null;
+    });
+    platform = MethodChannelCommunicationsPlatform(platformName: 'ios');
+    await platform.startScreenShareNative(sourceId: 'system-picker');
+    expect(platform.lastScreenSurface?.handle, 9);
+    expect(platform.lastScreenSurface?.width, 1280);
+    expect(platform.lastScreenSurface?.height, 720);
+    final seen = <VideoSurface?>[];
+    final sub = platform.screenSurfaces.listen(seen.add);
+    sink.success({
+      'type': 'screenFormat',
+      'payload': {'width': 886, 'height': 1920},
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(platform.lastScreenSurface?.handle, 9);
+    expect(platform.lastScreenSurface?.width, 886);
+    expect(platform.lastScreenSurface?.height, 1920);
+    expect(seen.single?.handle, 9);
+    expect(seen.single?.width, 886);
+    expect(seen.single?.height, 1920);
+    await sub.cancel();
+    messenger.setMockStreamHandler(events, null);
+  });
+
   test('selectCameraNative keeps last Video surface handle', () async {
     messenger.setMockMethodCallHandler(methods, (call) async {
       calls.add(call);
