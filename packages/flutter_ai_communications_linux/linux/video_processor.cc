@@ -26,6 +26,16 @@ namespace {
 constexpr int kModel = 256;
 #endif
 
+void FillOpaqueBlack(uint8_t* rgba, int width, int height) {
+  const size_t n = static_cast<size_t>(width) * height * 4;
+  for (size_t i = 0; i + 3 < n; i += 4) {
+    rgba[i] = 0;
+    rgba[i + 1] = 0;
+    rgba[i + 2] = 0;
+    rgba[i + 3] = 255;
+  }
+}
+
 std::string ReadString(FlValue* args, const char* key) {
   if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_MAP) {
     return {};
@@ -926,6 +936,7 @@ void PersonBackgroundProcessor::Process(uint8_t* rgba, int width, int height) {
     std::lock_guard<std::mutex> lock(impl_->mutex_);
     if (impl_->live_w_ != width || impl_->live_h_ != height ||
         impl_->live_mask_.size() != pixels) {
+      FillOpaqueBlack(rgba, width, height);
       return;
     }
   }

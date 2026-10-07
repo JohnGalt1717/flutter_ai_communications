@@ -72,6 +72,23 @@ void main() {
     }
     expect(outEnergy, lessThan(inEnergy * 0.4));
   }, skip: SpeexAec.available ? false : 'libspeexdsp.so.1 missing');
+
+  test('SpeexAec.flush drops queued reverse before new capture', () {
+    final aec = SpeexAec.tryStart();
+    expect(aec, isNotNull);
+    addTearDown(aec!.dispose);
+    final chunk = BytesBuilder();
+    for (var i = 0; i < 8; i++) {
+      chunk.add(_sineFrame(i));
+    }
+    aec.playback(chunk.takeBytes());
+    aec.flush();
+    final silence = Uint8List(SpeexAec.frameBytes);
+    for (var i = 0; i < 8; i++) {
+      final out = aec.process(silence);
+      expect(_energy(out), lessThan(1e3));
+    }
+  }, skip: SpeexAec.available ? false : 'libspeexdsp.so.1 missing');
 }
 
 Uint8List _sineFrame(int frame) {

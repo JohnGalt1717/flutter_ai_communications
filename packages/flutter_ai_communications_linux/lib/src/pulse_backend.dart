@@ -206,6 +206,7 @@ final class PulseAudioBackend implements AudioBackend {
 
   @override
   void flush() {
+    _captureControl?.send(const _FlushCommand());
     if (_render == nullptr) {
       return;
     }
@@ -830,6 +831,10 @@ final class _PlaybackCommand extends _CaptureCommand {
   final Uint8List bytes;
 }
 
+final class _FlushCommand extends _CaptureCommand {
+  const _FlushCommand();
+}
+
 Future<void> _captureMain(_CaptureStart start) async {
   final control = ReceivePort();
   start.sendPort.send(control.sendPort);
@@ -864,6 +869,8 @@ Future<void> _captureMain(_CaptureStart start) async {
         paused = false;
       case _PlaybackCommand(:final bytes):
         aec?.playback(bytes);
+      case _FlushCommand():
+        aec?.flush();
     }
   });
   final error = calloc<Int32>();

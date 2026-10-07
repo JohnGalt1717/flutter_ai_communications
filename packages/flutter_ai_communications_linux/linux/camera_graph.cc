@@ -702,8 +702,6 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   request_width_ = width > 0 ? width : 1280;
   request_height_ = height > 0 ? height : 720;
   request_frame_rate_ = frame_rate > 0 ? frame_rate : 30;
-  width_ = request_width_;
-  height_ = request_height_;
   frame_rate_ = request_frame_rate_;
   enabled_.store(enabled);
   {
@@ -714,6 +712,8 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   }
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    width_ = request_width_;
+    height_ = request_height_;
     FillBlackLocked();
   }
   if (!enabled) {
@@ -984,8 +984,8 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
     fd_ = -1;
     return false;
   }
-  width_ = static_cast<int>(fmt.fmt.pix.width);
-  height_ = static_cast<int>(fmt.fmt.pix.height);
+  const int out_w = static_cast<int>(fmt.fmt.pix.width);
+  const int out_h = static_cast<int>(fmt.fmt.pix.height);
   bytesperline_ = static_cast<int>(fmt.fmt.pix.bytesperline);
   frame_rate_ = stream_fps;
   v4l2_streamparm parm = {};
@@ -1047,6 +1047,8 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   }
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    width_ = out_w;
+    height_ = out_h;
     FillBlackLocked();
   }
   frame_count_.store(0);
@@ -1266,6 +1268,14 @@ gboolean CameraGraph::CopyPixels(const uint8_t** buffer,
                                  GError** error) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (front_.empty()) {
+    if (error != nullptr) {
+      g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
+    }
+    return FALSE;
+  }
+  const size_t expected =
+      static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4;
+  if (front_.size() != expected) {
     if (error != nullptr) {
       g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
     }

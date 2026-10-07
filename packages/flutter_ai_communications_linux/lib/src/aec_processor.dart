@@ -24,6 +24,7 @@ final class SpeexAec {
     required this._ctl,
     required this._echoPlayback,
     required this._echoCapture,
+    required this._echoReset,
     required this._preRun,
     required this._echoDestroy,
     required this._preDestroy,
@@ -39,6 +40,7 @@ final class SpeexAec {
   final Pointer<Int32> _ctl;
   final _SpeexEchoPlayback _echoPlayback;
   final _SpeexEchoCapture _echoCapture;
+  final _SpeexEchoReset _echoReset;
   final _SpeexPreprocessRun _preRun;
   final _SpeexEchoDestroy _echoDestroy;
   final _SpeexPreprocessDestroy _preDestroy;
@@ -100,6 +102,10 @@ final class SpeexAec {
         .lookupFunction<_SpeexEchoCaptureNative, _SpeexEchoCapture>(
           'speex_echo_capture',
         );
+    final echoReset = lib
+        .lookupFunction<_SpeexEchoResetNative, _SpeexEchoReset>(
+          'speex_echo_state_reset',
+        );
     final echoCtl = lib.lookupFunction<_SpeexEchoCtlNative, _SpeexEchoCtl>(
       'speex_echo_ctl',
     );
@@ -156,6 +162,7 @@ final class SpeexAec {
       ctl: ctl,
       echoPlayback: echoPlayback,
       echoCapture: echoCapture,
+      echoReset: echoReset,
       preRun: preRun,
       echoDestroy: echoDestroy,
       preDestroy: preDestroy,
@@ -178,6 +185,15 @@ final class SpeexAec {
       return;
     }
     _playAcc.add(Uint8List.sublistView(acc, acc.length - _maxPlayBytes));
+  }
+
+  /// Drops queued reverse PCM and resets Speex echo state (barge-in flush).
+  void flush() {
+    if (_closed) {
+      return;
+    }
+    _playAcc.clear();
+    _echoReset(_echo);
   }
 
   void _feedPlaybackFrame() {
@@ -238,6 +254,8 @@ typedef _SpeexEchoCaptureNative =
     Void Function(Pointer<Void>, Pointer<Int16>, Pointer<Int16>);
 typedef _SpeexEchoCapture =
     void Function(Pointer<Void>, Pointer<Int16>, Pointer<Int16>);
+typedef _SpeexEchoResetNative = Void Function(Pointer<Void>);
+typedef _SpeexEchoReset = void Function(Pointer<Void>);
 typedef _SpeexEchoCtlNative =
     Int32 Function(Pointer<Void>, Int32, Pointer<Void>);
 typedef _SpeexEchoCtl = int Function(Pointer<Void>, int, Pointer<Void>);
