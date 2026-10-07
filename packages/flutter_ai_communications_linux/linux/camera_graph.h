@@ -32,13 +32,15 @@ class CameraGraph {
   std::string RequestPermission();
   void EnsureTexture();
   uint64_t LifecycleEpoch() const;
+  uint64_t MuteRevision() const;
   FlValue* Start(const std::string& camera_id,
                  int width,
                  int height,
                  int frame_rate,
                  bool enabled,
                  bool muted,
-                 uint64_t epoch);
+                 uint64_t epoch,
+                 uint64_t mute_revision);
   void Stop();
   void Select(const std::string& camera_id);
   void SetEnabled(bool enabled);
@@ -72,6 +74,8 @@ class CameraGraph {
   int64_t texture_id_ = -1;
   std::recursive_mutex lifecycle_;
   std::atomic<uint64_t> lifecycle_epoch_{0};
+  std::mutex mute_mu_;
+  std::atomic<uint64_t> mute_revision_{0};
   std::shared_ptr<std::atomic<bool>> alive_ =
       std::make_shared<std::atomic<bool>>(true);
   std::atomic<guint> mark_source_{0};

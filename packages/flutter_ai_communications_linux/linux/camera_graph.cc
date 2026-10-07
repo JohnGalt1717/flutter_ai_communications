@@ -553,13 +553,18 @@ uint64_t CameraGraph::LifecycleEpoch() const {
   return lifecycle_epoch_.load();
 }
 
+uint64_t CameraGraph::MuteRevision() const {
+  return mute_revision_.load();
+}
+
 FlValue* CameraGraph::Start(const std::string& camera_id,
                             int width,
                             int height,
                             int frame_rate,
                             bool enabled,
                             bool muted,
-                            uint64_t epoch) {
+                            uint64_t epoch,
+                            uint64_t mute_revision) {
   std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
   FlValue* result = fl_value_new_map();
   if (StartCancelled(epoch)) {
@@ -579,7 +584,12 @@ FlValue* CameraGraph::Start(const std::string& camera_id,
   height_ = request_height_;
   frame_rate_ = request_frame_rate_;
   enabled_.store(enabled);
-  muted_.store(muted);
+  {
+    std::lock_guard<std::mutex> mute(mute_mu_);
+    if (mute_revision_.load() == mute_revision) {
+      muted_.store(muted);
+    }
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     FillBlackLocked();
@@ -636,9 +646,16 @@ void CameraGraph::SetOnProcessorUnavailable(std::function<void()> callback) {
 
 void CameraGraph::Select(const std::string& camera_id) {
   std::lock_guard<std::recursive_mutex> lifecycle(lifecycle_);
+  bool muted;
+  uint64_t mute_revision;
+  {
+    std::lock_guard<std::mutex> mute(mute_mu_);
+    muted = muted_.load();
+    mute_revision = mute_revision_.load();
+  }
   FlValue* result =
       Start(camera_id, request_width_, request_height_, request_frame_rate_,
-            enabled_.load(), muted_.load(), LifecycleEpoch());
+            enabled_.load(), muted, LifecycleEpoch(), mute_revision);
   fl_value_unref(result);
 }
 
@@ -669,7 +686,11 @@ FlValue* CameraGraph::Stats() const {
 }
 
 void CameraGraph::SetMuted(bool muted) {
-  muted_.store(muted);
+  {
+    std::lock_guard<std::mutex> mute(mute_mu_);
+    muted_.store(muted);
+    mute_revision_.fetch_add(1);
+  }
   if (muted) {
     std::lock_guard<std::mutex> lock(mutex_);
     FillBlackLocked();
