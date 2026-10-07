@@ -17,6 +17,7 @@ final class SpeexAec {
     required this._echo,
     required this._pre,
     required this._frameSamples,
+    required this._maxPlayBytes,
     required this._rec,
     required this._play,
     required this._out,
@@ -31,6 +32,7 @@ final class SpeexAec {
   final Pointer<Void> _echo;
   final Pointer<Void> _pre;
   final int _frameSamples;
+  final int _maxPlayBytes;
   final Pointer<Int16> _rec;
   final Pointer<Int16> _play;
   final Pointer<Int16> _out;
@@ -147,6 +149,7 @@ final class SpeexAec {
       echo: echo,
       pre: pre,
       frameSamples: frameSamples,
+      maxPlayBytes: filterSamples * 2,
       rec: rec,
       play: play,
       out: out,
@@ -160,21 +163,36 @@ final class SpeexAec {
   }
 
   /// Feeds far-end PCM16 LE that was written to render.
+  ///
+  /// Chunks longer than one Native Format frame stay queued. `process`
+  /// submits one reference frame per capture call so Speex's reverse
+  /// buffer does not overflow.
   void playback(Uint8List bytes) {
     if (_closed || bytes.isEmpty) {
       return;
     }
     _playAcc.add(bytes);
     final acc = _playAcc.takeBytes();
-    var offset = 0;
-    final frameBytes = _frameSamples * 2;
-    while (offset + frameBytes <= acc.length) {
-      _copyBytes(acc, offset, _play, frameBytes);
-      _echoPlayback(_echo, _play);
-      offset += frameBytes;
+    if (acc.length <= _maxPlayBytes) {
+      _playAcc.add(acc);
+      return;
     }
-    if (offset < acc.length) {
-      _playAcc.add(Uint8List.sublistView(acc, offset));
+    _playAcc.add(Uint8List.sublistView(acc, acc.length - _maxPlayBytes));
+  }
+
+  void _feedPlaybackFrame() {
+    final frameBytes = _frameSamples * 2;
+    final acc = _playAcc.takeBytes();
+    if (acc.length < frameBytes) {
+      if (acc.isNotEmpty) {
+        _playAcc.add(acc);
+      }
+      return;
+    }
+    _copyBytes(acc, 0, _play, frameBytes);
+    _echoPlayback(_echo, _play);
+    if (acc.length > frameBytes) {
+      _playAcc.add(Uint8List.sublistView(acc, frameBytes));
     }
   }
 
@@ -184,6 +202,7 @@ final class SpeexAec {
     if (_closed || rec.length != frameBytes) {
       return rec;
     }
+    _feedPlaybackFrame();
     _copyBytes(rec, 0, _rec, frameBytes);
     _echoCapture(_echo, _rec, _out);
     _preRun(_pre, _out);

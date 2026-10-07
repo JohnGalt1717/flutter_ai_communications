@@ -20,8 +20,14 @@ const paContextFailed = 5;
 /// Context terminated.
 const paContextTerminated = 6;
 
-/// Operation done.
-const paOperationDone = 2;
+/// Operation still running (`PA_OPERATION_RUNNING`).
+const paOperationRunning = 0;
+
+/// Operation completed (`PA_OPERATION_DONE`).
+const paOperationDone = 1;
+
+/// Operation cancelled (`PA_OPERATION_CANCELLED`).
+const paOperationCancelled = 2;
 
 /// Pulse sample spec used by `pa_simple_new`.
 final class PaSampleSpec extends Struct {

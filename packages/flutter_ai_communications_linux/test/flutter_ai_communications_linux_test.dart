@@ -229,6 +229,12 @@ void main() {
     expect(linuxRouteClass(name: 'RDP Sink', bus: ''), RouteClass.speakerphone);
   });
 
+  test('Pulse operation states match PulseAudio enum', () {
+    expect(paOperationRunning, 0);
+    expect(paOperationDone, 1);
+    expect(paOperationCancelled, 2);
+  });
+
   test('Pulse named device ABI matches Pulse 16 LP64 source/sink info', () {
     expect(sizeOf<Pointer<Void>>(), 8);
     expect(sizeOf<PaSampleSpec>(), 12);

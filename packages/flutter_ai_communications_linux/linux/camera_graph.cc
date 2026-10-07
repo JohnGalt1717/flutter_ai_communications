@@ -176,7 +176,27 @@ int IntervalFps(const v4l2_fract& fract) {
   return fps < 1 ? 1 : fps;
 }
 
-std::vector<NativeMode> CollectModes(int fd) {
+int SnapStep(int value, int min_v, int max_v, int step) {
+  const int s = step < 1 ? 1 : step;
+  int snapped = min_v + ((value - min_v) / s) * s;
+  if (snapped < min_v) {
+    snapped = min_v;
+  }
+  if (snapped > max_v) {
+    snapped = max_v;
+  }
+  return snapped;
+}
+
+bool StepAligned(int value, int min_v, int max_v, int step) {
+  const int s = step < 1 ? 1 : step;
+  if (value < min_v || value > max_v) {
+    return false;
+  }
+  return (value - min_v) % s == 0;
+}
+
+std::vector<NativeMode> CollectModes(int fd, int req_w, int req_h) {
   std::vector<NativeMode> modes;
   if (fd < 0) {
     return modes;
@@ -197,13 +217,26 @@ std::vector<NativeMode> CollectModes(int fd) {
                           static_cast<int>(size.discrete.height));
       } else {
         const auto& sw = size.stepwise;
-        dims.emplace_back(static_cast<int>(sw.min_width),
-                          static_cast<int>(sw.min_height));
-        dims.emplace_back(static_cast<int>(sw.max_width),
-                          static_cast<int>(sw.max_height));
-        if (sw.min_width <= 1280 && 1280 <= sw.max_width &&
-            sw.min_height <= 720 && 720 <= sw.max_height) {
-          dims.emplace_back(1280, 720);
+        const int min_w = static_cast<int>(sw.min_width);
+        const int min_h = static_cast<int>(sw.min_height);
+        const int max_w = static_cast<int>(sw.max_width);
+        const int max_h = static_cast<int>(sw.max_height);
+        const int step_w = static_cast<int>(sw.step_width);
+        const int step_h = static_cast<int>(sw.step_height);
+        auto add_dim = [&](int w, int h) {
+          if (StepAligned(w, min_w, max_w, step_w) &&
+              StepAligned(h, min_h, max_h, step_h)) {
+            dims.emplace_back(w, h);
+          }
+        };
+        add_dim(min_w, min_h);
+        add_dim(max_w, max_h);
+        add_dim(640, 480);
+        add_dim(1280, 720);
+        add_dim(1920, 1080);
+        if (req_w > 0 && req_h > 0) {
+          add_dim(SnapStep(req_w, min_w, max_w, step_w),
+                  SnapStep(req_h, min_h, max_h, step_h));
         }
       }
       for (const auto& dim : dims) {
@@ -214,12 +247,23 @@ std::vector<NativeMode> CollectModes(int fd) {
         bool any = false;
         for (ival.index = 0; ioctl(fd, VIDIOC_ENUM_FRAMEINTERVALS, &ival) == 0;
              ival.index++) {
-          int fps = 30;
+          auto add_fps = [&](int fps) {
+            modes.push_back({dim.first, dim.second, fps, desc.pixelformat});
+            any = true;
+          };
           if (ival.type == V4L2_FRMIVAL_TYPE_DISCRETE) {
-            fps = IntervalFps(ival.discrete);
+            add_fps(IntervalFps(ival.discrete));
+          } else {
+            const int min_fps = IntervalFps(ival.stepwise.max);
+            const int max_fps = IntervalFps(ival.stepwise.min);
+            add_fps(min_fps);
+            if (max_fps != min_fps) {
+              add_fps(max_fps);
+            }
+            if (30 > min_fps && 30 < max_fps) {
+              add_fps(30);
+            }
           }
-          modes.push_back({dim.first, dim.second, fps, desc.pixelformat});
-          any = true;
         }
         if (!any) {
           modes.push_back({dim.first, dim.second, 30, desc.pixelformat});
@@ -275,18 +319,50 @@ std::vector<uint8_t> JpegWithDht(const uint8_t* src, size_t len) {
   }
   bool has_dht = false;
   size_t sos = len;
-  for (size_t i = 0; i + 1 < len; i++) {
+  size_t i = 0;
+  while (i + 1 < len) {
     if (src[i] != 0xff) {
+      i++;
       continue;
     }
+    while (i + 1 < len && src[i + 1] == 0xff) {
+      i++;
+    }
+    if (i + 1 >= len) {
+      break;
+    }
     const uint8_t marker = src[i + 1];
-    if (marker == 0xc4) {
-      has_dht = true;
+    if (marker == 0x00) {
+      i += 2;
+      continue;
+    }
+    if (marker == 0xd8) {
+      i += 2;
+      continue;
+    }
+    if (marker == 0xd9) {
+      break;
+    }
+    if (marker >= 0xd0 && marker <= 0xd7) {
+      i += 2;
+      continue;
     }
     if (marker == 0xda) {
       sos = i;
       break;
     }
+    if (marker == 0xc4) {
+      has_dht = true;
+    }
+    if (i + 3 >= len) {
+      break;
+    }
+    const size_t seglen =
+        (static_cast<size_t>(src[i + 2]) << 8) | src[i + 3];
+    if (seglen < 2 || i + 2 + seglen > len) {
+      break;
+    }
+    i += 2 + seglen;
   }
   if (has_dht || sos >= len) {
     out.assign(src, src + len);
@@ -495,7 +571,7 @@ FlValue* CameraGraph::Enumerate() {
         }
         continue;
       }
-      native_modes = CollectModes(fd);
+      native_modes = CollectModes(fd, 0, 0);
       if (fd >= 0) {
         close(fd);
       }
@@ -810,7 +886,7 @@ bool CameraGraph::StartCapture(const std::string& camera_id,
   cached_name_ = reinterpret_cast<const char*>(cap.card);
   cached_facing_ = FacingFor(cached_name_,
                              reinterpret_cast<const char*>(cap.bus_info));
-  const auto available = CollectModes(fd_);
+  const auto available = CollectModes(fd_, width, height);
   cached_modes_.clear();
   {
     std::set<std::tuple<int, int, int>> seen;

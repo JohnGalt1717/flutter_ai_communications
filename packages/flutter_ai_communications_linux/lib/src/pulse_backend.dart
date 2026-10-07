@@ -610,7 +610,7 @@ final class PulseAudioBackend implements AudioBackend {
       return collected;
     }
     for (var i = 0; i < 200; i++) {
-      if (_async.operationGetState(op) == paOperationDone) {
+      if (_async.operationGetState(op) != paOperationRunning) {
         break;
       }
       _async.mainloopIterate(loop, 1, nullptr);
@@ -691,7 +691,7 @@ final class PulseAudioBackend implements AudioBackend {
       return monitors;
     }
     for (var i = 0; i < 200; i++) {
-      if (_async.operationGetState(op) == paOperationDone) {
+      if (_async.operationGetState(op) != paOperationRunning) {
         break;
       }
       _async.mainloopIterate(loop, 1, nullptr);
@@ -776,7 +776,7 @@ final class PulseAudioBackend implements AudioBackend {
       return null;
     }
     for (var i = 0; i < 200; i++) {
-      if (_async.operationGetState(op) == paOperationDone) {
+      if (_async.operationGetState(op) != paOperationRunning) {
         break;
       }
       _async.mainloopIterate(loop, 1, nullptr);
@@ -987,7 +987,7 @@ Future<void> _deviceWatchMain(SendPort send) async {
     }
     var finished = false;
     for (var i = 0; i < 2000; i++) {
-      if (async.operationGetState(op) == paOperationDone) {
+      if (async.operationGetState(op) != paOperationRunning) {
         finished = true;
         break;
       }

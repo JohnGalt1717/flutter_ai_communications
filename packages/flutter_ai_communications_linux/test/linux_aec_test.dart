@@ -37,6 +37,41 @@ void main() {
     }
     expect(outEnergy, lessThan(inEnergy * 0.4));
   }, skip: SpeexAec.available ? false : 'libspeexdsp.so.1 missing');
+
+  test('SpeexAec paces a multi-frame playback chunk across capture calls', () {
+    final aec = SpeexAec.tryStart();
+    expect(aec, isNotNull);
+    addTearDown(aec!.dispose);
+    const delayFrames = 5;
+    const chunkFrames = 8;
+    final played = <Uint8List>[];
+    final chunk = BytesBuilder();
+    for (var i = 0; i < chunkFrames; i++) {
+      final play = _sineFrame(i);
+      played.add(play);
+      chunk.add(play);
+    }
+    aec.playback(chunk.takeBytes());
+    var inEnergy = 0.0;
+    var outEnergy = 0.0;
+    for (var i = 0; i < 80; i++) {
+      if (i >= chunkFrames) {
+        final play = _sineFrame(i);
+        aec.playback(play);
+        played.add(play);
+      }
+      final rec = Uint8List(SpeexAec.frameBytes);
+      if (i >= delayFrames) {
+        _mix(rec, played[i - delayFrames], 0.5);
+      }
+      final out = aec.process(rec);
+      if (i > 40) {
+        inEnergy += _energy(rec);
+        outEnergy += _energy(out);
+      }
+    }
+    expect(outEnergy, lessThan(inEnergy * 0.4));
+  }, skip: SpeexAec.available ? false : 'libspeexdsp.so.1 missing');
 }
 
 Uint8List _sineFrame(int frame) {

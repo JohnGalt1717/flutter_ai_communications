@@ -716,6 +716,7 @@ void ScreenGraph::OnPwParamChanged(void* data, uint32_t id, const void* param) {
     std::lock_guard<std::mutex> lock(self->mutex_);
     self->send_width_ = out_w;
     self->send_height_ = out_h;
+    self->front_.assign(static_cast<size_t>(out_w) * out_h * 4, 0);
   }
   if (self->pw_->stream != nullptr) {
     const int blocks =
@@ -1098,13 +1099,25 @@ gboolean ScreenGraph::CopyPixels(const uint8_t** buffer, uint32_t* width,
     staging_ready_ = false;
   }
   if (!published_.empty() && published_width_ > 0 && published_height_ > 0) {
-    *buffer = published_.data();
-    *width = static_cast<uint32_t>(published_width_);
-    *height = static_cast<uint32_t>(published_height_);
-    return TRUE;
+    const size_t expected = static_cast<size_t>(published_width_) *
+                            static_cast<size_t>(published_height_) * 4;
+    if (published_.size() == expected) {
+      *buffer = published_.data();
+      *width = static_cast<uint32_t>(published_width_);
+      *height = static_cast<uint32_t>(published_height_);
+      return TRUE;
+    }
   }
   if (!running_.load() || front_.empty() || send_width_ < 1 ||
       send_height_ < 1) {
+    if (error != nullptr) {
+      *error = g_error_new(G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
+    }
+    return FALSE;
+  }
+  const size_t expected = static_cast<size_t>(send_width_) *
+                          static_cast<size_t>(send_height_) * 4;
+  if (front_.size() != expected) {
     if (error != nullptr) {
       *error = g_error_new(G_IO_ERROR, G_IO_ERROR_FAILED, "no frame");
     }
