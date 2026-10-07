@@ -174,6 +174,7 @@ final class _SessionPageState extends State<SessionPage> {
   WebrtcVideoSink? _webrtc;
   StreamSubscription<WebrtcSendTrack?>? _webrtcSub;
   StreamSubscription<WebrtcSendTrack?>? _webrtcScreenSub;
+  StreamSubscription<VideoSurface?>? _screenSurfaceSub;
   EchoProof? _proof;
   String? _status;
   IsolationEvent? _isolation;
@@ -308,6 +309,7 @@ final class _SessionPageState extends State<SessionPage> {
     unawaited(_cameraCatalogSub?.cancel());
     unawaited(_webrtcSub?.cancel());
     unawaited(_webrtcScreenSub?.cancel());
+    unawaited(_screenSurfaceSub?.cancel());
     _webrtc?.detach();
     unawaited(_webRtcLoopback.dispose());
     unawaited(_manager.cameraPreview?.stop());
@@ -446,6 +448,9 @@ final class _SessionPageState extends State<SessionPage> {
       final screenSub = _webrtcScreenSub;
       _webrtcScreenSub = null;
       await screenSub?.cancel();
+      final surfaceSub = _screenSurfaceSub;
+      _screenSurfaceSub = null;
+      await surfaceSub?.cancel();
       _webrtc?.detach();
       _webrtc = null;
       await _manager.cameraPreview?.stop();
@@ -496,6 +501,9 @@ final class _SessionPageState extends State<SessionPage> {
     final muted = lobby.isMuted;
     setState(() => _status = 'joining');
     await _echo?.dispose();
+    final surfaceSub = _screenSurfaceSub;
+    _screenSurfaceSub = null;
+    unawaited(surfaceSub?.cancel());
     await _manager.cameraPreview?.stop();
     await lobby.stop();
     if (!mounted) {
@@ -629,7 +637,8 @@ final class _SessionPageState extends State<SessionPage> {
         setState(() {});
       }
     });
-    session.screenSurfaces.listen((_) {
+    unawaited(_screenSurfaceSub?.cancel());
+    _screenSurfaceSub = session.screenSurfaces.listen((_) {
       if (mounted) {
         setState(() {});
       }
@@ -683,6 +692,9 @@ final class _SessionPageState extends State<SessionPage> {
     final screenSub = _webrtcScreenSub;
     _webrtcScreenSub = null;
     unawaited(screenSub?.cancel());
+    final surfaceSub = _screenSurfaceSub;
+    _screenSurfaceSub = null;
+    unawaited(surfaceSub?.cancel());
     _webrtc?.detach();
     await _webRtcLoopback.dispose();
     await _echo?.dispose();
