@@ -126,6 +126,29 @@ void main() {
       expect(merged.single.capabilities.carConnected, isTrue);
     });
 
+    test('matching Bluetooth keeps osDefault', () {
+      const named = Endpoint(
+        id: 'bluez_sink.a1_b2_c3_d4_e5_f6.a2dp_sink',
+        name: 'Headphones',
+        routeClass: RouteClass.bluetooth,
+        isCapture: false,
+        pairId: 'bt',
+        osDefault: true,
+      );
+      final merged = mergeBluetoothIdentity(
+        [named],
+        const [
+          BluetoothIdentity(
+            name: 'Sony WH-1000XM5',
+            classOfDevice: 0x418,
+            address: 'a1b2c3d4e5f6',
+          ),
+        ],
+      );
+      expect(merged.single.osDefault, isTrue);
+      expect(merged.single.identityHints, ['Sony WH-1000XM5']);
+    });
+
     test('manufacturer-data hints join the advertised alias', () {
       const named = Endpoint(
         id: 'bluez_source.a1_b2_c3_d4_e5_f6.headset_head_unit',

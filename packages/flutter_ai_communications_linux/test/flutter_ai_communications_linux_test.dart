@@ -42,9 +42,64 @@ void main() {
         routeClass: RouteClass.speakerphone,
         id: 'alsa_output.pci',
         name: 'Built-in Audio',
+        card: 12,
       ),
-      linuxBuiltInPairId,
+      'card-12',
     );
+  });
+
+  test('speakerphone Pair identity follows Pulse card', () {
+    expect(
+      linuxPairId(
+        routeClass: RouteClass.speakerphone,
+        id: 'alsa_output.pci-0000_0b_00.3.iec958-stereo',
+        name: 'Starship/Matisse HD Audio Controller Digital Stereo (IEC958)',
+        card: 12,
+      ),
+      'card-12',
+    );
+    expect(
+      linuxPairId(
+        routeClass: RouteClass.speakerphone,
+        id: 'alsa_output.pci-0000_0a_00.1.hdmi-stereo',
+        name: 'TU104 HD Audio Controller Digital Stereo',
+        card: 13,
+      ),
+      'card-13',
+    );
+  });
+
+  test('HDMI GPU render is not paired with motherboard analog capture', () {
+    final hdmi = linuxEndpointFromPulse(
+      id: 'alsa_output.pci-0000_0a_00.1.hdmi-stereo',
+      name: 'TU104 HD Audio Controller Digital Stereo',
+      isCapture: false,
+      bus: 'pci',
+      card: 13,
+    );
+    final analogIn = linuxEndpointFromPulse(
+      id: 'alsa_input.pci-0000_0b_00.3.analog-stereo',
+      name: 'Starship/Matisse HD Audio Controller Analog Stereo',
+      isCapture: true,
+      bus: 'pci',
+      card: 12,
+    );
+    final analogOut = linuxEndpointFromPulse(
+      id: 'alsa_output.pci-0000_0b_00.3.analog-stereo',
+      name: 'Starship/Matisse HD Audio Controller Analog Stereo',
+      isCapture: false,
+      bus: 'pci',
+      card: 12,
+    );
+    expect(hdmi.routeClass, RouteClass.speakerphone);
+    expect(analogIn.routeClass, RouteClass.speakerphone);
+    expect(hdmi.pairId, 'card-13');
+    expect(analogIn.pairId, 'card-12');
+    expect(hdmi.pairId, isNot(analogIn.pairId));
+    final groups = EndpointCatalogGroups.of([hdmi, analogIn, analogOut]);
+    expect(groups.completePairs.map((pair) => pair.id), ['card-12']);
+    expect(groups.unpairedRenders.map((endpoint) => endpoint.id), [hdmi.id]);
+    expect(groups.unpairedCaptures, isEmpty);
   });
 
   test('missing card uses endpoint id', () {
@@ -271,6 +326,25 @@ void main() {
     expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
     expect(tesla.capabilities.carConnected, isTrue);
     expect(tesla.pairId, 'card-12');
+    expect(tesla.osDefault, isFalse);
+  });
+
+  test('linuxEndpointFromPulse marks Pulse OS default', () {
+    final sink = linuxEndpointFromPulse(
+      id: 'alsa_output.usb-Plantronics.mono-fallback',
+      name: 'Plantronics Savi 8200 Office Series Mono',
+      isCapture: false,
+      bus: 'usb',
+      osDefault: true,
+    );
+    expect(sink.osDefault, isTrue);
+    final other = linuxEndpointFromPulse(
+      id: 'alsa_output.pci-hdmi',
+      name: 'HDMI',
+      isCapture: false,
+      bus: 'pci',
+    );
+    expect(other.osDefault, isFalse);
   });
 
   test(
@@ -312,6 +386,9 @@ void main() {
     final tesla = catalog.firstWhere((endpoint) => endpoint.id == 'bt-in');
     expect(tesla.identityHints, ['Tesla Model Y', 'Tesla']);
     expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+    expect(tesla.osDefault, isTrue);
+    final teslaOut = catalog.firstWhere((endpoint) => endpoint.id == 'bt-out');
+    expect(teslaOut.osDefault, isTrue);
   });
 
   test('car Class of Device is a car form factor', () {
@@ -634,6 +711,7 @@ final class _BluetoothBackend with DeviceWatchSupport implements AudioBackend {
       routeClass: RouteClass.bluetooth,
       isCapture: true,
       pairId: 'bt',
+      osDefault: true,
     ),
     const Endpoint(
       id: 'bt-out',
@@ -641,6 +719,7 @@ final class _BluetoothBackend with DeviceWatchSupport implements AudioBackend {
       routeClass: RouteClass.bluetooth,
       isCapture: false,
       pairId: 'bt',
+      osDefault: true,
     ),
   ];
 

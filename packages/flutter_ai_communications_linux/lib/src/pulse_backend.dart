@@ -514,8 +514,14 @@ final class PulseAudioBackend implements AudioBackend {
       return items;
     }
 
-    items.addAll(_collect(loop, context, sources: true));
-    items.addAll(_collect(loop, context, sources: false));
+    final defaultSource = _namedDevice(loop, context, sources: true);
+    final defaultSink = _namedDevice(loop, context, sources: false);
+    items.addAll(
+      _collect(loop, context, sources: true, defaultId: defaultSource),
+    );
+    items.addAll(
+      _collect(loop, context, sources: false, defaultId: defaultSink),
+    );
 
     _async.contextDisconnect(context);
     _async.contextUnref(context);
@@ -541,6 +547,7 @@ final class PulseAudioBackend implements AudioBackend {
     Pointer<PaMainloop> loop,
     Pointer<PaContext> context, {
     required bool sources,
+    String? defaultId,
   }) {
     final collected = <Endpoint>[];
     late final NativeCallable<
@@ -600,6 +607,7 @@ final class PulseAudioBackend implements AudioBackend {
               bus: bus,
               formFactor: formFactor,
               card: card,
+              osDefault: defaultId != null && id == defaultId,
             ),
           );
         });
@@ -703,6 +711,74 @@ final class PulseAudioBackend implements AudioBackend {
     _async.contextUnref(context);
     _async.mainloopFree(loop);
     return monitors;
+  }
+
+  String? _namedDevice(
+    Pointer<PaMainloop> loop,
+    Pointer<PaContext> context, {
+    required bool sources,
+  }) {
+    String? id;
+    late final NativeCallable<
+      Void Function(
+        Pointer<PaContext>,
+        Pointer<PaNamedDevice>,
+        Int32,
+        Pointer<Void>,
+      )
+    >
+    callable;
+    callable =
+        NativeCallable<
+          Void Function(
+            Pointer<PaContext>,
+            Pointer<PaNamedDevice>,
+            Int32,
+            Pointer<Void>,
+          )
+        >.isolateLocal((
+          Pointer<PaContext> _,
+          Pointer<PaNamedDevice> info,
+          int eol,
+          Pointer<Void> userdata,
+        ) {
+          if (eol != 0 || info == nullptr || id != null) {
+            return;
+          }
+          final name = pulseString(info.ref.name) ?? '';
+          if (name.isNotEmpty) {
+            id = name;
+          }
+        });
+    final query = (sources ? '@DEFAULT_SOURCE@' : '@DEFAULT_SINK@')
+        .toNativeUtf8();
+    final op = sources
+        ? _async.getSourceInfoByName(
+            context,
+            query.cast(),
+            callable.nativeFunction,
+            nullptr,
+          )
+        : _async.getSinkInfoByName(
+            context,
+            query.cast(),
+            callable.nativeFunction,
+            nullptr,
+          );
+    malloc.free(query);
+    if (op == nullptr) {
+      callable.close();
+      return null;
+    }
+    for (var i = 0; i < 200; i++) {
+      if (_async.operationGetState(op) != paOperationRunning) {
+        break;
+      }
+      _async.mainloopIterate(loop, 1, nullptr);
+    }
+    _async.operationUnref(op);
+    callable.close();
+    return id;
   }
 
   String? _defaultSinkName() {
