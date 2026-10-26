@@ -386,6 +386,9 @@ void main() {
     final tesla = catalog.firstWhere((endpoint) => endpoint.id == 'bt-in');
     expect(tesla.identityHints, ['Tesla Model Y', 'Tesla']);
     expect(tesla.capabilities.formFactor, EndpointFormFactor.car);
+    expect(tesla.osDefault, isTrue);
+    final teslaOut = catalog.firstWhere((endpoint) => endpoint.id == 'bt-out');
+    expect(teslaOut.osDefault, isTrue);
   });
 
   test('car Class of Device is a car form factor', () {
@@ -708,6 +711,7 @@ final class _BluetoothBackend with DeviceWatchSupport implements AudioBackend {
       routeClass: RouteClass.bluetooth,
       isCapture: true,
       pairId: 'bt',
+      osDefault: true,
     ),
     const Endpoint(
       id: 'bt-out',
@@ -715,6 +719,7 @@ final class _BluetoothBackend with DeviceWatchSupport implements AudioBackend {
       routeClass: RouteClass.bluetooth,
       isCapture: false,
       pairId: 'bt',
+      osDefault: true,
     ),
   ];
 

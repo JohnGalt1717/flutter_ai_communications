@@ -83,6 +83,7 @@ Endpoint? _mergeOne(Endpoint endpoint, List<BluetoothIdentity> devices) {
     routeClass: endpoint.routeClass,
     isCapture: endpoint.isCapture,
     pairId: endpoint.pairId,
+    osDefault: endpoint.osDefault,
     identityHints: hints,
     capabilities: EndpointCapabilities(
       aec: endpoint.capabilities.aec,
