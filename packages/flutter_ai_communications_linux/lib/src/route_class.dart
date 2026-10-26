@@ -47,17 +47,21 @@ RouteClass linuxRouteClass({
 const linuxBuiltInPairId = 'built-in';
 
 /// Pair identity shared by a capture/render Endpoint.
+///
+/// Pulse card index wins so PCI HDMI and analog motherboard devices stay
+/// distinct. Speakerphone without a card still uses [linuxBuiltInPairId].
+/// [name] is display-only.
 String linuxPairId({
   required RouteClass routeClass,
   required String id,
   required String name,
   int card = 0xffffffff,
 }) {
-  if (routeClass == RouteClass.speakerphone) {
-    return linuxBuiltInPairId;
-  }
   if (card != 0xffffffff) {
     return 'card-$card';
+  }
+  if (routeClass == RouteClass.speakerphone) {
+    return linuxBuiltInPairId;
   }
   return id;
 }
@@ -83,6 +87,7 @@ Endpoint linuxEndpointFromPulse({
   String bus = '',
   String formFactor = '',
   int card = 0xffffffff,
+  bool osDefault = false,
 }) {
   final route = linuxRouteClass(name: name, bus: bus, formFactor: formFactor);
   final form = linuxEndpointFormFactor(formFactor);
@@ -92,6 +97,7 @@ Endpoint linuxEndpointFromPulse({
     routeClass: route,
     isCapture: isCapture,
     pairId: linuxPairId(routeClass: route, id: id, name: name, card: card),
+    osDefault: osDefault,
     capabilities: EndpointCapabilities(
       formFactor: form,
       carConnected: route == RouteClass.car || form == EndpointFormFactor.car,
