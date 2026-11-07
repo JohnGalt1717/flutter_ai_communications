@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import com.cloudwebrtc.webrtc.video.LocalVideoTrack
 import com.johngalt.flutter_ai_communications.AndroidVideoProcessor
+import com.johngalt.flutter_ai_communications.YuvArgb
 import org.webrtc.JavaI420Buffer
 import org.webrtc.VideoFrame
 import org.webrtc.YuvHelper
@@ -18,15 +19,23 @@ import java.nio.ByteBuffer
  *
  * Fails closed: while blur/replace is requested and the processor is not
  * ready, errors, or hands back the input unchanged, the frame is black.
- * [onUnavailable] fires when the processor gives up after it was ready.
+ * Before the first mask a frame is fully blurred (or fully the still).
+ * [onUnavailable] fires when segmentation gives up after it was ready, never
+ * after [close].
  */
 internal class TrackProcessor(
     private val onUnavailable: () -> Unit,
 ) : LocalVideoTrack.ExternalVideoFrameProcessing {
     private val processor = AndroidVideoProcessor()
+    private val shape = FrameShape()
 
     @Volatile
     private var ready = false
+
+    /** Frames this processor has seen; [BypassWatch] reads it. */
+    @Volatile
+    var frames = 0L
+        private set
 
     private var argb = IntArray(0)
     private var rgba: ByteBuffer? = null
@@ -39,8 +48,10 @@ internal class TrackProcessor(
     init {
         // Segmentation gave up mid-call: frames go black, then tell the host.
         processor.onUnavailable = {
-            ready = false
-            onUnavailable()
+            if (ready) {
+                ready = false
+                onUnavailable()
+            }
         }
     }
 
@@ -51,6 +62,7 @@ internal class TrackProcessor(
     }
 
     override fun onFrame(frame: VideoFrame): VideoFrame {
+        frames += 1
         val out = (if (ready) processed(frame) else null) ?: blackFrame(frame)
         synchronized(this) {
             previous?.release()
@@ -62,6 +74,7 @@ internal class TrackProcessor(
     /** The sink may still hold the last frame; release after it is done. */
     fun close() {
         ready = false
+        processor.close()
         val last: VideoFrame?
         val cached: JavaI420Buffer?
         synchronized(this) {
@@ -85,9 +98,14 @@ internal class TrackProcessor(
                 } finally {
                     i420.release()
                 }
+            // Camera switch, rotation, or resolution change: the old mask no
+            // longer lines up with the person.
+            if (shape.changed(upright.width, upright.height, frame.rotation)) {
+                processor.invalidateMask()
+            }
             try {
                 val result = processor.process(upright)
-                if (result === upright || !ready) null else VideoFrame(toI420(result), 0, frame.timestampNs)
+                sendable(upright, result, ready)?.let { VideoFrame(toI420(it), 0, frame.timestampNs) }
             } finally {
                 upright.recycle()
             }
@@ -104,13 +122,16 @@ internal class TrackProcessor(
         if (argb.size != width * height) {
             argb = IntArray(width * height)
         }
-        I420Argb.convert(
+        YuvArgb.convert(
             buffer.dataY,
             buffer.strideY,
+            1,
             buffer.dataU,
             buffer.strideU,
+            1,
             buffer.dataV,
             buffer.strideV,
+            1,
             width,
             height,
             argb,
@@ -138,18 +159,23 @@ internal class TrackProcessor(
         bitmap.copyPixelsToBuffer(scratch)
         scratch.rewind()
         val out = JavaI420Buffer.allocate(width, height)
-        YuvHelper.ABGRToI420(
-            scratch,
-            width * 4,
-            out.dataY,
-            out.strideY,
-            out.dataU,
-            out.strideU,
-            out.dataV,
-            out.strideV,
-            width,
-            height,
-        )
+        try {
+            YuvHelper.ABGRToI420(
+                scratch,
+                width * 4,
+                out.dataY,
+                out.strideY,
+                out.dataU,
+                out.strideU,
+                out.dataV,
+                out.strideV,
+                width,
+                height,
+            )
+        } catch (error: Throwable) {
+            out.release()
+            throw error
+        }
         return out
     }
 
@@ -182,36 +208,5 @@ internal class TrackProcessor(
 
     private companion object {
         const val RELEASE_DELAY_MS = 1000L
-    }
-}
-
-/** BT.601 I420 to ARGB, the same integer math FAC's camera graph uses. */
-internal object I420Argb {
-    fun convert(
-        y: ByteBuffer,
-        strideY: Int,
-        u: ByteBuffer,
-        strideU: Int,
-        v: ByteBuffer,
-        strideV: Int,
-        width: Int,
-        height: Int,
-        out: IntArray,
-    ) {
-        for (row in 0 until height) {
-            val yRow = row * strideY
-            val uRow = (row / 2) * strideU
-            val vRow = (row / 2) * strideV
-            val outRow = row * width
-            for (col in 0 until width) {
-                val luma = y.get(yRow + col).toInt() and 0xFF
-                val d = (u.get(uRow + col / 2).toInt() and 0xFF) - 128
-                val e = (v.get(vRow + col / 2).toInt() and 0xFF) - 128
-                val r = (luma + ((351 * e) shr 8)).coerceIn(0, 255)
-                val g = (luma - ((179 * e + 86 * d) shr 8)).coerceIn(0, 255)
-                val b = (luma + ((443 * d) shr 8)).coerceIn(0, 255)
-                out[outRow + col] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-            }
-        }
     }
 }

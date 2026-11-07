@@ -20,6 +20,9 @@ android {
     sourceSets.named("main") {
         java.directories.add("src/main/kotlin")
     }
+    sourceSets.named("test") {
+        java.directories.add("src/test/kotlin")
+    }
 
     defaultConfig {
         minSdk = 24
@@ -52,11 +55,15 @@ val flutterJar = File(flutterSdk, "bin/cache/artifacts/engine/android-x64/flutte
 // The Flutter Gradle plugin adds :flutter_webrtc and
 // :flutter_ai_communications_android from pubspec. flutter_webrtc keeps the
 // WebRTC SDK as its own implementation dependency, so compile against the
-// same version here; the app ships flutter_webrtc's copy.
+// same version here; the app ships flutter_webrtc's copy. This pin matches
+// flutter_webrtc 1.6.x (pubspec: >=1.6.2 <1.7.0); bump both together.
+// JVM tests run through an app build, e.g. from example/android:
+// ./gradlew :flutter_ai_communications_webrtc:testDebugUnitTest
 dependencies {
     if (flutterJar.exists()) {
         compileOnly(files(flutterJar))
     }
     compileOnly("io.github.webrtc-sdk:android:150.7871.01")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.20")
 }
