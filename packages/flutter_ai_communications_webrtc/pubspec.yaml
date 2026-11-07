@@ -19,7 +19,11 @@ dependencies:
   flutter_ai_communications_android: ^0.0.1
   flutter_ai_communications_ios: ^0.0.1
   flutter_ai_communications_macos: ^0.0.1
-  flutter_webrtc: ^1.6.2
+  # Native code reaches flutter_webrtc internals (the local track registry,
+  # LocalVideoTrack processing hooks) and android/build.gradle.kts compiles
+  # against its pinned webrtc-sdk (io.github.webrtc-sdk:android 150.7871.01).
+  # Widen this range only with that pin and a device check.
+  flutter_webrtc: '>=1.6.2 <1.7.0'
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 import 'package:flutter_ai_communications_webrtc/flutter_ai_communications_webrtc.dart';
@@ -37,6 +39,59 @@ void main() {
       'trackId': 'track-1',
       'processor': {'kind': 'blur', 'intensity': 100},
     });
+  });
+
+  test('a replace asset reaches native as bytes', () async {
+    messenger.setMockMessageHandler('flutter/assets', (message) async {
+      final key = utf8.decode(message!.buffer.asUint8List());
+      return key == 'assets/office.png'
+          ? ByteData.sublistView(Uint8List.fromList([1, 2, 3]))
+          : null;
+    });
+    addTearDown(() => messenger.setMockMessageHandler('flutter/assets', null));
+    Object? sent;
+    answer((call) {
+      sent = (call.arguments as Map)['processor'];
+      return 'ready';
+    });
+
+    final result = await processWebrtcVideoTrack(
+      't',
+      const ReplaceVideoProcessor(asset: 'assets/office.png'),
+    );
+
+    expect(result, WebrtcTrackProcessing.applied);
+    expect(sent, {
+      'kind': 'replace',
+      'bytes': Uint8List.fromList([1, 2, 3]),
+      'asset': 'assets/office.png',
+    });
+  });
+
+  test('a missing asset or invalid blur fails closed before native', () async {
+    messenger.setMockMessageHandler('flutter/assets', (_) async => null);
+    addTearDown(() => messenger.setMockMessageHandler('flutter/assets', null));
+    var calls = 0;
+    answer((_) {
+      calls++;
+      return 'ready';
+    });
+
+    expect(
+      await processWebrtcVideoTrack(
+        't',
+        const ReplaceVideoProcessor(asset: 'assets/missing.png'),
+      ),
+      WebrtcTrackProcessing.unavailable,
+    );
+    expect(
+      await processWebrtcVideoTrack(
+        't',
+        const BlurVideoProcessor(intensity: 101),
+      ),
+      WebrtcTrackProcessing.unavailable,
+    );
+    expect(calls, 0);
   });
 
   test('native unavailable or invalid fails closed', () async {

@@ -35,7 +35,12 @@ public final class FlutterAiCommunicationsWebrtcPlugin: NSObject, FlutterPlugin 
       return
     }
     let args = call.arguments as? [String: Any] ?? [:]
-    result(process(args["trackId"] as? String, args["processor"] as? [String: Any] ?? [:]))
+    var processor = args["processor"] as? [String: Any] ?? [:]
+    // PersonBackgroundProcessor reads the still as Data.
+    if let typed = processor["bytes"] as? FlutterStandardTypedData {
+      processor["bytes"] = typed.data
+    }
+    result(process(args["trackId"] as? String, processor))
   }
 
   private func process(_ trackId: String?, _ args: [String: Any]) -> String {
