@@ -25,8 +25,10 @@ public final class PersonBackgroundProcessor {
   private var kind: Kind = .none
   private var still: CIImage?
   private var lastMask: CIImage?
-  private var ring: [CVPixelBuffer] = []
-  private var ringIndex = 0
+  // Output buffers. The pool never hands out one the encoder or the Video
+  // surface still holds, so a frame is not overwritten mid-encode.
+  private var pool: CVPixelBufferPool?
+  private var poolSize = (0, 0)
   private var lastOutput: CVPixelBuffer?
 
   public init() {}
@@ -162,32 +164,27 @@ public final class PersonBackgroundProcessor {
   private func nextDst(like buffer: CVPixelBuffer) -> CVPixelBuffer? {
     let width = CVPixelBufferGetWidth(buffer)
     let height = CVPixelBufferGetHeight(buffer)
-    if ring.count == 2 {
-      let first = ring[0]
-      if CVPixelBufferGetWidth(first) != width || CVPixelBufferGetHeight(first) != height {
-        ring.removeAll()
-      }
-    }
-    while ring.count < 2 {
-      var dst: CVPixelBuffer?
-      CVPixelBufferCreate(
+    if pool == nil || poolSize != (width, height) {
+      pool = nil
+      poolSize = (width, height)
+      CVPixelBufferPoolCreate(
         kCFAllocatorDefault,
-        width,
-        height,
-        kCVPixelFormatType_32BGRA,
+        nil,
         [
+          kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+          kCVPixelBufferWidthKey: width,
+          kCVPixelBufferHeightKey: height,
           kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
           kCVPixelBufferMetalCompatibilityKey: true,
         ] as CFDictionary,
-        &dst
+        &pool
       )
-      guard let dst else {
-        return nil
-      }
-      ring.append(dst)
     }
-    let dst = ring[ringIndex % ring.count]
-    ringIndex += 1
+    guard let pool else {
+      return nil
+    }
+    var dst: CVPixelBuffer?
+    CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &dst)
     return dst
   }
 
