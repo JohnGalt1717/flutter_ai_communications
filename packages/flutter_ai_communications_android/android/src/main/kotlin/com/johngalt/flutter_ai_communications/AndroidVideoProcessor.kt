@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * requested asynchronously; [process] composites with the last successful mask
  * so the camera thread never blocks on [Tasks.await].
  */
-internal class AndroidVideoProcessor {
+class AndroidVideoProcessor {
     sealed class Mode {
         data object None : Mode()
 
@@ -80,6 +80,18 @@ internal class AndroidVideoProcessor {
         generation.incrementAndGet()
         consecutiveFailures = 0
         lastMask = null
+    }
+
+    /**
+     * Releases the ML Kit segmenter. In-flight callbacks are ignored and no
+     * [onUnavailable] fires after this; the processor is not used again.
+     */
+    fun close() {
+        onUnavailable = null
+        invalidateMask()
+        mode = Mode.None
+        still = null
+        segmenter?.close()
     }
 
     fun apply(args: Map<String, Any?>): String {

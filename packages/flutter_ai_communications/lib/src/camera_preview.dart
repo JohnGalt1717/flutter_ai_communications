@@ -36,7 +36,7 @@ final class CameraPreview {
     if (_stopped) {
       return const ProcessorInvalid();
     }
-    final resolved = await _readyProcessor(processor);
+    final resolved = await resolveVideoProcessor(processor);
     if (resolved == null) {
       return const ProcessorInvalid();
     }
@@ -82,7 +82,10 @@ final class CameraPreview {
   }
 }
 
-Future<VideoProcessor?> _readyProcessor(VideoProcessor processor) async {
+/// [processor] as native code takes it: a bundle asset in
+/// [ReplaceVideoProcessor] becomes its bytes. Null when it is invalid or the
+/// asset cannot load. File paths pass through.
+Future<VideoProcessor?> resolveVideoProcessor(VideoProcessor processor) async {
   if (processor is BlurVideoProcessor && !processor.isValid) {
     return null;
   }

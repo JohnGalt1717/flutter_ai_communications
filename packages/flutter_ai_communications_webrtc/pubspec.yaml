@@ -1,5 +1,5 @@
 name: flutter_ai_communications_webrtc
-description: WebRTC Transport plugin for flutter_ai_communications. Yields Send tracks; the host owns PeerConnection and signaling.
+description: WebRTC Transport plugin for flutter_ai_communications. Yields Send tracks and runs Video processors on host flutter_webrtc tracks; the host owns PeerConnection and signaling.
 version: 0.0.1
 homepage: https://github.com/JohnGalt1717/flutter_ai_communications
 repository: https://github.com/JohnGalt1717/flutter_ai_communications
@@ -15,7 +15,27 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_ai_communications: ^0.0.1
+  # Native bridge only: Video processors and the flutter_webrtc track registry.
+  flutter_ai_communications_android: ^0.0.1
+  flutter_ai_communications_ios: ^0.0.1
+  flutter_ai_communications_macos: ^0.0.1
+  # Native code reaches flutter_webrtc internals (the local track registry,
+  # LocalVideoTrack processing hooks) and android/build.gradle.kts compiles
+  # against its pinned webrtc-sdk (io.github.webrtc-sdk:android 150.7871.01).
+  # Widen this range only with that pin and a device check.
+  flutter_webrtc: '>=1.6.2 <1.7.0'
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.johngalt.flutter_ai_communications_webrtc
+        pluginClass: FlutterAiCommunicationsWebrtcPlugin
+      ios:
+        pluginClass: FlutterAiCommunicationsWebrtcPlugin
+      macos:
+        pluginClass: FlutterAiCommunicationsWebrtcPlugin

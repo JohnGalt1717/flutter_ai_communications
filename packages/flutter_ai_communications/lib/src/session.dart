@@ -470,7 +470,7 @@ final class Session {
     if (_stopped) {
       return const ProcessorInvalid();
     }
-    final resolved = await _readyProcessor(processor);
+    final resolved = await resolveVideoProcessor(processor);
     if (resolved == null) {
       return const ProcessorInvalid();
     }

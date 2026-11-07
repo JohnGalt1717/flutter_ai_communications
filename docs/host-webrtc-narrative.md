@@ -62,6 +62,32 @@ on `attachProductionVideoPathNative`. Until that mapper supplies a track,
 the inbound tile falls back to the Send track Video surface (processed
 Production frames) so the stage is not empty.
 
+## Blur on the host camera track
+
+A host that opens its own flutter_webrtc camera (`getUserMedia`) hands that
+track to FAC's Video processor in place (ADR-0032):
+
+```text
+track.enabled = false   // a new track stays off until the processor is applied
+status = await processWebrtcVideoTrack(track.id, BlurVideoProcessor(intensity: 50))
+track.enabled = status == WebrtcTrackProcessing.applied   // fail closed
+await sender.replaceTrack(track)   // or addTrack, after the processor
+await processWebrtcVideoTrack(track.id, NoneVideoProcessor())   // blur off
+```
+
+Same track and sender: no replaceTrack, no renegotiation for the toggle.
+Call it again for each new camera track (device switch, Camera-off then on),
+before that track reaches a sender. Android, iOS, and macOS have the native
+bridge; web, Windows, and Linux return `unavailable` for blur and replace.
+Call it again after every camera switch, even one that keeps the track, so
+the old person mask is dropped. On Android, `applied` means the track's
+first frames went through the processor; no frames within 2 s is
+`unavailable`. Also listen to `webrtcTrackProcessingUnavailable`: the
+processor gave up (black frames), or it turned out not to be on the camera
+path. Then the plugin disabled the track natively while Dart `enabled` still
+reads true. Never just re-enable that track: dispose it, or process it
+again and enable it only on `applied`.
+
 ## Detach
 
 ```text

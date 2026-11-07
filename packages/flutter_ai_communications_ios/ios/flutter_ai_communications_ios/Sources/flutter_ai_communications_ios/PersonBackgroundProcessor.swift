@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 /// Background blur and still replace on the Production video path.
-final class PersonBackgroundProcessor {
+public final class PersonBackgroundProcessor {
   enum Kind {
     case none
     case blur(Int)
@@ -21,7 +21,9 @@ final class PersonBackgroundProcessor {
   private var kind: Kind = .none
   private var still: CIImage?
 
-  func apply(_ args: [String: Any]) -> String {
+  public init() {}
+
+  public func apply(_ args: [String: Any]) -> String {
     let kindName = args["kind"] as? String ?? "none"
     switch kindName {
     case "none":
@@ -64,7 +66,7 @@ final class PersonBackgroundProcessor {
     return fallback
   }
 
-  func process(_ buffer: CVPixelBuffer) -> CVPixelBuffer {
+  public func process(_ buffer: CVPixelBuffer) -> CVPixelBuffer {
     switch kind {
     case .none:
       return buffer
