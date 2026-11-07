@@ -18,8 +18,11 @@ import java.nio.ByteBuffer
  *
  * Fails closed: while blur/replace is requested and the processor is not
  * ready, errors, or hands back the input unchanged, the frame is black.
+ * [onUnavailable] fires when the processor gives up after it was ready.
  */
-internal class TrackProcessor : LocalVideoTrack.ExternalVideoFrameProcessing {
+internal class TrackProcessor(
+    private val onUnavailable: () -> Unit,
+) : LocalVideoTrack.ExternalVideoFrameProcessing {
     private val processor = AndroidVideoProcessor()
 
     @Volatile
@@ -34,7 +37,11 @@ internal class TrackProcessor : LocalVideoTrack.ExternalVideoFrameProcessing {
     private var previous: VideoFrame? = null
 
     init {
-        processor.onUnavailable = { ready = false }
+        // Segmentation gave up mid-call: frames go black, then tell the host.
+        processor.onUnavailable = {
+            ready = false
+            onUnavailable()
+        }
     }
 
     fun apply(args: Map<String, Any?>): String {

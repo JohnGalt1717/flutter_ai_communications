@@ -1,5 +1,7 @@
 package com.johngalt.flutter_ai_communications_webrtc
 
+import android.os.Handler
+import android.os.Looper
 import com.cloudwebrtc.webrtc.FlutterWebRTCPlugin
 import com.cloudwebrtc.webrtc.video.LocalVideoTrack
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -66,9 +68,16 @@ class FlutterAiCommunicationsWebrtcPlugin :
             }
             val processor =
                 processors.getOrPut(trackId) {
-                    TrackProcessor().also { track.addProcessor(it) }
+                    TrackProcessor { unavailable(trackId) }.also { track.addProcessor(it) }
                 }
             return processor.apply(args)
+        }
+    }
+
+    /** Dart `webrtcTrackProcessingUnavailable`: this track now sends black. */
+    private fun unavailable(trackId: String) {
+        Handler(Looper.getMainLooper()).post {
+            channel?.invokeMethod("unavailable", mapOf("trackId" to trackId))
         }
     }
 

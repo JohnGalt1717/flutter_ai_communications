@@ -78,4 +78,23 @@ void main() {
       WebrtcTrackProcessing.applied,
     );
   });
+
+  test('native unavailable reaches webrtcTrackProcessingUnavailable', () async {
+    final ids = <String>[];
+    final sub = webrtcTrackProcessingUnavailable.listen(ids.add);
+    Future<void> native(Object? arguments) => messenger.handlePlatformMessage(
+      webrtcTrackProcessingChannel.name,
+      webrtcTrackProcessingChannel.codec.encodeMethodCall(
+        MethodCall('unavailable', arguments),
+      ),
+      (_) {},
+    );
+
+    await native({'trackId': 'track-1'});
+    await native({'trackId': 7});
+    await native(null);
+    await sub.cancel();
+
+    expect(ids, ['track-1']);
+  });
 }

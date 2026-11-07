@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
@@ -20,6 +22,24 @@ enum WebrtcTrackProcessing {
 const webrtcTrackProcessingChannel = MethodChannel(
   'flutter_ai_communications_webrtc',
 );
+
+final StreamController<String> _unavailable = StreamController.broadcast(
+  onListen: () =>
+      webrtcTrackProcessingChannel.setMethodCallHandler((call) async {
+        if (call.method == 'unavailable') {
+          final trackId = (call.arguments as Map?)?['trackId'];
+          if (trackId is String) {
+            _unavailable.add(trackId);
+          }
+        }
+      }),
+);
+
+/// Track ids whose processor gave up after [processWebrtcVideoTrack] returned
+/// [WebrtcTrackProcessing.applied] (Android: segmentation failed 5 times in a
+/// row). That track now sends black frames until a processor is applied
+/// again. Broadcast; the channel handler is installed on first listen.
+Stream<String> get webrtcTrackProcessingUnavailable => _unavailable.stream;
 
 /// Runs [processor] on the host's flutter_webrtc local camera track [trackId]
 /// (`MediaStreamTrack.id`), in place. Same track, same sender: no

@@ -3,6 +3,7 @@
 ## Unreleased
 
 * `processWebrtcVideoTrack`: runs the Video processor on a host flutter_webrtc camera track in place; fails closed to black frames (#113, ADR-0032).
+* `webrtcTrackProcessingUnavailable`: track ids whose processor gave up mid-call (Android: 5 failed segmentations in a row), so the host can say video is paused.
 
 ## 0.0.1
 
