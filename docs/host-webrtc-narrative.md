@@ -79,9 +79,14 @@ Same track and sender: no replaceTrack, no renegotiation for the toggle.
 Call it again for each new camera track (device switch, Camera-off then on),
 before that track reaches a sender. Android, iOS, and macOS have the native
 bridge; web, Windows, and Linux return `unavailable` for blur and replace.
-On Android, also listen to `webrtcTrackProcessingUnavailable`: the processor
-gave up (black frames) or turned out not to be on the camera path (the
-plugin disabled the track).
+Call it again after every camera switch, even one that keeps the track, so
+the old person mask is dropped. On Android, `applied` means the track's
+first frames went through the processor; no frames within 2 s is
+`unavailable`. Also listen to `webrtcTrackProcessingUnavailable`: the
+processor gave up (black frames), or it turned out not to be on the camera
+path. Then the plugin disabled the track natively while Dart `enabled` still
+reads true. Never just re-enable that track: dispose it, or process it
+again and enable it only on `applied`.
 
 ## Detach
 

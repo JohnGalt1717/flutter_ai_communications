@@ -36,15 +36,17 @@ final StreamController<String> _unavailable = StreamController.broadcast(
       }),
 );
 
-/// Android only: track ids whose processor stopped after
-/// [processWebrtcVideoTrack] returned [WebrtcTrackProcessing.applied].
-/// Either segmentation failed 5 times in a row (the track sends black
-/// frames), or the first frames showed the processor is not on the camera
-/// path (flutter_webrtc gave the host a shared or re-wrapped track); the
-/// plugin then disables the track. Either way no raw frame is sent; apply a
-/// processor again, or treat the video as paused. iOS and macOS never emit:
-/// a frame without a mask is black or the last processed frame. Broadcast;
-/// the channel handler is installed on first listen.
+/// Android only: track ids whose processor stopped. Either segmentation
+/// failed 5 times in a row after [WebrtcTrackProcessing.applied] (the track
+/// sends black frames), or frames that started after the call already timed
+/// out showed the processor is not on the camera path (flutter_webrtc gave
+/// the host a shared or re-wrapped track). In that case the plugin detached
+/// the processor and disabled the track natively, but the Dart
+/// `MediaStreamTrack.enabled` still reads true. Never just re-enable such a
+/// track: dispose it, or call [processWebrtcVideoTrack] again and enable it
+/// only on [WebrtcTrackProcessing.applied]. iOS and macOS never emit: a
+/// frame without a mask is black or the last processed frame. Broadcast; the
+/// channel handler is installed on first listen.
 Stream<String> get webrtcTrackProcessingUnavailable => _unavailable.stream;
 
 /// Runs [processor] on the host's flutter_webrtc local camera track [trackId]
@@ -54,9 +56,13 @@ Stream<String> get webrtcTrackProcessingUnavailable => _unavailable.stream;
 ///
 /// Keep a new track `enabled = false` until this returns
 /// [WebrtcTrackProcessing.applied], before addTrack or replaceTrack, so no
-/// raw frame goes out while it is applied. On Android the answer waits for
-/// the track's first frames (up to 2 s) to prove the processor is on the
-/// camera path.
+/// raw frame goes out while it is applied. Call it again after any camera
+/// switch, even one that keeps the track: applying drops the old person
+/// mask, which otherwise lines up with the previous camera until the next
+/// mask lands. On Android, applied means the track's first frames passed
+/// through the processor; with no such frames within 2 s the answer is
+/// [WebrtcTrackProcessing.unavailable], and a later call can still return
+/// applied.
 ///
 /// Fails closed: when blur or replace cannot run this returns
 /// [WebrtcTrackProcessing.unavailable] and the host keeps the track
