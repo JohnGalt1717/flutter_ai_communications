@@ -13,4 +13,9 @@ Local self-view is `Session.videoSurface` (Texture / HtmlElementView). Do not
 import `RTCVideoView` for local preview. Native Production frames stay native
 (ADR-0013).
 
+A host that sends its own flutter_webrtc camera track calls
+`processWebrtcVideoTrack(track.id, processor)` to run FAC's blur or replace on
+that track in place (Android, iOS, macOS). When it cannot run, the track sends
+black frames and the call returns `unavailable` (ADR-0032).
+
 See `docs/host-webrtc-narrative.md`.

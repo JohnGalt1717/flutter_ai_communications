@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * requested asynchronously; [process] composites with the last successful mask
  * so the camera thread never blocks on [Tasks.await].
  */
-internal class AndroidVideoProcessor {
+class AndroidVideoProcessor {
     sealed class Mode {
         data object None : Mode()
 

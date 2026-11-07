@@ -217,7 +217,7 @@ A Session attachment that observes the screen-send Production video path. Same s
 _Avoid_: Video sink (that is camera), PIP, stitch, compositing
 
 **Video processor**:
-A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), web (MediaPipe selfie segmentation when the model loads), and Windows (WinML MediaPipe selfie segmentation). Linux, and web or Windows when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object.
+A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), web (MediaPipe selfie segmentation when the model loads), and Windows (WinML MediaPipe selfie segmentation). Linux, and web or Windows when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object. On a WebRTC call the Transport plugin can also run it on the host's flutter_webrtc camera track (Android, iOS, macOS); when it cannot run there, that track sends black frames (ADR-0032).
 _Avoid_: filter, effect, beauty
 
 **Production video path**:

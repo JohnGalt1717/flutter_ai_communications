@@ -62,6 +62,24 @@ on `attachProductionVideoPathNative`. Until that mapper supplies a track,
 the inbound tile falls back to the Send track Video surface (processed
 Production frames) so the stage is not empty.
 
+## Blur on the host camera track
+
+A host that opens its own flutter_webrtc camera (`getUserMedia`) hands that
+track to FAC's Video processor in place (ADR-0032):
+
+```text
+status = await processWebrtcVideoTrack(track.id, BlurVideoProcessor(intensity: 50))
+if (status != WebrtcTrackProcessing.applied) {
+  track.enabled = false   // fail closed: never send the raw camera
+}
+await processWebrtcVideoTrack(track.id, NoneVideoProcessor())   // blur off
+```
+
+Same track and sender: no replaceTrack, no renegotiation. Call it again for
+each new camera track (device switch, Camera-off then on). Android, iOS, and
+macOS have the native bridge; web, Windows, and Linux return `unavailable`
+for blur and replace.
+
 ## Detach
 
 ```text
