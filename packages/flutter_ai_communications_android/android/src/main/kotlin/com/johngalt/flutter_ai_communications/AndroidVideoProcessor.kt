@@ -82,6 +82,18 @@ class AndroidVideoProcessor {
         lastMask = null
     }
 
+    /**
+     * Releases the ML Kit segmenter. In-flight callbacks are ignored and no
+     * [onUnavailable] fires after this; the processor is not used again.
+     */
+    fun close() {
+        onUnavailable = null
+        invalidateMask()
+        mode = Mode.None
+        still = null
+        segmenter?.close()
+    }
+
     fun apply(args: Map<String, Any?>): String {
         invalidateMask()
         val kind = args["kind"] as? String ?: "none"

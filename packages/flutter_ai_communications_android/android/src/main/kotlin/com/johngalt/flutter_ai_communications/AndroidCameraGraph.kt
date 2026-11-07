@@ -511,35 +511,23 @@ class AndroidCameraGraph(
         val yPlane = image.planes[0]
         val uPlane = image.planes[1]
         val vPlane = image.planes[2]
-        val yBuffer = yPlane.buffer
-        val uBuffer = uPlane.buffer
-        val vBuffer = vPlane.buffer
-        val yRowStride = yPlane.rowStride
-        val yPixelStride = yPlane.pixelStride
-        val uRowStride = uPlane.rowStride
-        val uPixelStride = uPlane.pixelStride
-        val vRowStride = vPlane.rowStride
-        val vPixelStride = vPlane.pixelStride
         val count = width * height
         val pixels =
             argbScratch?.takeIf { it.size == count } ?: IntArray(count).also { argbScratch = it }
-        for (row in 0 until height) {
-            val yRow = row * yRowStride
-            val uRow = (row / 2) * uRowStride
-            val vRow = (row / 2) * vRowStride
-            val outRow = row * width
-            for (col in 0 until width) {
-                val y = yBuffer.get(yRow + col * yPixelStride).toInt() and 0xFF
-                val u = uBuffer.get(uRow + (col / 2) * uPixelStride).toInt() and 0xFF
-                val v = vBuffer.get(vRow + (col / 2) * vPixelStride).toInt() and 0xFF
-                val d = u - 128
-                val e = v - 128
-                val r = (y + ((351 * e) shr 8)).coerceIn(0, 255)
-                val g = (y - ((179 * e + 86 * d) shr 8)).coerceIn(0, 255)
-                val b = (y + ((443 * d) shr 8)).coerceIn(0, 255)
-                pixels[outRow + col] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-            }
-        }
+        YuvArgb.convert(
+            yPlane.buffer,
+            yPlane.rowStride,
+            yPlane.pixelStride,
+            uPlane.buffer,
+            uPlane.rowStride,
+            uPlane.pixelStride,
+            vPlane.buffer,
+            vPlane.rowStride,
+            vPlane.pixelStride,
+            width,
+            height,
+            pixels,
+        )
         val cached = frameBitmap
         val bitmap =
             if (cached != null && cached.width == width && cached.height == height) {
