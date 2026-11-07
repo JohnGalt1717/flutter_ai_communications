@@ -15,7 +15,8 @@ import `RTCVideoView` for local preview. Native Production frames stay native
 
 A host that sends its own flutter_webrtc camera track calls
 `processWebrtcVideoTrack(track.id, processor)` to run FAC's blur or replace on
-that track in place (Android, iOS, macOS). When it cannot run, the track sends
-black frames and the call returns `unavailable` (ADR-0032).
+that track in place (Android, iOS, macOS). Keep a new track `enabled = false`
+until the call returns `applied`, before addTrack or replaceTrack. When it
+returns `unavailable`, keep the track disabled (ADR-0032).
 
 See `docs/host-webrtc-narrative.md`.

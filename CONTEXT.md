@@ -69,7 +69,7 @@ Whatever moves media between Session edges and the network — a host-pumped PCM
 _Avoid_: websocket, hub, connection, PeerConnection (the host owns that object)
 
 **Transport plugin**:
-A companion package that binds Session edges to a wire protocol. First is WebRTC; later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session and yields Send tracks the host addTracks on a PeerConnection the host constructs. The plugin package is not the Video sink type and does not create PeerConnection types.
+A companion package that binds Session edges to a wire protocol. First is WebRTC; later WebTransport and others. It takes local audio and video from the Session, delivers inbound audio into Session playback, and yields one Video surface per inbound video stream. It does not own signaling, roster, chat, or tile layout. It provides a Video sink that attaches to the Session and yields Send tracks the host addTracks on a PeerConnection the host constructs. When the host sends its own flutter_webrtc camera track, the plugin runs the Video processor on that track in place (ADR-0032). The plugin package is not the Video sink type and does not create PeerConnection types.
 _Avoid_: Video sink (the Session attachment type), Transport (the movement of media, not the package), PeerConnection (host-owned)
 
 **Send track**:
@@ -217,7 +217,7 @@ A Session attachment that observes the screen-send Production video path. Same s
 _Avoid_: Video sink (that is camera), PIP, stitch, compositing
 
 **Video processor**:
-A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), web (MediaPipe selfie segmentation when the model loads), and Windows (WinML MediaPipe selfie segmentation). Linux, and web or Windows when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object. On a WebRTC call the Transport plugin can also run it on the host's flutter_webrtc camera track (Android, iOS, macOS); when it cannot run there, that track sends black frames (ADR-0032).
+A selected policy that transforms a send path before the local Video surface and the Transport plugin. The family is none, blur with intensity 0–100, and replace with a still image (bytes or asset). Blur and replace run on the Production video path on iOS 18+, macOS 15+ (current and previous), Android (ML Kit selfie segmentation), web (MediaPipe selfie segmentation when the model loads), and Windows (WinML MediaPipe selfie segmentation). Linux, and web or Windows when the model cannot load, fall back to none with a structured warning. Hosts do not inject a processor object. On a WebRTC call the Transport plugin can also run it on the host's flutter_webrtc camera track (Android, iOS, macOS). Frames from it there are processed, stale, or black, never raw; when it cannot be applied the host keeps that track disabled (ADR-0032).
 _Avoid_: filter, effect, beauty
 
 **Production video path**:

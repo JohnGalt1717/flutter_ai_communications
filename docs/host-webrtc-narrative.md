@@ -68,17 +68,20 @@ A host that opens its own flutter_webrtc camera (`getUserMedia`) hands that
 track to FAC's Video processor in place (ADR-0032):
 
 ```text
+track.enabled = false   // a new track stays off until the processor is applied
 status = await processWebrtcVideoTrack(track.id, BlurVideoProcessor(intensity: 50))
-if (status != WebrtcTrackProcessing.applied) {
-  track.enabled = false   // fail closed: never send the raw camera
-}
+track.enabled = status == WebrtcTrackProcessing.applied   // fail closed
+await sender.replaceTrack(track)   // or addTrack, after the processor
 await processWebrtcVideoTrack(track.id, NoneVideoProcessor())   // blur off
 ```
 
-Same track and sender: no replaceTrack, no renegotiation. Call it again for
-each new camera track (device switch, Camera-off then on). Android, iOS, and
-macOS have the native bridge; web, Windows, and Linux return `unavailable`
-for blur and replace.
+Same track and sender: no replaceTrack, no renegotiation for the toggle.
+Call it again for each new camera track (device switch, Camera-off then on),
+before that track reaches a sender. Android, iOS, and macOS have the native
+bridge; web, Windows, and Linux return `unavailable` for blur and replace.
+On Android, also listen to `webrtcTrackProcessingUnavailable`: the processor
+gave up (black frames) or turned out not to be on the camera path (the
+plugin disabled the track).
 
 ## Detach
 
