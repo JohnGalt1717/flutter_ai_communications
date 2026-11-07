@@ -23,6 +23,7 @@ class FlutterAiCommunicationsWebrtcPlugin :
         val track: LocalVideoTrack,
         val processor: TrackProcessor,
     ) {
+        val gate = AppliedGate()
         var probe: VideoSink? = null
     }
 
@@ -70,80 +71,57 @@ class FlutterAiCommunicationsWebrtcPlugin :
             attached.remove(trackId)?.let(::detach)
             return reply("ready")
         }
-        attached[trackId]?.let { return reply(it.processor.apply(args)) }
+        attached[trackId]?.let { return request(it, it.processor.apply(args), reply) }
         val entry = Attached(track, TrackProcessor { main.post { gaveUp(trackId) } })
-        track.addProcessor(entry.processor)
-        attached[trackId] = entry
-        val status = entry.processor.apply(args)
+        val video = track.track as? VideoTrack
+        val status = if (video == null) "unavailable" else entry.processor.apply(args)
         if (status != "ready") {
-            attached.remove(trackId)
-            detach(entry)
+            entry.processor.close()
             return reply(status)
         }
-        watch(trackId, entry, reply)
-    }
-
-    /**
-     * Answers once the track's first frames show whether the processor is on
-     * the camera path ([BypassWatch]). A track that is not delivering frames
-     * yet sends nothing raw: answer after [FIRST_FRAME_TIMEOUT_MS] and keep
-     * watching. A later bypass disables the track and reports it.
-     */
-    private fun watch(
-        trackId: String,
-        entry: Attached,
-        reply: (String) -> Unit,
-    ) {
-        val video = entry.track.track as? VideoTrack
-        if (video == null) {
-            attached.remove(trackId)
-            detach(entry)
-            return reply("unavailable")
-        }
-        var answered = false
-        // True when this call answered; false when an earlier one already had.
-        val answer = { status: String ->
-            val first = !answered
-            if (first) {
-                answered = true
-                reply(status)
-            }
-            first
-        }
+        track.addProcessor(entry.processor)
+        attached[trackId] = entry
         val watch = BypassWatch()
         val probe =
             VideoSink {
-                when (watch.onDelivered(entry.processor.frames)) {
-                    BypassWatch.Verdict.Pending -> {}
-                    BypassWatch.Verdict.OnPath -> main.post {
-                        endProbe(entry)
-                        answer(if (attached[trackId] === entry) "ready" else "unavailable")
-                    }
-                    BypassWatch.Verdict.Bypassed -> main.post { bypassed(trackId, entry, answer) }
+                val verdict = watch.onDelivered(entry.processor.frames)
+                if (verdict != BypassWatch.Verdict.Pending) {
+                    main.post { onVerdict(trackId, entry, verdict) }
                 }
             }
         entry.probe = probe
-        video.addSink(probe)
-        main.postDelayed(
-            { answer(if (attached[trackId] === entry) "ready" else "unavailable") },
-            FIRST_FRAME_TIMEOUT_MS,
-        )
+        video?.addSink(probe)
+        request(entry, status, reply)
     }
 
-    private fun bypassed(
+    /**
+     * "ready" only once the track's first frames show the processor is on the
+     * camera path ([BypassWatch]). Until then a call waits; after
+     * [FIRST_FRAME_TIMEOUT_MS] it gets "unavailable" and the watch goes on.
+     */
+    private fun request(
+        entry: Attached,
+        status: String,
+        reply: (String) -> Unit,
+    ) {
+        entry.gate.request(status, reply)
+        main.postDelayed(entry.gate::timeout, FIRST_FRAME_TIMEOUT_MS)
+    }
+
+    private fun onVerdict(
         trackId: String,
         entry: Attached,
-        answer: (String) -> Boolean,
+        verdict: BypassWatch.Verdict,
     ) {
-        val current = attached[trackId] === entry
-        if (current) {
-            attached.remove(trackId)
-        }
-        detach(entry)
-        if (answer("unavailable") || !current) {
+        endProbe(entry)
+        entry.gate.resolve(verdict)
+        if (verdict != BypassWatch.Verdict.Bypassed || attached[trackId] !== entry) {
             return
         }
-        // Applied was already returned: fail closed here, then tell the host.
+        // The raw camera reaches the sender: fail closed here, then tell the
+        // host, which keeps or disposes the track.
+        attached.remove(trackId)
+        detach(entry)
         runCatching { entry.track.setEnabled(false) }
         notifyUnavailable(trackId)
     }
@@ -171,6 +149,7 @@ class FlutterAiCommunicationsWebrtcPlugin :
         endProbe(entry)
         entry.track.removeProcessor(entry.processor)
         entry.processor.close()
+        entry.gate.detached()
     }
 
     private fun localTrack(trackId: String): LocalVideoTrack? =

@@ -71,3 +71,47 @@ internal class BypassWatch {
         const val LIMIT = 5
     }
 }
+
+/**
+ * Replies to `process` for one attached processor. "ready" goes out only
+ * once [BypassWatch] saw the processor on the camera path. Calls that come
+ * while the verdict is pending wait for it; [timeout] answers them
+ * "unavailable" (the host keeps the track disabled) while the watch goes on.
+ */
+internal class AppliedGate {
+    private val waiting = mutableListOf<(String) -> Unit>()
+    private var verdict = BypassWatch.Verdict.Pending
+
+    /** [status] is what `apply` returned for this call. */
+    fun request(
+        status: String,
+        reply: (String) -> Unit,
+    ) {
+        when {
+            status != "ready" -> reply(status)
+            verdict == BypassWatch.Verdict.OnPath -> reply("ready")
+            verdict == BypassWatch.Verdict.Bypassed -> reply("unavailable")
+            else -> waiting += reply
+        }
+    }
+
+    fun timeout() = flush("unavailable")
+
+    /** Records the watch verdict and answers every waiting call. */
+    fun resolve(verdict: BypassWatch.Verdict) {
+        if (verdict == BypassWatch.Verdict.Pending || this.verdict != BypassWatch.Verdict.Pending) {
+            return
+        }
+        this.verdict = verdict
+        flush(if (verdict == BypassWatch.Verdict.OnPath) "ready" else "unavailable")
+    }
+
+    /** The processor was removed (none, or the track went away). */
+    fun detached() = flush("unavailable")
+
+    private fun flush(status: String) {
+        val replies = waiting.toList()
+        waiting.clear()
+        replies.forEach { it(status) }
+    }
+}

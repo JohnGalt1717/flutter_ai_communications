@@ -59,4 +59,55 @@ class FailClosedTest {
         assertTrue(shape.changed(480, 640, 90))
         assertFalse(shape.changed(480, 640, 90))
     }
+
+    @Test
+    fun noVerdictBeforeTheTimeoutIsUnavailable() {
+        val gate = AppliedGate()
+        val replies = mutableListOf<String>()
+        gate.request("ready", replies::add)
+        assertEquals(emptyList(), replies)
+        gate.timeout()
+        assertEquals(listOf("unavailable"), replies)
+        // The watch goes on; a later on-path verdict answers the next call.
+        gate.resolve(BypassWatch.Verdict.OnPath)
+        gate.request("ready", replies::add)
+        assertEquals(listOf("unavailable", "ready"), replies)
+    }
+
+    @Test
+    fun aSecondCallWhilePendingWaitsForTheSameBypass() {
+        val gate = AppliedGate()
+        val first = mutableListOf<String>()
+        val second = mutableListOf<String>()
+        gate.request("ready", first::add)
+        gate.request("ready", second::add)
+        gate.resolve(BypassWatch.Verdict.Bypassed)
+        assertEquals(listOf("unavailable"), first)
+        assertEquals(listOf("unavailable"), second)
+        // No later call is told ready on a bypassed processor.
+        val third = mutableListOf<String>()
+        gate.request("ready", third::add)
+        assertEquals(listOf("unavailable"), third)
+    }
+
+    @Test
+    fun readyOnlyAfterOnPathAndApplyErrorsPassThrough() {
+        val gate = AppliedGate()
+        val replies = mutableListOf<String>()
+        gate.request("invalid", replies::add)
+        gate.request("ready", replies::add)
+        gate.resolve(BypassWatch.Verdict.OnPath)
+        gate.resolve(BypassWatch.Verdict.Bypassed)
+        gate.request("ready", replies::add)
+        assertEquals(listOf("invalid", "ready", "ready"), replies)
+    }
+
+    @Test
+    fun removingTheProcessorAnswersWaitingCallsUnavailable() {
+        val gate = AppliedGate()
+        val replies = mutableListOf<String>()
+        gate.request("ready", replies::add)
+        gate.detached()
+        assertEquals(listOf("unavailable"), replies)
+    }
 }
