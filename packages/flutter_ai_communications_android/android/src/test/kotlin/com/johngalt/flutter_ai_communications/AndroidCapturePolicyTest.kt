@@ -285,4 +285,49 @@ class AndroidCapturePolicyTest {
             ),
         )
     }
+
+    @Test
+    fun defaultRenderPrefersAConnectedBluetoothHeadsetOverBuiltins() {
+        val types =
+            listOf(
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            )
+        assertEquals(
+            android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AndroidCapturePolicy.defaultHeadsetType(types),
+        )
+    }
+
+    @Test
+    fun defaultRenderPrefersBluetoothOverAWiredHeadset() {
+        val types =
+            listOf(
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+                android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+            )
+        assertEquals(
+            android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AndroidCapturePolicy.defaultHeadsetType(types),
+        )
+    }
+
+    @Test
+    fun defaultRenderHasNoHeadsetWithOnlyBuiltins() {
+        val types =
+            listOf(
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            )
+        assertNull(AndroidCapturePolicy.defaultHeadsetType(types))
+    }
+
+    @Test
+    fun deviceChangeReroutesOnlyARunningUnselectedRender() {
+        assertTrue(AndroidCapturePolicy.shouldFollowDeviceChange(true, null))
+        assertTrue(AndroidCapturePolicy.shouldFollowDeviceChange(true, ""))
+        assertFalse(AndroidCapturePolicy.shouldFollowDeviceChange(false, null))
+        assertFalse(AndroidCapturePolicy.shouldFollowDeviceChange(true, "speaker-out"))
+    }
 }
