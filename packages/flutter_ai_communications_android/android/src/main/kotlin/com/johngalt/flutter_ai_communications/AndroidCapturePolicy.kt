@@ -226,6 +226,28 @@ internal object AndroidCapturePolicy {
         return "speakerphone"
     }
 
+    /**
+     * With no render selected, a connected headset wins over the builtins, the
+     * same order the OS uses for a phone call. Returns the first [types] entry
+     * that is a headset, or null when only builtins are present.
+     */
+    fun defaultHeadsetType(types: List<Int>): Int? =
+        defaultHeadsetPriority.firstOrNull { it in types }
+
+    private val defaultHeadsetPriority =
+        listOf(
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_HEARING_AID,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        )
+
+    /** A device add or remove re-routes only a running default (unselected) render. */
+    fun shouldFollowDeviceChange(running: Boolean, selectedRenderId: String?): Boolean =
+        running && presentId(selectedRenderId) == null
+
     fun planApplyRoute(selectedRenderId: String?): RouteApplyPlan {
         val speaker = isSpeakerRender(selectedRenderId)
         return RouteApplyPlan(

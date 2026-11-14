@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_ai_communications/flutter_ai_communications.dart';
 
 /// Host Endpoint preference editor for the example harness.

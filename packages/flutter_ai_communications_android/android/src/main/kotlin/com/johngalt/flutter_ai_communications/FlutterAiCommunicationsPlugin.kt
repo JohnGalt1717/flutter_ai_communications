@@ -83,17 +83,34 @@ class FlutterAiCommunicationsPlugin :
         object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
                 emitCatalog()
-                emitRoute()
+                followDefaultRoute()
             }
 
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
                 emitCatalog()
-                emitRoute()
+                followDefaultRoute()
                 if (enumerate().none { !(it["isCapture"] as Boolean) }) {
                     emitPath(false)
                 }
             }
         }
+
+    /**
+     * A headset that connects or disconnects mid-session moves an unselected
+     * render with it; an explicit selection stays put.
+     */
+    private fun followDefaultRoute() {
+        if (!AndroidCapturePolicy.shouldFollowDeviceChange(running.get(), selectedRenderId)) {
+            emitRoute()
+            return
+        }
+        applyRouteAsync { routed ->
+            if (routed) {
+                restartCapture()
+            }
+            emitRoute()
+        }
+    }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
@@ -1217,6 +1234,11 @@ class FlutterAiCommunicationsPlugin :
         if (selected != null) {
             sinks.firstOrNull { it.id.toString() == selected }?.let { return it }
             sinks.firstOrNull { pairKey(it) == selected }?.let { return it }
+        }
+        if (AndroidCapturePolicy.presentId(selected) == null) {
+            AndroidCapturePolicy.defaultHeadsetType(comms.map { it.type })?.let { type ->
+                return comms.first { it.type == type }
+            }
         }
         val speaker = AndroidCapturePolicy.isSpeakerRender(selected)
         return sinks.firstOrNull {

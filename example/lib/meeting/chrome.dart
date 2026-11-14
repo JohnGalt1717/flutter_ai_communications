@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Shared Teams-like chrome for the example lobby and meeting.
 abstract final class MeetingChrome {
