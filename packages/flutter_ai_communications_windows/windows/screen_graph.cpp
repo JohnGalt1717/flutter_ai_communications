@@ -137,12 +137,14 @@ flutter::EncodableMap SourceMap(const std::string& id, const std::string& name,
   map[flutter::EncodableValue("id")] = flutter::EncodableValue(id);
   map[flutter::EncodableValue("name")] = flutter::EncodableValue(name);
   map[flutter::EncodableValue("kind")] = flutter::EncodableValue(kind);
-  map[flutter::EncodableValue("x")] = flutter::EncodableValue(bounds.left);
-  map[flutter::EncodableValue("y")] = flutter::EncodableValue(bounds.top);
-  map[flutter::EncodableValue("width")] =
-      flutter::EncodableValue(bounds.right - bounds.left);
-  map[flutter::EncodableValue("height")] =
-      flutter::EncodableValue(bounds.bottom - bounds.top);
+  map[flutter::EncodableValue("x")] =
+      flutter::EncodableValue(static_cast<int32_t>(bounds.left));
+  map[flutter::EncodableValue("y")] =
+      flutter::EncodableValue(static_cast<int32_t>(bounds.top));
+  map[flutter::EncodableValue("width")] = flutter::EncodableValue(
+      static_cast<int32_t>(bounds.right - bounds.left));
+  map[flutter::EncodableValue("height")] = flutter::EncodableValue(
+      static_cast<int32_t>(bounds.bottom - bounds.top));
   map[flutter::EncodableValue("canPreview")] =
       flutter::EncodableValue(can_preview);
   if (!application_name.empty()) {
