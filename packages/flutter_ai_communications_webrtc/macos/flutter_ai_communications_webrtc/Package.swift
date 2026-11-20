@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
     name: "flutter_ai_communications_webrtc",
     platforms: [
-        .macOS("12.3")
+        .macOS("12.0")
     ],
     products: [
         .library(name: "flutter-ai-communications-webrtc", targets: ["flutter_ai_communications_webrtc"]),

@@ -66,7 +66,12 @@ public class FlutterAiCommunicationsPlugin: NSObject, FlutterPlugin {
   )
   private var watchingDevices = false
   private let camera = MacCameraGraph()
-  private let screen = MacScreenGraph()
+  private let screen: FacScreenGraph = {
+    if #available(macOS 12.3, *) {
+      return MacScreenGraph()
+    }
+    return UnsupportedMacScreenGraph()
+  }()
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = FlutterAiCommunicationsPlugin()
