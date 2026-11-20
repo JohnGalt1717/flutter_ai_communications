@@ -4,10 +4,80 @@ import FlutterMacOS
 import Foundation
 import ScreenCaptureKit
 
+/// Screen share graph used by `FlutterAiCommunicationsPlugin`.
+///
+/// ScreenCaptureKit needs macOS 12.3. Flutter's generated plugin package
+/// defaults to `.macOS("12.0")`, so this type must exist on 12.0 and no-op
+/// until 12.3.
+protocol FacScreenGraph: AnyObject {
+  func attach(textures: FlutterTextureRegistry)
+  func attachCatalog(_ emit: @escaping ([[String: Any]]) -> Void)
+  func attachPreview(_ emit: @escaping (String, Int64) -> Void)
+  func enumerate(result: @escaping FlutterResult)
+  func requestPermission(result: @escaping FlutterResult)
+  func beginPick(result: @escaping FlutterResult)
+  func endPick()
+  func indicate(sourceId: String?)
+  func start(
+    sourceId: String,
+    includeSystemAudio: Bool,
+    cursor: Bool,
+    motion: Bool,
+    result: @escaping FlutterResult
+  )
+  func stop()
+  func setIncludeSystemAudio(_ enabled: Bool) -> Bool
+  func setMotion(_ motion: Bool)
+  func setCursor(_ cursor: Bool)
+  func captureStill() -> [String: Any]?
+}
+
+final class UnsupportedMacScreenGraph: FacScreenGraph {
+  func attach(textures: FlutterTextureRegistry) {}
+  func attachCatalog(_ emit: @escaping ([[String: Any]]) -> Void) {}
+  func attachPreview(_ emit: @escaping (String, Int64) -> Void) {}
+
+  func enumerate(result: @escaping FlutterResult) {
+    result([])
+  }
+
+  func requestPermission(result: @escaping FlutterResult) {
+    if CGPreflightScreenCaptureAccess() {
+      result("granted")
+      return
+    }
+    result(CGRequestScreenCaptureAccess() ? "granted" : "denied")
+  }
+
+  func beginPick(result: @escaping FlutterResult) {
+    result(["previews": [:] as [String: Int64]])
+  }
+
+  func endPick() {}
+  func indicate(sourceId: String?) {}
+
+  func start(
+    sourceId: String,
+    includeSystemAudio: Bool,
+    cursor: Bool,
+    motion: Bool,
+    result: @escaping FlutterResult
+  ) {
+    result(["status": "unavailable", "reason": "none"])
+  }
+
+  func stop() {}
+  func setIncludeSystemAudio(_ enabled: Bool) -> Bool { false }
+  func setMotion(_ motion: Bool) {}
+  func setCursor(_ cursor: Bool) {}
+  func captureStill() -> [String: Any]? { nil }
+}
+
 /// ScreenCaptureKit Production video path, Screen pick thumbs, and Share frame.
 ///
 /// Host picker, not `SCContentSharingPicker` (ADR-0031). Camera graph is a separate path.
-final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
+@available(macOS 12.3, *)
+final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate, FacScreenGraph {
   private let queue = DispatchQueue(label: "fac.screen")
   private weak var textures: FlutterTextureRegistry?
   private var emitCatalog: (([[String: Any]]) -> Void)?
@@ -983,6 +1053,7 @@ final class MacScreenGraph: NSObject, SCStreamOutput, SCStreamDelegate {
   }
 }
 
+@available(macOS 12.3, *)
 private final class ProductionTexture: NSObject, FlutterTexture {
   weak var graph: MacScreenGraph?
 
@@ -991,6 +1062,7 @@ private final class ProductionTexture: NSObject, FlutterTexture {
   }
 }
 
+@available(macOS 12.3, *)
 private final class PreviewTexture: NSObject, FlutterTexture {
   var pixelBuffer: CVPixelBuffer?
   var textureId: Int64 = -1
@@ -1003,6 +1075,7 @@ private final class PreviewTexture: NSObject, FlutterTexture {
   }
 }
 
+@available(macOS 12.3, *)
 private final class ShareFrameWindow: NSWindow {
   convenience init(frame: CGRect, fragments: [CGRect]) {
     self.init(
@@ -1036,6 +1109,7 @@ private final class ShareFrameWindow: NSWindow {
   }
 }
 
+@available(macOS 12.3, *)
 private final class ShareFrameView: NSView {
   var fragments: [CGRect] = []
   override var isFlipped: Bool { true }
